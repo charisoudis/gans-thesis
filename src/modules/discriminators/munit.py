@@ -1,5 +1,6 @@
 from typing import List
 
+import torch
 import torch.nn as nn
 from torch import Tensor
 
@@ -18,7 +19,7 @@ class MUNITDiscriminator(nn.Module):
         :param n_discriminators: number PatchGAN discriminators used
         :param c_in: number of input channels after first Conv2d layer
         :param c_hidden: number of hidden channels in PatchGAN discriminator
-        :param n_contracting_blocks: number of contracting blocks
+        :param n_contracting_blocks: number of contracting blocks PatchGAN discriminator
         """
         super(MUNITDiscriminator, self).__init__()
         self.discriminators = nn.ModuleList([
@@ -41,6 +42,16 @@ class MUNITDiscriminator(nn.Module):
             x = self.downsample(x)
         return outputs
 
-    def get_loss(self, real: Tensor, fake: Tensor, criterion: nn.Module = nn.BCELoss) -> Tensor:
-        # TODO
-        pass
+    def get_loss(self, images: Tensor, is_real: bool = True, criterion: nn.Module = nn.MSELoss) -> Tensor:
+        """
+        Compute adversarial loss.
+        :param images: image tensor (batch of images) to be classified for its realness
+        :param is_real: whether the batch comes from the real dataset or from the Generator
+        :param criterion: cost function to be used (in MUNIT paper the use LSGAN and thus MSE is the adversarial loss)
+        :return:
+        """
+        batch_predictions_on_images = self(images)
+        loss = torch.Tensor(0.0)
+        for batch in batch_predictions_on_images:
+            loss += criterion(batch, torch.ones_like(batch) if is_real else torch.zeros_like(batch))
+        return loss

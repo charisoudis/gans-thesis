@@ -6,14 +6,12 @@ class ContractingBlock(nn.Module):
     """
     ContractingBlock Class
     Performs a convolution followed by a max pool operation and an optional instance norm.
-    Values:
-        c_in: the number of channels to expect from a given input
     """
 
     def __init__(self, c_in: int, use_bn: bool = True, kernel_size: int = 3, activation: str = 'relu'):
         """
         ContractingBlock class constructor.
-        :param c_in: number of input channels
+        :param c_in: the number of channels to expect from a given input
         :param use_bn: indicates if InstanceNormalization2d is applied or not after Conv2d layer
         :param kernel_size: filter (kernel) size
         :param activation: type of activation function used (supported: 'relu', 'lrelu')
@@ -33,6 +31,48 @@ class ContractingBlock(nn.Module):
         :return: transformed image tensor of shape (N, C_in*2, H/2, W/2)
         """
         return self.contracting_block(x)
+
+
+class UNETContractingBlock(nn.Module):
+    """
+    UNETContractingBlock Class:
+    Performs two convolutions followed by a max pool operation.
+    """
+
+    def __init__(self, c_in: int, use_bn: bool = True, use_dropout: bool = False, kernel_size: int = 3,
+                 activation: str = 'lrelu'):
+        """
+        UNETContractingBlock class constructor.
+        :param c_in: number of input channels
+        :param use_bn: indicates if Batch Normalization is applied or not after Conv2d layer
+        :param use_dropout: indicates if Dropout is applied or not after Conv2d layer
+        :param kernel_size: filter (kernel) size
+        :param activation: type of activation function used (supported: 'relu', 'lrelu')
+        """
+        super(UNETContractingBlock, self).__init__()
+        self.unet_contracting_block = nn.Sequential(
+            # 1st convolution layer
+            nn.Conv2d(c_in, c_in * 2, kernel_size=kernel_size, padding=1),
+            nn.BatchNorm2d(c_in * 2) if use_bn else nn.Identity(),
+            nn.Dropout() if use_dropout else nn.Identity(),
+            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
+            # 2nd convolution layer
+            nn.Conv2d(c_in * 2, c_in * 2, kernel_size=kernel_size, padding=1),
+            nn.BatchNorm2d(c_in * 2) if use_bn else nn.Identity(),
+            nn.Dropout() if use_dropout else nn.Identity(),
+            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
+            # MaxPooling layer (preparing for next block)
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Function for completing a forward pass of UNETContractingBlock:
+        Given an image tensor, completes a contracting block and returns the transformed tensor.
+        :param x: image tensor of shape (N, C_in, H, W)
+        :return: transformed image tensor of shape (N, C_in*2, H/2, W/2)
+        """
+        return self.unet_contracting_block(x)
 
 
 class MLPBlock(nn.Module):

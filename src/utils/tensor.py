@@ -1,7 +1,9 @@
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 from torch import Tensor
 from PIL import Image
+from torchvision.utils import make_grid
 
 
 def array_to_image(array: np.ndarray) -> Image:
@@ -37,10 +39,22 @@ def array_to_tensor(array: np.ndarray, tensor_type: str = 'float32') -> Tensor:
 
 
 def show_tensor_images(x_real, x_fake):
-    ''' For visualizing images '''
+    """ For visualizing images """
     image_tensor = torch.cat((x_fake[:1, ...], x_real[:1, ...]), dim=0)
     image_tensor = (image_tensor + 1) / 2
     image_unflat = image_tensor.detach().cpu()
     image_grid = make_grid(image_unflat, nrow=1)
+    plt.imshow(image_grid.permute(1, 2, 0).squeeze())
+    plt.show()
+
+
+def show_tensor_images_2(image_tensor, num_images=25, size=(1, 28, 28)):
+    """
+    Function for visualizing images: Given a tensor of images, number of images, an
+    size per image, plots and prints the images in an uniform grid.
+    """
+    image_shifted = image_tensor
+    image_unflat = image_shifted.detach().cpu().view(-1, *size)
+    image_grid = make_grid(image_unflat[:num_images], nrow=5)
     plt.imshow(image_grid.permute(1, 2, 0).squeeze())
     plt.show()

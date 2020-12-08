@@ -45,7 +45,7 @@ class PatchGANDiscriminator(nn.Module):
 
     def get_loss(self, real: Tensor, fake: Tensor, criterion: nn.Module = nn.BCELoss) -> Tensor:
         """
-        Compute adversarial loss
+        Compute adversarial loss.
         :param real: image tensor of shape (N, C, H, W) from real dataset
         :param fake: image tensor of shape (N, C, H, W) produced by generator (i.e. fake images)
         :param criterion: loss function (such as nn.BCELoss, nn.MSELoss and others)

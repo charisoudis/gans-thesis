@@ -30,7 +30,7 @@ class MUNITContentEncoder(nn.Module):
             *[self.get_downsampling_block(c_base * 2 ** i, c_base * 2 ** (i + 1)) \
               for i in range(n_downsampling_blocks)],
             # Residual blocks
-            *[ResidualBlock(c_base * 2 ** n_downsampling_blocks) for _ in range(n_residual_blocks)]
+            *[ResidualBlock(self.out_channels) for _ in range(n_residual_blocks)]
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -42,6 +42,10 @@ class MUNITContentEncoder(nn.Module):
         :return: transformed image tensor of shape (N, self.out_channels, H_out, W_out)
         """
         return self.munit_content_encoder(x)
+
+    @property
+    def channels(self):
+        return self.out_channels
 
     @staticmethod
     def get_downsampling_block(c_in: int, c_out: int, kernel_size: int = 4, stride: int = 2,
@@ -217,3 +221,26 @@ class MUNITGenerator(nn.Module):
         :return: torch.Tensor
         """
         return self.dec(content, style)
+
+    def ae_image_recon_loss(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        """
+        Autoencoder image reconstruction loss.
+        :param x: input to encoders
+        :return: tuple containing: 1) tensor with Autoencoder image reconstruction loss, 2) tensor with content codes
+        and 3) tensor with style codes
+        """
+        c, s = self.encode(x)
+        return nn.functional.l1_loss(x, self.decode(c, s)), c, s
+
+    def ae_latent_recon_loss(self, c, s) -> Tuple[Tensor, Tensor, Tensor]:
+        """
+        Autoencoder image reconstruction loss. Given latent codes how well decoder + encoder can reconstruct those
+        latent codes.
+        :param c: content tensor
+        :param s: style tensor
+        :return: tuple containing: 1) tensor with loss for content code reconstruction, 2) for style code reconstruction
+        and 3) reconstructed images from MUNITDecoder
+        """
+        x_hat = self.decode(c, s)
+        recon = self.encode(x_hat)
+        return nn.functional.l1_loss(recon[0], c), nn.functional.l1_loss(recon[1], s), x_hat
