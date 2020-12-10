@@ -42,19 +42,25 @@ class PatchGANDiscriminator(nn.Module):
         :return: transformed image tensor of shape (N, 1, P_h, P_w)
         """
         if y is not None:
-            x = torch.cat([x, y], dim=1)    # channel-wise concatenation
+            x = torch.cat([x, y], dim=1)  # channel-wise concatenation
         return self.patch_gan_discriminator(x)
 
-    def get_loss(self, real: Tensor, fake: Tensor, criterion: nn.Module = nn.BCELoss) -> Tensor:
+    def get_loss(self, real: Tensor, fake: Tensor, condition: Tensor = None,
+                 criterion: nn.modules.Module = nn.BCELoss()) -> Tensor:
         """
         Compute adversarial loss.
         :param real: image tensor of shape (N, C, H, W) from real dataset
         :param fake: image tensor of shape (N, C, H, W) produced by generator (i.e. fake images)
+        :param condition: condition image tensor of shape (N, C_in/2, H, W) that is stacked before input to PatchGAN
+        discriminator
         :param criterion: loss function (such as nn.BCELoss, nn.MSELoss and others)
         :return: torch.Tensor containing loss value(s)
         """
-        predictions_on_real = self(real)
-        predictions_on_fake = self(fake)
+        predictions_on_real = self(real, condition)
+        predictions_on_fake = self(fake, condition)
+        if type(criterion) == torch.nn.modules.loss.BCELoss:
+            predictions_on_real = nn.Sigmoid()(predictions_on_real)
+            predictions_on_fake = nn.Sigmoid()(predictions_on_fake)
         loss_on_real = criterion(predictions_on_real, torch.ones_like(predictions_on_real))
         loss_on_fake = criterion(predictions_on_fake, torch.zeros_like(predictions_on_real))
         return 0.5 * (loss_on_real + loss_on_fake)

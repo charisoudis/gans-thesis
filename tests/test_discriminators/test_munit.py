@@ -5,7 +5,7 @@ from modules.discriminators.munit import MUNITDiscriminator
 
 class TestMUNITDiscriminator(unittest.TestCase):
 
-    def test_shapes(self):
+    def test_shapes(self) -> None:
         n_blocks = 4
         w_in = 512
 

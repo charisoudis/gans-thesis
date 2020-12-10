@@ -60,3 +60,26 @@ class UNet(nn.Module):
         x12 = self.expand5(x11, x0)
         xn = self.downfeature(x12)
         return self.sigmoid(xn)
+
+    def get_loss(self, disc: nn.Module, real: Tensor, condition: Tensor,
+                 adv_criterion: nn.modules.Module = nn.BCEWithLogitsLoss(),
+                 recon_criterion: nn.modules.Module = nn.L1Loss(), lambda_recon: int = 10):
+        """
+        Return the loss of the generator given inputs. This Generator takes the condition image as input and returns
+        a generated potential image (for every condition image in batch).
+        :param disc: the discriminator; takes images and the condition and returns real/fake prediction matrices
+        :param real: the real images (e.g. maps) to be used to evaluate the reconstruction
+        :param condition: the source images (e.g. satellite imagery) which are used to pro
+        :param adv_criterion: the adversarial loss function; takes the discriminator predictions and the true labels
+        and returns a adversarial loss (which you aim to minimize)
+        :param recon_criterion: the reconstruction loss function; takes the generator outputs and the real images and
+        returns a reconstruction loss (which we aim to minimize)
+        :param lambda_recon: the degree to which the reconstruction loss should be weighted
+        """
+        fake_images = self(condition)
+        fake_predictions = disc(fake_images, condition)
+        recon_loss = recon_criterion(fake_images, real)
+        if type(adv_criterion) == torch.nn.modules.loss.BCELoss:
+            fake_predictions = nn.Sigmoid()(fake_predictions)
+        adv_loss = adv_criterion(fake_predictions, torch.ones_like(fake_predictions))
+        return adv_loss + lambda_recon * recon_loss

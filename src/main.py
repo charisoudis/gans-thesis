@@ -3,7 +3,9 @@ import torch
 import torch.nn as nn
 from modules.discriminators.cycle_gan import CycleGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
+from modules.cycle_gan import CycleGAN
 from utils.command_line_logger import CommandLineLogger
+from utils.pytorch import get_total_params
 
 
 def cli_parse() -> argparse:
@@ -42,5 +44,8 @@ def main():
 
 
 if __name__ == '__main__':
-    args = cli_parse()
-    main()
+    # args = cli_parse()
+    # main()
+
+    cg = CycleGAN()
+    get_total_params(cg, print_table=True, sort_desc=True)

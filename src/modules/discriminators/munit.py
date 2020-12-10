@@ -42,7 +42,7 @@ class MUNITDiscriminator(nn.Module):
             x = self.downsample(x)
         return outputs
 
-    def get_loss(self, images: Tensor, is_real: bool = True, criterion: nn.Module = nn.MSELoss) -> Tensor:
+    def get_loss(self, images: Tensor, is_real: bool = True, criterion: nn.modules.Module = nn.MSELoss()) -> Tensor:
         """
         Compute adversarial loss.
         :param images: image tensor (batch of images) to be classified for its realness
