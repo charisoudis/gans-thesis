@@ -1,9 +1,9 @@
 import argparse
 import torch
 import torch.nn as nn
-import utils.command_line_logger as cll
 from modules.discriminators.cycle_gan import CycleGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
+from utils.command_line_logger import CommandLineLogger
 
 
 def cli_parse() -> argparse:
@@ -29,7 +29,7 @@ def main():
     print(g)
     exit(0)
 
-    logger = cll.CommandLineLogger(log_level='debug')
+    logger = CommandLineLogger(log_level='debug')
     # logger.log_format = "> %(log_color)s%(message)s%(reset)s"
     logger.info('execution started')
 
@@ -42,18 +42,5 @@ def main():
 
 
 if __name__ == '__main__':
-    # args = cli_parse()
-    # main()
-
-    t = torch.rand(2, 50, 1, 1)
-    t2 = t.view((len(t), -1))
-    print(t2.shape)
-
-    # x = torch.ones(1, 3, 5, 5)
-    # x[:, 1, :, :] += 1
-    # x[:, 2, :, :] += 2
-    # y = torch.mean(x ** 2, dim=1, keepdim=True) ** 0.5
-    # y = torch.mean(x, dim=1, keepdim=True)
-
-    # print(x.shape, y.shape)
-    # print(x, y)
+    args = cli_parse()
+    main()
