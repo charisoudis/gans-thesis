@@ -45,11 +45,15 @@ if __name__ == '__main__':
     # args = cli_parse()
     # main()
 
-    x = torch.ones(1, 3, 5, 5)
-    x[:, 1, :, :] += 1
-    x[:, 2, :, :] += 2
-    y = torch.mean(x ** 2, dim=1, keepdim=True) ** 0.5
-    y = torch.mean(x, dim=1, keepdim=True)
+    t = torch.rand(2, 50, 1, 1)
+    t2 = t.view((len(t), -1))
+    print(t2.shape)
 
-    print(x.shape, y.shape)
-    print(x, y)
+    # x = torch.ones(1, 3, 5, 5)
+    # x[:, 1, :, :] += 1
+    # x[:, 2, :, :] += 2
+    # y = torch.mean(x ** 2, dim=1, keepdim=True) ** 0.5
+    # y = torch.mean(x, dim=1, keepdim=True)
+
+    # print(x.shape, y.shape)
+    # print(x, y)

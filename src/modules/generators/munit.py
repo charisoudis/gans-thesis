@@ -30,7 +30,7 @@ class MUNITContentEncoder(nn.Module):
             *[self.get_downsampling_block(c_base * 2 ** i, c_base * 2 ** (i + 1)) \
               for i in range(n_downsampling_blocks)],
             # Residual blocks
-            *[ResidualBlock(self.out_channels) for _ in range(n_residual_blocks)]
+            *[ResidualBlock(self.out_channels, norm_type='IN') for _ in range(n_residual_blocks)]
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -154,11 +154,11 @@ class MUNITDecoder(nn.Module):
         Given an image tensor, representing the content, and a vector, representing the style, returns a new image
         tensor with the "style code" applied to the given "content code".
         :param x: image tensor of shape (N, C_in, H_c, W_c)
-        :param s: vector tensor of shape (N, s_dim)
+        :param s: vector tensor of shape (N, s_dim, 1, 1)
         :return: transformed image tensor of shape (N, 3(RGB) or 1(GS), H, W)
         """
         for res_block in self.munit_decoder_res_blocks:
-            x = res_block(x, s=s)
+            x = res_block(x, s)
         return self.munit_decoder_rest_layers(x)
 
     @staticmethod
@@ -217,10 +217,11 @@ class MUNITGenerator(nn.Module):
         """
         Complete a forward pass through the decoder part of the Autoencoder part of MUNITGenerator.
         :param content: content code tensor of shape (N, C_in, H_c, W_c)
-        :param style: style code tensor of shape (N, s_dim)
+        :param style: style code tensor of shape (N, s_dim, 1, 1)
         :return: torch.Tensor
         """
-        return self.dec(content, style)
+        # Reshape style (to be able to pass through AdaIN's MLP blocks): (N, s_dim, 1, 1) --> (N, s_dim)
+        return self.dec(content, style.view(len(style), -1))
 
     def ae_image_recon_loss(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         """

@@ -6,12 +6,9 @@ from modules.partial.normalization import AdaptiveInstanceNorm2d
 
 class ResidualBlock(nn.Module):
     """
-    ResidualBlock class.
-    Input:
-        Tensor (N, C_in, H_in, W_in)
-    Outputs:
-        Tensor (N, C_out, H_out, W_out),
-        where almost everywhere (C,H,W)_in = (C,H,W)_out
+    ResidualBlock Class:
+    Given an input torch.Tensor of shape (N, C_in, H_in, W_in) it outputs a torch.Tensor of shape
+    (N, C_out, H_out, W_out), where almost everywhere (C,H,W)_in = (C,H,W)_out.
     """
 
     def __init__(self, c_in: int, norm_type: str = 'IN', s_dim: int = None, h_dim: int = None):
@@ -29,12 +26,12 @@ class ResidualBlock(nn.Module):
         self.norm1 = nn.BatchNorm2d(c_in) if norm_type == 'BN' else (
             nn.InstanceNorm2d(c_in) if norm_type == 'IN' else AdaptiveInstanceNorm2d(c_in, s_dim, h_dim)
         )
-        self.activation1 = nn.ReLU(inplace=True)
-        self.conv1 = nn.Conv2d(c_in, c_in, kernel_size=3, padding=1, padding_mode='reflect')
+        self.activation = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(c_in, c_in, kernel_size=3, padding=1, padding_mode='reflect')
         self.norm2 = nn.BatchNorm2d(c_in) if norm_type == 'BN' else (
             nn.InstanceNorm2d(c_in) if norm_type == 'IN' else AdaptiveInstanceNorm2d(c_in, s_dim, h_dim)
         )
-        self.use_style = norm_type == 'AdaIn'
+        self.use_style = norm_type == 'AdaIN'
 
     def forward(self, x: Tensor, s: Tensor = None) -> Tensor:
         """
@@ -46,8 +43,8 @@ class ResidualBlock(nn.Module):
         """
         x_initial = x
         x = self.conv1(x)
-        x = self.norm1(x, s) if self.use_style else self.norm1(x)
+        x = self.norm1(x, w=s) if self.use_style else self.norm1(x)
         x = self.activation(x)
         x = self.conv2(x)
-        x = self.norm2(x, s) if self.use_style else self.norm2(x)
+        x = self.norm2(x, w=s) if self.use_style else self.norm2(x)
         return x + x_initial

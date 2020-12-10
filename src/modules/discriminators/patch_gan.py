@@ -33,14 +33,16 @@ class PatchGANDiscriminator(nn.Module):
             ChannelsProjectLayer(c_hidden * 2 ** n_contracting_blocks, 1, use_spectral_norm=use_spectral_norm)
         )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, y: Tensor = None) -> Tensor:
         """
         Function for completing a forward pass of PatchGANDiscriminator:
         Given an image tensor, returns a 2D matrix of realness probabilities for each image's "patches".
         :param x: image tensor of shape (N, C_in, H, W)
+        :param y: image tensor of shape (N, C_y, H, W) containing the condition images (e.g. for pix2pix)
         :return: transformed image tensor of shape (N, 1, P_h, P_w)
         """
-        # x = torch.cat([x, y], axis=1)
+        if y is not None:
+            x = torch.cat([x, y], dim=1)    # channel-wise concatenation
         return self.patch_gan_discriminator(x)
 
     def get_loss(self, real: Tensor, fake: Tensor, criterion: nn.Module = nn.BCELoss) -> Tensor:

@@ -32,11 +32,11 @@ class CycleGANGenerator(nn.Module):
             ContractingBlock(c_hidden * 2),
 
             # Residual Blocks
-            *[ResidualBlock(c_hidden * 4) for _ in range(0, n_residual_blocks)],
+            *[ResidualBlock(c_hidden * 4, norm_type='IN') for _ in range(0, n_residual_blocks)],
 
             # Decoding (aka expanding) blocks (2)
-            ExpandingBlock(c_hidden * 4),
-            ExpandingBlock(c_hidden * 2),
+            ExpandingBlock(c_hidden * 4, output_padding=1),
+            ExpandingBlock(c_hidden * 2, output_padding=1),
 
             # Final layers
             FeatureMapLayer(c_hidden, c_out),
@@ -52,3 +52,5 @@ class CycleGANGenerator(nn.Module):
         :return: transformed image tensor of shape (N, C_out, H, W)
         """
         return self.cycle_gan_generator(x)
+
+    # TODO: add generator losses here

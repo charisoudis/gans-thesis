@@ -37,6 +37,7 @@ class UNETContractingBlock(nn.Module):
     """
     UNETContractingBlock Class:
     Performs two convolutions followed by a max pool operation.
+    Attention: Unlike UNET paper, we add padding=1 to Conv2d layers to make a "symmetric" version of UNET.
     """
 
     def __init__(self, c_in: int, use_bn: bool = True, use_dropout: bool = False, kernel_size: int = 3,
@@ -61,7 +62,7 @@ class UNETContractingBlock(nn.Module):
             nn.BatchNorm2d(c_in * 2) if use_bn else nn.Identity(),
             nn.Dropout() if use_dropout else nn.Identity(),
             nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
-            # MaxPooling layer (preparing for next block)
+            # Downsampling (using MaxPool) layer (preparing for next block)
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 

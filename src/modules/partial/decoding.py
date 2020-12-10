@@ -1,3 +1,6 @@
+import math
+
+import torch
 import torch.nn as nn
 from torch import Tensor
 
@@ -10,17 +13,20 @@ class ExpandingBlock(nn.Module):
         c_in: the number of channels to expect from a given input
     """
 
-    def __init__(self, c_in: int, use_bn: bool = True, kernel_size: int = 3, activation: str = 'relu'):
+    def __init__(self, c_in: int, use_bn: bool = True, kernel_size: int = 3, activation: str = 'relu',
+                 output_padding: int = 1):
         """
         ExpandingBlock class constructor.
         :param c_in: number of input channels
         :param use_bn: indicates if InstanceNormalization2d is applied or not after Conv2d layer
         :param kernel_size: filter (kernel) size
         :param activation: type of activation function used (supported: 'relu', 'lrelu')
+        :param output_padding: output_padding of Conv2d layer
         """
         super(ExpandingBlock, self).__init__()
         self.expanding_block = nn.Sequential(
-            nn.ConvTranspose2d(c_in, c_in // 2, kernel_size=kernel_size, stride=2, padding=1),
+            nn.ConvTranspose2d(c_in, c_in // 2, kernel_size=kernel_size, stride=2, padding=1,
+                               output_padding=output_padding),
             nn.InstanceNorm2d(c_in // 2) if use_bn else nn.Identity(),
             nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2)
         )
@@ -34,60 +40,13 @@ class ExpandingBlock(nn.Module):
         """
         return self.expanding_block(x)
 
-# class ExpandingBlock(nn.Module):
-#     '''
-#     ExpandingBlock Class:
-#     Performs an upsampling, a convolution, a concatenation of its two inputs,
-#     followed by two more convolutions with optional dropout
-#     Values:
-#         input_channels: the number of channels to expect from a given input
-#     '''
-#     def __init__(self, input_channels, use_dropout=False, use_bn=True):
-#         super(ExpandingBlock, self).__init__()
-#         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-#         self.conv1 = nn.Conv2d(input_channels, input_channels // 2, kernel_size=2)
-#         self.conv2 = nn.Conv2d(input_channels, input_channels // 2, kernel_size=3, padding=1)
-#         self.conv3 = nn.Conv2d(input_channels // 2, input_channels // 2, kernel_size=2, padding=1)
-#         if use_bn:
-#             self.batchnorm = nn.BatchNorm2d(input_channels // 2)
-#         self.use_bn = use_bn
-#         self.activation = nn.ReLU()
-#         if use_dropout:
-#             self.dropout = nn.Dropout()
-#         self.use_dropout = use_dropout
-#
-#     def forward(self, x, skip_con_x):
-#         '''
-#         Function for completing a forward pass of ExpandingBlock:
-#         Given an image tensor, completes an expanding block and returns the transformed tensor.
-#         Parameters:
-#             x: image tensor of shape (batch size, channels, height, width)
-#             skip_con_x: the image tensor from the contracting path (from the opposing block of x)
-#                     for the skip connection
-#         '''
-#         x = self.upsample(x)
-#         x = self.conv1(x)
-#         skip_con_x = crop(skip_con_x, x.shape)
-#         x = torch.cat([x, skip_con_x], axis=1)
-#         x = self.conv2(x)
-#         if self.use_bn:
-#             x = self.batchnorm(x)
-#         if self.use_dropout:
-#             x = self.dropout(x)
-#         x = self.activation(x)
-#         x = self.conv3(x)
-#         if self.use_bn:
-#             x = self.batchnorm(x)
-#         if self.use_dropout:
-#             x = self.dropout(x)
-#         x = self.activation(x)
-#         return x
+
 class UNETExpandingBlock(nn.Module):
     """
     UNETExpandingBlock Class:
-    Performs a convolutional transpose operation in order to up-sample, with an optional instance norm
-    Values:
-        c_in: the number of channels to expect from a given input
+    Symmetric to the UNETContracting block, with the addition of skip connection which concatenates the output of the
+    respective contracting block.
+    Attention: Unlike UNET paper, we add padding=1 to Conv2d layers to make a "symmetric" version of UNET.
     """
 
     def __init__(self, c_in: int, use_bn: bool = True, use_dropout: bool = False, activation: str = 'relu'):
@@ -99,25 +58,53 @@ class UNETExpandingBlock(nn.Module):
         :param activation: type of activation function used (supported: 'relu', 'lrelu')
         """
         super(UNETExpandingBlock, self).__init__()
-        self.expanding_block = nn.Sequential(
-            # Up-sample before convolutions (instead of transposed convolutions)
+        # Up-sample + convolution (instead of transposed convolution)
+        self.upsample_and_1st_conv = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
-            # 1st convolution layer
-            nn.Conv2d(c_in, c_in // 2, kernel_size=2),
-            nn.BatchNorm2d(c_in * 2) if use_bn else nn.Identity(),
+            nn.Conv2d(c_in, c_in // 2, kernel_size=2)
+        )
+        # Then, the output is concatenated with encoder's output at same level
+        # Then, the rest of the ExpandingBlock architecture follows
+        self._2nd_and_3rd_conv = nn.Sequential(
+            # 2nd convolution layer
+            nn.Conv2d(c_in, c_in // 2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c_in // 2) if use_bn else nn.Identity(),
+            nn.Dropout() if use_dropout else nn.Identity(),
+            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
+            # 3rd convolution layer
+            nn.Conv2d(c_in // 2, c_in // 2, kernel_size=2, padding=1),
+            nn.BatchNorm2d(c_in // 2) if use_bn else nn.Identity(),
             nn.Dropout() if use_dropout else nn.Identity(),
             nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
         )
-        # TODO: finish this class
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, skip_conn_at_x: Tensor) -> Tensor:
         """
         Function for completing a forward pass of ExpandingBlock:
         Given an image tensor, completes an expanding block and returns the transformed tensor.
         :param x: image tensor of shape (N, C, H, W)
+        :param skip_conn_at_x: the image tensor from the contracting path (from the opposing block of x) for the skip
+                               connection
         :return: transformed image tensor of shape (N, C/2, H*2, W*2)
         """
-        return self.expanding_block(x)
+        x = self.upsample_and_1st_conv(x)
+        # Specify cat()'s dim to be 1 (aka channels), since we want a channel-wise concatenation of the two tensors
+        x = torch.cat([x, UNETExpandingBlock.crop_skip_connection(skip_conn_at_x, x.shape)], dim=1)
+        return self._2nd_and_3rd_conv(x)
+
+    @staticmethod
+    def crop_skip_connection(skip_con: Tensor, shape: torch.Size) -> Tensor:
+        """
+        Function for cropping an image tensor: Given an image tensor and the new shape,
+        crops to the center pixels. Crops (H, W) dims of input tensor.
+        :param skip_con: image tensor of shape (N, C, H, W)
+        :param shape: a torch.Size object with the shape you want skip_con to have: (N, C, H_hat, W_hat)
+        :return: torch.Tensor of shape (N, C, H_hat, W_hat)
+        """
+        new_w = shape[-1]
+        start_index = math.ceil((skip_con.shape[-1] - new_w) / 2.0)
+        cropped_skip_con = skip_con[:, :, start_index:start_index + new_w, start_index:start_index + new_w]
+        return cropped_skip_con
 
 
 class FeatureMapLayer(nn.Module):
