@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 
 import torch
 import torch.nn as nn
@@ -18,7 +18,8 @@ class MUNIT(nn.Module):
 
     def __init__(self, gen_channels: int = 64, n_content_downsampling_blocks: int = 2,
                  n_style_downsampling_blocks: int = 4, n_residual_blocks: int = 4, s_dim: int = 8, h_dim: int = 256,
-                 disc_hidden_channels: int = 64, n_disc_contracting_blocks: int = 3, n_discriminators: int = 3):
+                 disc_hidden_channels: int = 64, n_disc_contracting_blocks: int = 3, n_discriminators: int = 3,
+                 lr_scheduler_type: Optional[str] = None):
         """
         MUNIT class constructor.
         :param gen_channels: number of channels in first conv layers of generators encoders
@@ -30,6 +31,7 @@ class MUNIT(nn.Module):
         :param disc_hidden_channels: number of hidden channels in PatchGAN discriminators
         :param n_disc_contracting_blocks: number of contracting blocks in PatchGAN discriminators
         :param n_discriminators: number of PatchGAN discriminators
+        :param lr_scheduler_type: if specified, optimizers use LR scheduling of given type
         """
         super().__init__()
         # Domain Generators
@@ -49,8 +51,10 @@ class MUNIT(nn.Module):
         self.gen_opt = get_adam_optimizer(self.gen_a, self.gen_b, lr=1e-2)
         self.disc_opt = get_adam_optimizer(self.disc_a, self.disc_b, lr=1e-2)
         # Optimizer LR Schedulers
-        self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt, schedule_type='on_plateau')
-        self.disc_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_opt, schedule_type='on_plateau')
+        self.lr_scheduler_type = lr_scheduler_type
+        if lr_scheduler_type is not None:
+            self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt, schedule_type=lr_scheduler_type)
+            self.disc_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_opt, schedule_type=lr_scheduler_type)
 
     def opt_zero_grad(self) -> None:
         """
@@ -71,9 +75,9 @@ class MUNIT(nn.Module):
         :return: a tuple containing: 1) Generators (joint) loss, 2) Discriminators (joint) loss, 3) Images from domain
         A with style applied from domain B and 4) the reciprocal
         """
+        # Erase previous gradients
         self.opt_zero_grad()
-
-        # In fig. 2 of MUNIT paper the sample style of domain A & B from normal distributions and use those to compute
+        # In fig. 2 of MUNIT paper, they sample style of domain A & B from normal distributions and use those to compute
         # the Autoencoder losses
         s_a = torch.randn(x_a.shape[0], self.s_dim, 1, 1, device=x_a.device).to(x_a.dtype)
         s_b = torch.randn(x_b.shape[0], self.s_dim, 1, 1, device=x_b.device).to(x_b.dtype)
@@ -97,7 +101,6 @@ class MUNIT(nn.Module):
         )
         disc_loss.backward(retain_graph=True)
         self.disc_opt.step()
-        self.disc_opt_lr_scheduler.step()
         # Update generators
         gen_loss = (
                 10 * x_a_loss + c_a_loss + s_a_loss + gen_a_adv_loss +
@@ -105,5 +108,10 @@ class MUNIT(nn.Module):
         )
         gen_loss.backward()
         self.gen_opt.step()
-        self.gen_opt_lr_scheduler.step()
+        # Update LR (if needed)
+        if self.lr_scheduler_type is not None:
+            self.disc_opt_lr_scheduler.step(metrics=disc_loss) if self.lr_scheduler_type == 'on_plateau' \
+                else self.disc_opt_lr_scheduler.step()
+            self.gen_opt_lr_scheduler.step(metrics=gen_loss) if self.lr_scheduler_type == 'on_plateau' \
+                else self.gen_opt_lr_scheduler.step()
         return gen_loss, disc_loss, x_ab, x_ba
