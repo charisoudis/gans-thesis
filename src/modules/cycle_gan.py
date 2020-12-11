@@ -1,9 +1,10 @@
-from typing import Tuple
 import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, no_grad
+from typing import Tuple, Optional
 
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
+from utils.train import get_adam_optimizer, get_optimizer_lr_scheduler
 
 
 class CycleGAN(nn.Module):
@@ -14,7 +15,8 @@ class CycleGAN(nn.Module):
     """
 
     def __init__(self, c_in: int = 3, c_out: int = 3, c_hidden_gen: int = 64, n_residual_blocks_gen: int = 9,
-                 c_hidden_disc: int = 8, n_contracting_blocks_disc: int = 4, use_spectral_norm_disc: bool = False):
+                 c_hidden_disc: int = 8, n_contracting_blocks_disc: int = 4, use_spectral_norm_disc: bool = False,
+                 lr_scheduler_type: Optional[str] = None):
         """
         CycleGAN class constructor.
         :param c_in: the number of channels to expect from a given input
@@ -24,6 +26,7 @@ class CycleGAN(nn.Module):
         :param c_hidden_disc: the number of hidden channels in discriminators
         :param n_contracting_blocks_disc: the number of contracting blocks in discriminators
         :param use_spectral_norm_disc: if use spectral_norm (to penalize weight gradients) in discriminators
+        :param lr_scheduler_type: if specified, optimizers use LR scheduling of given type
         """
         super(CycleGAN, self).__init__()
         # Domain Generators
@@ -39,8 +42,64 @@ class CycleGAN(nn.Module):
                                             n_contracting_blocks=n_contracting_blocks_disc,
                                             use_spectral_norm=use_spectral_norm_disc)
 
-    def forward(self, real_a: Tensor, real_b: Tensor) -> Tuple:
-        pass
+        # Optimizers
+        self.gen_opt = get_adam_optimizer(self.gen_a_to_b, self.gen_b_to_a, lr=1e-2)
+        self.disc_a_opt = get_adam_optimizer(self.disc_a, lr=1e-2)
+        self.disc_b_opt = get_adam_optimizer(self.disc_b, lr=1e-2)
+        # Optimizer LR Schedulers
+        self.lr_scheduler_type = lr_scheduler_type
+        if lr_scheduler_type is not None:
+            self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt, schedule_type='on_plateau')
+            self.disc_a_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_a_opt, schedule_type='on_plateau')
+            self.disc_b_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_b_opt, schedule_type='on_plateau')
+
+    def opt_zero_grad(self) -> None:
+        """
+        Erases previous gradients for all optimizers defined in this model.
+        """
+        self.disc_a_opt.zero_grad()
+        self.disc_b_opt.zero_grad()
+        self.gen_opt.zero_grad()
+
+    def forward(self, real_a: Tensor, real_b: Tensor, lambda_identity: float = 0.1, lambda_cycle: float = 10) \
+            -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """
+        Forward pass through the whole CycleGAN model.
+        :param real_a: batch of images from real dataset of domain A
+        :param real_b: batch of images from real dataset of domain B
+        :param lambda_identity: weight for identity loss in total generator loss
+        :param lambda_cycle: weight for cycle-consistency loss in total generator loss
+        :return: a tuple containing: 1) discriminator of domain A loss, 2) discriminator of domain B loss, 3) Joint
+                 generators loss, 4) fake images from generator B --> A and 5) fake images from generator A --> B
+        """
+        # Erase previous gradients
+        self.opt_zero_grad()
+        # Produce fake images for discriminators
+        with no_grad():
+            fake_a = self.gen_b_to_a(real_b)
+            fake_b = self.gen_a_to_b(real_a)
+        # Update discriminator A
+        disc_a_loss = self.disc_a.get_loss(real=real_a, fake=fake_a, criterion=nn.MSELoss())
+        disc_a_loss.backward(retain_graph=True)
+        self.disc_a_opt.step()
+        # Update discriminator B
+        disc_b_loss = self.disc_b.get_loss(real=real_b, fake=fake_b, criterion=nn.MSELoss())
+        disc_b_loss.backward(retain_graph=True)
+        self.disc_b_opt.step()
+        # Update generators
+        gen_loss, fake_a, fake_b = self.get_gen_loss(real_a, real_b, lambda_identity=lambda_identity,
+                                                     lambda_cycle=lambda_cycle)
+        gen_loss.backward()
+        self.gen_opt.step()
+        # Update LR (if needed)
+        if self.lr_scheduler_type is not None:
+            self.disc_a_opt_lr_scheduler.step(metrics=disc_a_loss) if self.lr_scheduler_type == 'on_plateau' \
+                else self.disc_a_opt_lr_scheduler.step()
+            self.disc_b_opt_lr_scheduler.step(metrics=disc_b_loss) if self.lr_scheduler_type == 'on_plateau' \
+                else self.disc_b_opt_lr_scheduler.step()
+            self.gen_opt_lr_scheduler.step(metrics=gen_loss) if self.lr_scheduler_type == 'on_plateau' \
+                else self.gen_opt_lr_scheduler.step()
+        return disc_a_loss, disc_b_loss, gen_loss, fake_a, fake_b
 
     def get_gen_loss(self, real_a: Tensor, real_b: Tensor, adv_criterion: nn.modules.Module = nn.MSELoss(),
                      identity_criterion: nn.modules.Module = nn.L1Loss(),
@@ -77,6 +136,6 @@ class CycleGAN(nn.Module):
                                                                                    cycle_criterion=cycle_criterion)
         # Total loss
         gen_loss = adversarial_loss_ab + adversarial_loss_ba \
-                   + lambda_identity * (identity_loss_ab + identity_loss_ba) \
-                   + lambda_cycle * (cycle_consistency_loss_aba + cycle_consistency_loss_bab)
+            + lambda_identity * (identity_loss_ab + identity_loss_ba) \
+            + lambda_cycle * (cycle_consistency_loss_aba + cycle_consistency_loss_bab)
         return gen_loss, fake_a, fake_b

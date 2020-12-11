@@ -6,6 +6,7 @@ from torch import Tensor
 
 from modules.discriminators.munit import MUNITDiscriminator
 from modules.generators.munit import MUNITGenerator
+from utils.train import get_adam_optimizer, get_optimizer_lr_scheduler
 
 
 class MUNIT(nn.Module):
@@ -43,6 +44,21 @@ class MUNIT(nn.Module):
                                          n_contracting_blocks=n_disc_contracting_blocks)
         self.s_dim = s_dim
 
+        # Optimizers
+        # Attention: In this version of MUNIT we jointly train both generators and jointly train both discriminators
+        self.gen_opt = get_adam_optimizer(self.gen_a, self.gen_b, lr=1e-2)
+        self.disc_opt = get_adam_optimizer(self.disc_a, self.disc_b, lr=1e-2)
+        # Optimizer LR Schedulers
+        self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt, schedule_type='on_plateau')
+        self.disc_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_opt, schedule_type='on_plateau')
+
+    def opt_zero_grad(self) -> None:
+        """
+        Erases previous gradients for all optimizers defined in this model.
+        """
+        self.disc_opt.zero_grad()
+        self.gen_opt.zero_grad()
+
     def forward(self, x_a: Tensor, x_b: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Function for completing a forward pass of MUNIT Generator + Discriminator:
@@ -55,6 +71,8 @@ class MUNIT(nn.Module):
         :return: a tuple containing: 1) Generators (joint) loss, 2) Discriminators (joint) loss, 3) Images from domain
         A with style applied from domain B and 4) the reciprocal
         """
+        self.opt_zero_grad()
+
         # In fig. 2 of MUNIT paper the sample style of domain A & B from normal distributions and use those to compute
         # the Autoencoder losses
         s_a = torch.randn(x_a.shape[0], self.s_dim, 1, 1, device=x_a.device).to(x_a.dtype)
@@ -68,12 +86,7 @@ class MUNIT(nn.Module):
         # Compute adversarial losses
         gen_a_adv_loss = self.disc_a.get_loss(x_ba, is_real=True)
         gen_b_adv_loss = self.disc_b.get_loss(x_ab, is_real=True)
-        # Sum up losses for generator
-        gen_loss = (
-                10 * x_a_loss + c_a_loss + s_a_loss + gen_a_adv_loss +
-                10 * x_b_loss + c_b_loss + s_b_loss + gen_b_adv_loss
-        )
-        # Sum up losses for discriminator
+        # Update discriminators
         disc_loss = (
             # Discriminator for domain A
             self.disc_a.get_loss(x_ba.detach(), is_real=False) +
@@ -82,4 +95,15 @@ class MUNIT(nn.Module):
             self.disc_b.get_loss(x_ab.detach(), is_real=False) +
             self.disc_b.get_loss(x_b.detach(), is_real=True)
         )
+        disc_loss.backward(retain_graph=True)
+        self.disc_opt.step()
+        self.disc_opt_lr_scheduler.step()
+        # Update generators
+        gen_loss = (
+                10 * x_a_loss + c_a_loss + s_a_loss + gen_a_adv_loss +
+                10 * x_b_loss + c_b_loss + s_b_loss + gen_b_adv_loss
+        )
+        gen_loss.backward()
+        self.gen_opt.step()
+        self.gen_opt_lr_scheduler.step()
         return gen_loss, disc_loss, x_ab, x_ba

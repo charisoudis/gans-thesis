@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
+from typing import Optional
+
 from modules.partial.encoding import ContractingBlock
 from modules.partial.decoding import FeatureMapLayer, ChannelsProjectLayer
 
@@ -33,7 +35,7 @@ class PatchGANDiscriminator(nn.Module):
             ChannelsProjectLayer(c_hidden * 2 ** n_contracting_blocks, 1, use_spectral_norm=use_spectral_norm)
         )
 
-    def forward(self, x: Tensor, y: Tensor = None) -> Tensor:
+    def forward(self, x: Tensor, y: Optional[Tensor] = None) -> Tensor:
         """
         Function for completing a forward pass of PatchGANDiscriminator:
         Given an image tensor, returns a 2D matrix of realness probabilities for each image's "patches".

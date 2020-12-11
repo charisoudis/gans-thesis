@@ -44,8 +44,5 @@ def main():
 
 
 if __name__ == '__main__':
-    # args = cli_parse()
-    # main()
-
-    cg = CycleGAN()
-    get_total_params(cg, print_table=True, sort_desc=True)
+    args = cli_parse()
+    main()
