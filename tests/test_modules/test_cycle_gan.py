@@ -8,8 +8,8 @@ class TestCycleGAN(unittest.TestCase):
 
     def setUp(self) -> None:
         self.test_cycle_gan = CycleGAN(c_in=1, c_out=1, lr_scheduler_type='on_plateau')
-        self.test_real_a = torch.randn(8, 1, 256, 256)
-        self.test_real_b = torch.randn(8, 1, 256, 256)
+        self.test_real_a = torch.randn(1, 1, 256, 256)
+        self.test_real_b = torch.randn(1, 1, 256, 256)
 
     def test_forward(self) -> None:
         disc_a_loss, disc_b_loss, gen_loss, fake_a, fake_b = \

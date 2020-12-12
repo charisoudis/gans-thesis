@@ -5,6 +5,7 @@ from modules.discriminators.cycle_gan import CycleGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
 from modules.cycle_gan import CycleGAN
 from utils.command_line_logger import CommandLineLogger
+from utils.data import deep_fashion_icrb_info
 from utils.pytorch import get_total_params
 
 
@@ -44,5 +45,8 @@ def main():
 
 
 if __name__ == '__main__':
-    args = cli_parse()
-    main()
+    # args = cli_parse()
+    # main()
+
+    # deep_fashion_icrb_info(deep_fashion_root_dir='/data/Datasets/DeepFashion', use_json=True, print_dict=True)
+    pass
