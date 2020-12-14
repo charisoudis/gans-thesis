@@ -1,12 +1,16 @@
 import argparse
+import math
+
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
+from torch.utils.data import random_split
+from torchvision.transforms import transforms
+
+from dataset.deep_fashion import InShopClothesRetrievalBenchmarkDataset
 from modules.discriminators.cycle_gan import CycleGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
-from modules.cycle_gan import CycleGAN
 from utils.command_line_logger import CommandLineLogger
-from utils.data import deep_fashion_icrb_info
-from utils.pytorch import get_total_params
 
 
 def cli_parse() -> argparse:
@@ -44,9 +48,30 @@ def main():
     logger.debug(torch.cuda.get_device_capability(device=0).__str__())
 
 
+def preview_icrb_images():
+    dataset = InShopClothesRetrievalBenchmarkDataset(image_transforms=transforms.Compose([transforms.ToTensor()]))
+    dataset_len = len(dataset)
+
+    # Get splits
+    split_lengths = [math.floor(dataset_len * 0.9), math.ceil(dataset_len * 0.1)]
+    train_set, test_set = random_split(dataset, lengths=split_lengths, generator=torch.Generator().manual_seed(42))
+    dataset.logger.info(f'len(train_set) = {len(train_set)} | len(test_set) = {len(test_set)}')
+
+    # Check a pair of both
+    train_pair_img_1, train_pair_img_2 = train_set[1234]
+    test_pair_img_1, test_pair_img_2 = test_set[1234]
+    dataset.logger.info(f'train_set[1234] = {str((train_pair_img_1.shape, train_pair_img_2.shape))}')
+    dataset.logger.info(f'test_set[1234] = {str((test_pair_img_1.shape, test_pair_img_2.shape))}')
+
+    plt.imshow(torch.cat((train_pair_img_1, train_pair_img_2), dim=2).permute(1, 2, 0))
+    plt.show()
+    plt.imshow(torch.cat((test_pair_img_1, test_pair_img_2), dim=2).permute(1, 2, 0))
+    plt.show()
+
+
 if __name__ == '__main__':
     # args = cli_parse()
     # main()
 
-    # deep_fashion_icrb_info(deep_fashion_root_dir='/data/Datasets/DeepFashion', use_json=True, print_dict=True)
+    preview_icrb_images()
     pass

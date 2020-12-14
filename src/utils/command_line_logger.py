@@ -1,4 +1,5 @@
 import logging
+
 from colorlog import ColoredFormatter
 
 
@@ -64,21 +65,21 @@ class CommandLineLogger:
         self._logger.addHandler(self._stream)
 
     def info(self, message: str, *args, **kwargs):
-        self.log_level = 'info'
+        # self.log_level = 'info'
         return self.logger.info(message, *args, **kwargs)
 
     def debug(self, message: str, *args, **kwargs):
-        self.log_level = 'debug'
+        # self.log_level = 'debug'
         return self.logger.debug(message, *args, **kwargs)
 
     def warning(self, message: str, *args, **kwargs):
-        self.log_level = 'warning'
+        # self.log_level = 'warning'
         return self.logger.warning(message, *args, **kwargs)
 
     def error(self, message: str, *args, **kwargs):
-        self.log_level = 'error'
+        # self.log_level = 'error'
         return self.logger.error(message, *args, **kwargs)
 
     def critical(self, message: str, *args, **kwargs):
-        self.log_level = 'critical'
+        # self.log_level = 'critical'
         return self.logger.critical(message, *args, **kwargs)

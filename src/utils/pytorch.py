@@ -1,18 +1,6 @@
-import humanize
 from torch.nn import Module
 
-
-def to_human_readable(number: int, size_format: str = '%.1f') -> str:
-    """
-    Convert input number to a human-readable string (e.g. 15120 --> 15K)
-    :param number: the input integer
-    :param size_format: format argument of humanize.naturalsize()
-    :return: human-readable formatted string
-    """
-    string = humanize.naturalsize(number, format=size_format)
-    string = string.replace('.0', '').replace('Byte', '').replace('kB', 'K').rstrip('Bs').replace(' ', '')
-    string = string.replace('G', 'B')   # billions
-    return string
+from utils.string import to_human_readable
 
 
 def get_total_params(model: Module, print_table: bool = False, sort_desc: bool = False) -> int or None:

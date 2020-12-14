@@ -3,10 +3,10 @@ import os
 from typing import Optional, Tuple
 
 import torch
+from PIL import Image
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from PIL import Image
 
 
 class ImageToImageDataset(Dataset):
@@ -83,4 +83,4 @@ class ImageToImageDataloader(DataLoader):
         :param args: argument list for torch.utils.data.Dataloader constructor
         """
         super(ImageToImageDataloader, self).__init__(dataset=ImageToImageDataset(root_dir, image_transforms, mode),
-                                                     batch_size=batch_size, *args)
+                                                     batch_size=batch_size, shuffle=True, *args)
