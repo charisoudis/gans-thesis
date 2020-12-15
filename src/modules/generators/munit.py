@@ -227,7 +227,8 @@ class MUNITGenerator(nn.Module):
     # --------> Generator Losses <-------- #
     ########################################
 
-    def ae_image_recon_loss(self, x: Tensor, criterion: nn.modules.Module = nn.L1Loss()) -> Tuple[Tensor, Tensor, Tensor]:
+    def ae_image_recon_loss(self, x: Tensor, criterion: nn.modules.Module = nn.L1Loss()) \
+            -> Tuple[Tensor, Tensor, Tensor]:
         """
         Autoencoder image reconstruction loss.
         :param x: input to encoders
