@@ -15,7 +15,8 @@ def get_total_params(model: Module, print_table: bool = False, sort_desc: bool =
     total_count = 0
     count_dict = []
     for name, parameter in model.named_parameters():
-        if not parameter.requires_grad: continue
+        if not parameter.requires_grad:
+            continue
         count = parameter.numel()
         count_dict.append({
             'name': name,

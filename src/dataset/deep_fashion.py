@@ -544,4 +544,3 @@ class InShopClothesRetrievalBenchmarkScraper:
             assert scraper.__class__.test_backward()
             scraper.logger.info('backward(): [DONE]')
         scraper.logger.info('[DONE]')
-
