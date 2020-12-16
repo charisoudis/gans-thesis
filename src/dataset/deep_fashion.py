@@ -1,11 +1,12 @@
 import json
 import os
 import shutil
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import click
 from PIL import Image
 from torch import Tensor
+# noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from tqdm import tqdm
@@ -23,12 +24,13 @@ class InShopClothesRetrievalBenchmarkDataset(Dataset):
     """
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 image_transforms: Optional[transforms.Compose] = None, hq: bool = False):
+                 image_transforms: Optional[transforms.Compose] = None, pose: bool = False, hq: bool = False):
         """
         InShopClothesRetrievalBenchmarkDataset class constructor.
         :param root: the root directory where all image files exist
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
-        :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
+        :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
+        :param pose: set to True to have __getitem__ return target pose image as well
         """
         super(InShopClothesRetrievalBenchmarkDataset, self).__init__()
         self.logger = CommandLineLogger(log_level='info')
@@ -47,16 +49,19 @@ class InShopClothesRetrievalBenchmarkDataset(Dataset):
         self.real_pairs_count = self.items_info["image_pairs_count"]
         self.total_pairs_count = self.real_pairs_count * 2  # 2nd pair by exchanging images at input/output of the model
         self.total_images_count = self.items_info["images_count"]
-        self.logger.info(f'Found {to_human_readable(self.total_pairs_count)} image pairs from a total of '
-                         f'{to_human_readable(self.total_images_count)} images in benchmark')
+        self.logger.debug(f'Found {to_human_readable(self.total_pairs_count)} image pairs from a total of' +
+                          f' {to_human_readable(self.total_images_count)} images in benchmark')
         # Save transforms
         self.transforms = image_transforms
+        # Save pose switch
+        self.pose = pose
 
-    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
+    def index_to_paths(self, index: int) -> Union[Tuple[str, str], Tuple[str, str, str, str]]:
         """
-        Implements abstract Dataset::__getitem__() method.
-        :param index: integer with the current image index that we want to read from disk
-        :return: a tuple containing the images from domain A and B, each as a torch.Tensor object
+        Given a image-pair index it returns the file paths of the pair's images.
+        :param index: image-pair's index
+        :return: a tuple containing (image_1_path, image_2_path) if pose is set to False, a tuple containing
+                 (image_1_path, pose_1_path, image_2_path, pose_2_path) otherwise. All file paths are absolute.
         """
         _real_index = index % self.real_pairs_count
         _swap = _real_index == index
@@ -64,17 +69,32 @@ class InShopClothesRetrievalBenchmarkDataset(Dataset):
         image_1_path, image_2_path = self.items_info['image_pairs'][_real_index]
         if _swap:
             image_1_path, image_2_path = image_2_path, image_1_path
+
+        return (f'{self.img_dir_path}/{image_1_path}', f'{self.img_dir_path}/{image_2_path}') if not self.pose else (
+            f'{self.img_dir_path}/{image_1_path}', f'{self.img_dir_path}/{image_1_path.replace(".jpg", "_IUV.png")}',
+            f'{self.img_dir_path}/{image_2_path}', f'{self.img_dir_path}/{image_2_path.replace(".jpg", "_IUV.png")}'
+        )
+
+    def __getitem__(self, index: int) -> Union[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]]:
+        """
+        Implements abstract Dataset::__getitem__() method.
+        :param index: integer with the current image index that we want to read from disk
+        :return: a tuple containing the images from domain A and B, each as a torch.Tensor object
+        """
+        paths_tuple = self.index_to_paths(index)
         # Fetch images
-        image_1 = Image.open(f'{self.img_dir_path}/{image_1_path}')
-        image_2 = Image.open(f'{self.img_dir_path}/{image_2_path}')
+        image_1 = Image.open(paths_tuple[0])
+        image_2 = Image.open(paths_tuple[1] if not self.pose else paths_tuple[2])
+        target_pose_2 = None if not self.pose else Image.open(paths_tuple[3])
         # Apply transforms
         image_1 = self.transforms(image_1)
         image_2 = self.transforms(image_2)
+        target_pose_2 = None if not self.pose else self.transforms(target_pose_2)
         # if image_1.shape[0] != 3:
         #     image_1 = image_1.repeat(3, 1, 1)
         # if image_2.shape[0] != 3:
         #     image_2 = image_2.repeat(3, 1, 1)
-        return image_1, image_2
+        return (image_1, image_2) if not self.pose else (image_1, image_2, target_pose_2)
 
     def __len__(self) -> int:
         """
@@ -143,7 +163,7 @@ class InShopClothesRetrievalBenchmarkScraper:
         self.logger.info(f'total_items = {self.items_count}')
 
     @staticmethod
-    def is_posable(test_image: str, group_images: list, group_prefix: str, item_root_path: str, ) -> bool:
+    def is_posable(test_image: str, item_root_path: Optional[str] = None) -> bool:
         # Possible pose keys: 'front' (1), 'side' (2), 'back' (3), 'full' (4), 'additional' (1-4 or 5), 'flat' (6)
         # where the number in the parentheses denotes the pose annotations:
         #   1: frontal view
@@ -155,20 +175,24 @@ class InShopClothesRetrievalBenchmarkScraper:
         pose_key = test_image.split('_')[-1].replace('.jpg', '')
         if 'flat' == pose_key:
             return False
-        if pose_key in ['front', 'side', 'back', 'full', 'additional']:
-            return True
 
-        """
-        Check *_additional.jpg:
-                      (0,41)  ---  (0,215)
-                        |            |
-                        |            |
-                    (255,41) --- (255,215)
-        Check for a slice of 2px around this border (this is the border of the real image) and compare this slice with 
-        the corresponding slices from 2 images from group that we know for sure that there exists human model in (e.g
-        from *_front.jpg & *_side.jpg, or from *_front.jpg & *_back.jpg)
-        """
-        # TODO
+        if pose_key in ['front', 'side', 'back', 'full', 'additional']:
+            return os.path.exists(f'{item_root_path}/{test_image.replace(".jpg", "_IUV.png")}')
+
+        # if pose_key == 'additional':
+        #     if not group_images:
+        #         # no group images provided, assume *_additional.jpg contains human (so as to have more pairs)
+        #         return True
+        #
+        #     """
+        #     Check *_additional.jpg:
+        #                   (0,41)  ---  (0,215)
+        #                     |            |
+        #                     |            |
+        #                 (255,41) --- (255,215)
+        #     Check for a slice of 2px around this border (this is the border of the real image) and compare this slice
+        #     with the corresponding slices from 2 images from group that we know for sure that there exists human model
+        #     in (e.g from *_front.jpg & *_side.jpg, or from *_front.jpg & *_back.jpg)
 
         return False
 
@@ -207,7 +231,7 @@ class InShopClothesRetrievalBenchmarkScraper:
         _to_delete_keys = []
         for group_prefix, group_images in item_image_groups.items():
             posable_images = [_image for _image in group_images
-                              if self.__class__.is_posable(_image, group_images, group_prefix, item_path_abs)]
+                              if self.__class__.is_posable(f'{group_prefix}_{_image}', item_path_abs)]
             if len(posable_images) < 2:
                 # Remove group if yields no posable image pairs
                 _to_delete_keys.append(group_prefix)
@@ -457,11 +481,15 @@ class InShopClothesRetrievalBenchmarkScraper:
 
                     _src_dir = _dir_info['path']
                     for _file in _dir_info['images']:
-                        if os.path.exists(f"{_target_dir}/{_file}"):
-                            continue
+                        if not os.path.exists(f"{_target_dir}/{_file}"):
+                            self.logger.debug(f'Copying file: {_src_dir}/{_file} --> {_target_dir}/{_file}')
+                            shutil.copy(f"{_src_dir}/{_file}", _target_dir)
 
-                        self.logger.debug(f'Copying file: {_src_dir}/{_file} --> {_target_dir}/{_file}')
-                        shutil.copy(os.path.join(_src_dir, _file), _target_dir)
+                        _pose_file = _file.replace('.jpg', '_IUV.png')
+                        if os.path.exists(f"{_src_dir}/{_pose_file}") \
+                                and not os.path.exists(f"{_target_dir}/{_pose_file}"):
+                            self.logger.debug(f'Copying file: {_src_dir}/{_pose_file} --> {_target_dir}/{_pose_file}')
+                            shutil.copy(f"{_src_dir}/{_pose_file}", _target_dir)
 
                     # Stamp src dir as duplicate
                     with open(f'{_src_dir}/.duplicate', 'w') as dup_fp:
@@ -490,7 +518,7 @@ class InShopClothesRetrievalBenchmarkScraper:
                     _to_delete_keys = []
                     for group_prefix, group_images in item_image_groups.items():
                         posable_images = [_image for _image in group_images
-                                          if self.__class__.is_posable(_image, group_images, group_prefix, _root)]
+                                          if self.__class__.is_posable(f'{group_prefix}_{_image}', _root)]
                         if len(posable_images) < 2:
                             # Remove group if yields no posable image pairs
                             _to_delete_keys.append(group_prefix)
@@ -508,13 +536,74 @@ class InShopClothesRetrievalBenchmarkScraper:
 
                     progress_bar.update()
 
-    @staticmethod
-    def test_forward() -> bool:
-        return True
+    def test_forward(self) -> bool:
+        """
+        Tests forward pass by re-visiting every directory and checking for information found in *_info.json files.
+        :return: True if everything looks good, False if any error occurs
+        """
+        _result = True
+        with tqdm(total=self.items_count + 100, colour='yellow') as progress_bar:
+            for _root, _dirs, _files in os.walk(self.img_dir_path):
+                if len(_files) > 0 and _files != ['items_info.json'] and _files != ['item_info.json']:
+                    # Check if every POSABLE image has its corresponding pose image
+                    _jpg_files = [_f for _f in _files if _f.endswith('.jpg') and self.__class__.is_posable(_f, _root)]
+                    _jpg_count = len(_jpg_files)
+                    _pose_files = [_f for _f in _files if _f.endswith('IUV.png')]
+                    _pose_count = len(_pose_files)
+                    if len(_jpg_files) != len(_pose_files):
+                        if _jpg_count > _pose_count:
+                            self.logger.critical(f'Found {_jpg_count} JPG files but only {_pose_count} PNG' +
+                                                 f' (id_dir={_root})')
+                        else:
+                            self.logger.critical(f'Found {_pose_count} PNG files but only {_jpg_count} JPG' +
+                                                 f' (id_dir={_root})')
+                        _result = False
+                    # Check items.info
+                    if os.path.basename(_root).startswith('id_'):
+                        if not os.path.exists(f'{_root}/item_info.json') and not (
+                                os.path.exists(f'{_root}/.skip') or os.path.exists(f'{_root}/.duplicate')):
+                            self.logger.critical(f'_root.startswith("id_"), len(_files) = {len(_files)} but no' +
+                                                 f' "item_info.json" (id_dir={_root})')
+                            _result = False
+                        else:
+                            # Check JSON
+                            with open(f'{_root}/item_info.json') as fp:
+                                item_info = json.load(fp)
 
-    @staticmethod
-    def test_backward() -> bool:
-        return True
+                            if item_info['id'] != int(os.path.basename(_root).replace('id_', '')):
+                                self.logger.critical(f'item_info.id mismatch ({item_info["id"]}, id_dir={_root})')
+                                _result = False
+                            elif item_info['path'] != _root.replace(self.img_dir_path, ''):
+                                self.logger.critical(f'item_info.path mismatch ({item_info["path"]}, id_dir={_root})')
+                                _result = False
+                            elif item_info['images_count_initial'] != len([_f for _f in _files if _f.endswith('.jpg')]):
+                                self.logger.critical(f'item_info.images_count_initial mismatch' +
+                                                     f' ({item_info["images_count_initial"]}, id_dir={_root})')
+                                _result = False
+                if os.path.basename(_root).startswith('id_'):
+                    if len(_files) == 0:
+                        self.logger.critical(f'len(_files) = 0 in id root (id_dir={_root}')
+                        _result = False
+                    elif len(_files) == 1:
+                        self.logger.critical(f'len(_files) = 1 in id root (id_dir={_root}')
+                        _result = False
+                    progress_bar.update()
+        return _result
+
+    def test_backward(self) -> bool:
+        """
+        Tests backward pass by re-visiting every non ID directory and checking for items_info.json file existence.
+        :return: True if everything looks good, False if any error occurs
+        """
+        _result = True
+        with tqdm(total=25, colour='yellow') as progress_bar:
+            for _root, _dirs, _files in os.walk(self.img_dir_path):
+                if not os.path.basename(_root).startswith('id_') and not os.path.exists(f'{_root}/items_info.json'):
+                    self.logger.critical(f'_root.startswith("id_")=False but "items_info.json" not found' +
+                                         f' (_root={_root}')
+                    _result = False
+                    progress_bar.update()
+        return _result
 
     @staticmethod
     def run(forward_pass: bool = True, backward_pass: bool = True, hq: bool = False) -> None:
@@ -526,6 +615,7 @@ class InShopClothesRetrievalBenchmarkScraper:
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         """
         scraper = InShopClothesRetrievalBenchmarkScraper(hq=hq)
+        scraper.logger.info(f'SCRAPE DIR = {scraper.img_dir_path}')
         scraper.logger.info('resolve_duplicate_items(): [STARTING...]')
         scraper.resolve_duplicate_items()
         scraper.logger.info(f'resolve_duplicate_items(): [DONE]')
@@ -535,12 +625,17 @@ class InShopClothesRetrievalBenchmarkScraper:
         if forward_pass:
             scraper.logger.info('forward(): [STARTING...]')
             scraper.forward()
-            assert scraper.__class__.test_forward()
+            # assert scraper.test_forward()
             scraper.logger.info('forward(): [DONE]')
             backward_pass = True
         if backward_pass:
             scraper.logger.info('backward(): [STARTING...]')
             scraper.backward()
-            assert scraper.__class__.test_backward()
+            # assert scraper.test_backward()
             scraper.logger.info('backward(): [DONE]')
         scraper.logger.info('[DONE]')
+
+
+if __name__ == '__main__':
+    InShopClothesRetrievalBenchmarkScraper.run(forward_pass=True, backward_pass=True, hq=False)
+    # InShopClothesRetrievalBenchmarkScraper.run(forward_pass=True, backward_pass=True, hq=True)

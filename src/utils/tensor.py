@@ -1,9 +1,9 @@
 import numpy as np
 import torch
+from PIL import Image
 from matplotlib import pyplot as plt
 from torch import Tensor
-from PIL import Image
-from torchvision.utils import make_grid
+from torchvision.utils import make_grid, save_image
 
 
 def array_to_image(array: np.ndarray) -> Image:
@@ -36,6 +36,18 @@ def array_to_tensor(array: np.ndarray, tensor_type: str = 'float32') -> Tensor:
     :return: torch.Tensor object
     """
     return torch.from_numpy(np.transpose(array.astype(tensor_type), (2, 0, 1)))
+
+
+def save_tensor_to_image_file(tensor: Tensor, filename: str = 'tensor_to_image.jpg') -> None:
+    """
+    Saves given tensor to a file named after $filename.
+    :param tensor: input tensor as 3D or 4D torch.Tensor object
+    :param filename: output file name
+    """
+    if len(tuple(tensor.shape)) > 3:
+        tensor = tensor[0]
+
+    save_image(tensor, filename)
 
 
 def show_tensor_images(x_real, x_fake):
