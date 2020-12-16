@@ -1,4 +1,5 @@
 import unittest
+
 import torch
 
 from modules.discriminators.patch_gan import PatchGANDiscriminator
@@ -32,4 +33,3 @@ class TestCycleGANGenerator(unittest.TestCase):
         cycle_consistency_loss, cycle_y = self.test_gen.get_cycle_consistency_loss(fake_x=self.x, real_y=self.x)
         self.assertEqual(tuple(cycle_consistency_loss.shape), ())
         self.assertEqual(tuple(cycle_y.shape), tuple(self.x.shape))
-

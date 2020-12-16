@@ -114,4 +114,7 @@ class MUNIT(nn.Module):
                 else self.disc_opt_lr_scheduler.step()
             self.gen_opt_lr_scheduler.step(metrics=gen_loss) if self.lr_scheduler_type == 'on_plateau' \
                 else self.gen_opt_lr_scheduler.step()
+
+        assert isinstance(gen_loss, Tensor)
+        assert isinstance(disc_loss, Tensor)
         return gen_loss, disc_loss, x_ab, x_ba

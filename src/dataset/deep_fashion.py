@@ -638,4 +638,3 @@ class InShopClothesRetrievalBenchmarkScraper:
 
 if __name__ == '__main__':
     InShopClothesRetrievalBenchmarkScraper.run(forward_pass=True, backward_pass=True, hq=False)
-    # InShopClothesRetrievalBenchmarkScraper.run(forward_pass=True, backward_pass=True, hq=True)

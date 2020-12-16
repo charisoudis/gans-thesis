@@ -1,6 +1,6 @@
-import unittest
 import os
 import shutil
+import unittest
 
 from utils.data import count_dirs, count_files
 
@@ -22,33 +22,28 @@ class TestDataUtils(unittest.TestCase):
         os.mkdir(f'{self.test_dir}/dir_2/dir_2_3')
 
         # The 1st dir will have 1 file inside the root and 2 files inside each of its sub-dirs
-        with open(f'{self.test_dir}/dir_1/file_1.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_1/dir_1_1/file_1.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_1/dir_1_1/file_2.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_1/dir_1_2/file_1.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_1/dir_1_2/file_2.txt', 'w'):
-            pass
+        dir_1_file_paths = (
+            'dir_1/file_1.txt',
+            'dir_1/dir_1_1/file_1.txt',
+            'dir_1/dir_1_1/file_2.txt',
+            'dir_1/dir_1_2/file_1.txt',
+            'dir_1/dir_1_2/file_2.txt',
+        )
+        for _filepath in dir_1_file_paths:
+            open(f'{self.test_dir}/{_filepath}', 'w').close()
         # The 2nd dir will have 2 files inside the root and (1,3,2) files inside each of its sub-dirs
-        with open(f'{self.test_dir}/dir_2/file_1.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_2/file_2.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_2/dir_2_1/file_1.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_2/dir_2_2/file_1.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_2/dir_2_2/file_2.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_2/dir_2_2/file_3.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_2/dir_2_3/file_1.txt', 'w'):
-            pass
-        with open(f'{self.test_dir}/dir_2/dir_2_3/file_2.txt', 'w'):
-            pass
+        dir_2_file_paths = (
+            'dir_2/file_1.txt',
+            'dir_2/file_2.txt',
+            'dir_2/dir_2_1/file_1.txt',
+            'dir_2/dir_2_2/file_1.txt',
+            'dir_2/dir_2_2/file_2.txt',
+            'dir_2/dir_2_2/file_3.txt',
+            'dir_2/dir_2_3/file_1.txt',
+            'dir_2/dir_2_3/file_2.txt',
+        )
+        for _filepath in dir_2_file_paths:
+            open(f'{self.test_dir}/{_filepath}', 'w').close()
 
     def test_count_dirs(self):
         self.assertEqual(2, count_dirs(self.test_dir))

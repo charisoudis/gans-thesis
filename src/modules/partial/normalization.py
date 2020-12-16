@@ -27,7 +27,9 @@ class PixelNormalizationLayer(nn.Module):
         :param x: image tensor of shape (N, C_in, H, W)
         :return: transformed image tensor of shape (N, 1, H, W)
         """
-        return x / (torch.mean(x ** 2, dim=1, keepdim=True) + self.eps) ** 0.5
+        x_norm = x / (torch.mean(x ** 2, dim=1, keepdim=True) + self.eps) ** 0.5
+        assert isinstance(x_norm, Tensor)
+        return x_norm
 
 
 class AdaptiveInstanceNorm2d(nn.Module):

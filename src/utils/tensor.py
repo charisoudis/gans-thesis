@@ -54,6 +54,7 @@ def show_tensor_images(x_real, x_fake):
     """ For visualizing images """
     image_tensor = torch.cat((x_fake[:1, ...], x_real[:1, ...]), dim=0)
     image_tensor = (image_tensor + 1) / 2
+    assert isinstance(image_tensor, Tensor)
     image_unflat = image_tensor.detach().cpu()
     image_grid = make_grid(image_unflat, nrow=1)
     plt.imshow(image_grid.permute(1, 2, 0).squeeze())

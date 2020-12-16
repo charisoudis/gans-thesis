@@ -1,5 +1,7 @@
 import unittest
+
 import torch
+
 from modules.generators.munit import MUNITGenerator
 
 
@@ -33,4 +35,3 @@ class TestMUNIT(unittest.TestCase):
         self.assertEqual(tuple(content_recon_loss.shape), ())
         self.assertEqual(tuple(style_recon_loss.shape), ())
         self.assertEqual(tuple(x_hat.shape), tuple(self.x.shape))
-
