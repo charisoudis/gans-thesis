@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 
+import numpy as np
 import torch
 from torchvision.transforms import transforms
 
@@ -27,7 +28,7 @@ class TestInShopClothesRetrievalBenchmarkDataset(unittest.TestCase):
         self.assertEqual(self.items_info['image_pairs_count'], len(self.dataset) // 2)
 
     def test_index_to_paths(self):
-        for _index in range(len(self.dataset) // 2):
+        for _index in np.random.choice(range(len(self.dataset) // 2), 1000):
             self.dataset.pose = False
             image_1_path, image_2_path = self.dataset.index_to_paths(_index)
             self.assertTrue(os.path.exists(image_1_path), msg=f'image_1_path={image_1_path} does NOT exist')
@@ -40,11 +41,20 @@ class TestInShopClothesRetrievalBenchmarkDataset(unittest.TestCase):
             self.assertTrue(os.path.exists(pose_2_path), msg=f'pose_2_path={pose_2_path} does NOT exist')
 
     def test_getitem(self):
-        for _index in range(len(self.dataset) // 2):
+        for _index in np.random.choice(range(len(self.dataset)), 1000):
             self.dataset.pose = False
             image_1, image_2 = self.dataset[_index]
             self.assertEqual(tuple(image_1.shape), (3, 256, 256), msg=f'image_1.shape={tuple(image_1.shape)}')
             self.assertEqual(tuple(image_2.shape), (3, 256, 256), msg=f'image_2.shape={tuple(image_2.shape)}')
+            # Check reverse pair
+            if _index >= len(self.dataset) // 2:
+                _index_rev = _index - len(self.dataset) // 2
+            else:
+                _index_rev = _index + len(self.dataset) // 2
+            image_1_rev, image_2_rev = self.dataset[_index_rev]
+            self.assertTrue(torch.all(image_1_rev.eq(image_2)))
+            self.assertTrue(torch.all(image_2_rev.eq(image_1)))
+
             self.dataset.pose = True
             tensors_tuple = self.dataset[_index]
             self.assertEqual(len(tensors_tuple), 3)
@@ -55,3 +65,8 @@ class TestInShopClothesRetrievalBenchmarkDataset(unittest.TestCase):
                              msg=f'tensors_tuple[0].shape={tuple(tensors_tuple[1].shape)}')
             self.assertEqual(tuple(tensors_tuple[2].shape), (3, 256, 256),
                              msg=f'tensors_tuple[2].shape={tuple(tensors_tuple[2].shape)}')
+            # Check reverse pair
+            image_1_rev, image_2_rev, target_2_rev = self.dataset[_index_rev]
+            self.assertTrue(torch.all(image_2_rev.eq(tensors_tuple[0])))
+            self.assertTrue(torch.all(image_1_rev.eq(tensors_tuple[1])))
+            self.assertFalse(torch.all(target_2_rev.eq(tensors_tuple[2])))
