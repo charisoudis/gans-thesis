@@ -1,6 +1,6 @@
 # Created from pipreqs (command: "pipreqs .")
 click>=7.1.2
-torch>=1.7.1
+torch>=1.7.0
 torchvision>=0.8.2
 humanize>=3.1.0
 matplotlib>=3.3.1
