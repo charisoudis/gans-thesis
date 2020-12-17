@@ -37,7 +37,7 @@ def list_diff(l1: list, l2: list) -> List:
     return [_i for _i in l1 + l2 if _i not in l1 or _i not in l2]
 
 
-def join_lists(*lists: List[list], map_fn: Optional = None) -> list:
+def join_lists(*lists: list, map_fn: Optional = None) -> list:
     """
     Joins a list of list objects by "appending" all together.
     :param lists: variable length argument list containing input lists (ex. call: join_lists(list1, list2, list3))
