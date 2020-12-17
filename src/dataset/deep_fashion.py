@@ -33,6 +33,9 @@ class ICRBDataset(Dataset):
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         """
         super(ICRBDataset, self).__init__()
+        # Test if running inside Colab
+        if root.startswith('/data') and os.path.exists('/content'):
+            root = f'/content/{root}'
         self.logger = CommandLineLogger(log_level='info')
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_info.json'
@@ -109,6 +112,9 @@ class ICRBCrossPoseDataset(Dataset):
                      an image pair without target pose for the second image in pair
         """
         super(ICRBCrossPoseDataset, self).__init__()
+        # Test if running inside Colab
+        if root.startswith('/data') and os.path.exists('/content'):
+            root = f'/content/{root}'
         self.logger = CommandLineLogger(log_level='info')
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_posable_info.json'
@@ -235,6 +241,9 @@ class ICRBScraper:
         :param root: DeepFashion benchmark's root directory path
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         """
+        # Test if running inside Colab
+        if root.startswith('/data') and os.path.exists('/content'):
+            root = f'/content/{root}'
         self.logger = CommandLineLogger(log_level='info')
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
 
