@@ -1,12 +1,13 @@
 # Created from pipreqs (command: "pipreqs .")
-click==7.1.2
-torch==1.7.1
-humanize==3.1.0
-matplotlib==3.3.1
-colorlog==4.4.0
-prettytable==2.0.0
-requests==2.24.0
-torchvision==0.8.2
-tqdm==4.50.2
-numpy==1.19.1
-Pillow==8.0.1
+click>=7.1.2
+torch>=1.7.1
+torchvision>=0.8.2
+humanize>=3.1.0
+matplotlib>=3.3.1
+colorlog>=4.4.0
+prettytable>=2.0.0
+requests>=2.24.0
+torchvision>=0.8.2
+tqdm>=4.50.2
+numpy>=1.19.1
+Pillow>=8.0.1
