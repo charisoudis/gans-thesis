@@ -7,7 +7,6 @@ matplotlib
 colorlog>=4.4.0
 prettytable>=2.0.0
 requests>=2.24.0
-torchvision>=0.8.2
 tqdm>=4.50.2
 numpy>=1.19.1
 Pillow
