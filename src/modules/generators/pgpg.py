@@ -1,6 +1,13 @@
-from torch import nn, Tensor
+from typing import Tuple
 
+import torch
+from torch import nn, Tensor
+from torchvision.transforms import transforms
+
+from dataset.deep_fashion import ICRBCrossPoseDataloader
+from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.unet import UNETWithSkipConnections
+from utils.tensor import save_tensor_to_image_file
 
 
 class PGPGGenerator1(UNETWithSkipConnections):
@@ -9,7 +16,8 @@ class PGPGGenerator1(UNETWithSkipConnections):
     This class implements the G1 generator network from the PGPG paper ("Pose Guided Person Image Generation").
     """
 
-    def __init__(self, c_in, c_out, c_hidden: int = 32, c_bottleneck_down: int = 10, w_in: int = 256, h_in: int = 256):
+    def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, c_bottleneck_down: int = 10, w_in: int = 256,
+                 h_in: int = 256):
         """
         PGPGGenerator1 class constructor.
         :param c_in: the number of channels to expect from a given input
@@ -31,7 +39,8 @@ class PGPGGenerator2(UNETWithSkipConnections):
     This class implements the G2 generator network from the PGPG paper ("Pose Guided Person Image Generation").
     """
 
-    def __init__(self, c_in, c_out, c_hidden: int = 32, n_contracting_blocks: int = 6, use_dropout: bool = True):
+    def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, n_contracting_blocks: int = 6,
+                 use_dropout: bool = True):
         """
         PGPGGenerator2 class constructor.
         :param c_in: the number of channels to expect from a given input
@@ -46,13 +55,79 @@ class PGPGGenerator2(UNETWithSkipConnections):
 
 
 class PGPGGenerator(nn.Module):
-    # TODO: implement whole (2-stage) PGPG generator module
+    """
+    PGPGGenerator Class:
+    This class implements the whole (2-stage) PGPG generator network similar to the one found in the PGPG paper ("Pose
+    Guided Person Image Generation").
+    """
 
-    def __init__(self):
+    def __init__(self, c_in: int, c_out: int, w_in: int = 256, h_in: int = 256):
+        """
+        PGPGGenerator class constructor:
+        :param c_in: the number of channels to expect from a given input (image's channels + pose maps' channels)
+        :param c_out: the number of channels to expect for a given output
+        :param w_in: input image's width
+        :param h_in: input image's height
+        """
         super(PGPGGenerator, self).__init__()
 
-    def forward(self, x: Tensor, y_pose: Tensor) -> Tensor:
-        pass
+        self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=16, w_in=w_in, h_in=h_in)
+        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=3, c_hidden=32)
 
-    def get_loss(self):
-        pass
+    def forward(self, x: Tensor, y_pose: Tensor) -> Tuple[Tensor, Tensor]:
+        """
+        Method to perform a forward pass through PGPG generator.
+        :param x: the input image batch
+        :param y_pose: the condition (i.e. the target pose) image batch
+        :return: a tuple containing G1's output and G2's output (i.e. the generated image)
+        """
+        g1_out = self.g1(torch.cat((x, y_pose), dim=1))
+        g2_out = self.g2(torch.cat((x, g1_out), dim=1))
+        return g1_out, g2_out + g1_out
+
+    def get_loss(self, x: Tensor, y_pose: Tensor, y: Tensor, disc: nn.Module,
+                 adv_criterion: nn.modules.Module = nn.MSELoss(),
+                 recon_criterion: nn.Module = nn.L1Loss()) -> Tuple[Tensor, Tensor]:
+        """
+        Get the loss of the generator given inputs.
+        :param x: input images
+        :param y_pose: target images' pose images
+        :param y: target images
+        :param disc: the Discriminator network
+        :param adv_criterion: the adversarial loss function; takes the discriminator predictions and the target labels
+                              and returns a adversarial loss (which we aim to minimize)
+        :param recon_criterion: the reconstruction loss function; takes the real images from Y and those images put
+                                through a (X,Yp)->Y generator and returns the image reconstruction loss (which we aim
+                                to minimize)
+        :return: a tuple containing the G1's loss (a scalar) and G2's loss (a scalar)
+        """
+        g1_out, g_out = self(x, y_pose)
+        y_pose[y_pose > 0] = 1   # poss may act as a loss mask since it is a DensePose IUV map
+        save_tensor_to_image_file(y_pose)
+        y_pose += 1              # how much we want to weight on non-background area (original paper weight is 1)
+        # 1) L1 loss for G1
+        g1_loss = recon_criterion(g1_out * y_pose, y * y_pose)
+        # 2) L1 loss for G2
+        g2_loss_recon = recon_criterion(g_out * y_pose, y * y_pose)
+        # 3) Adversarial loss for G2
+        gen_out_predictions = disc(g_out, x)
+        g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
+        # Aggregate
+        g2_loss = g2_loss_recon + g2_loss_adv
+        return g1_loss, g2_loss
+
+
+if __name__ == '__main__':
+    __gen = PGPGGenerator(c_in=6, c_out=3, w_in=256, h_in=256)
+    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=6, use_spectral_norm=True)
+    __dl = ICRBCrossPoseDataloader(image_transforms=transforms.Compose([transforms.ToTensor()]), batch_size=1)
+    for _, __images in enumerate(__dl):
+        __x, __y, __y_pose = __images
+        print(__x.shape)
+        print(__y.shape)
+        print(__y_pose.shape)
+
+        __g1_loss, __g_loss = __gen.get_loss(__x, __y_pose, __y, disc=__disc)
+        print(__g1_loss)
+        print(__g_loss)
+        break

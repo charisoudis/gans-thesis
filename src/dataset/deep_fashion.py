@@ -209,17 +209,24 @@ class ICRBScraper:
         Aggregates information on every category folder (e.g. "MEN/Shirts_Polos") of the items contained in the category
         and creates a JSON file "items_info.json". Recursive execution. After backward passes completion at the Img root
         directory there will be a huge JSON file "items_info.json" containing the image pairs for the whole dataset.
-    When complete, in the Img root folder there will be a big JSON file containing the following aggregated information
+    When complete, in the Img root folder there will be two big JSON files containing the following aggregated info:
+        1) items_info.json
         - id (int or str): "Img"
         - path (str): "/"
-        - images_count_initial (int): initial number of benchmark's images
-        - images_images (list): all usable image paths
-        - images_count (int): usable number of benchmark's images
-        - image_pairs (list):  [(pair1_image1, pair1_image2), (pair2_image1, pair2_image2) ...]
-        - image_pairs_count (int): total number of image pairs in benchmark
+        - images (list): all of benchmark's image paths
+        - images_count (int): number of benchmark's images
         - image_groups (list):  ['group1_prefix_rel': [group1 images], ...]
         - image_groups_count (int): total number of image groups in benchmark
-        (all paths are relative from Img folder)
+        2) items_posable_info.json
+        - id (int or str): "Img"
+        - path (str): "/"
+        - posable_images (list): all posable (i.e. with the associate pose image, *_IUV.png, present) image paths
+        - posable_images_count (int): usable number of benchmark's images
+        - posable_image_pairs (list):  [(pair1_image1, pair1_image2), (pair2_image1, pair2_image2) ...]
+        - posable_image_pairs_count (int): total number of posable image pairs in benchmark
+        - posable_image_groups (list):  ['group1_prefix_rel': [group1 images], ...]
+        - posable_image_groups_count (int): total number of posable image groups in benchmark
+        (all paths are relative from Img folder under passed $root$ directory)
     """
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark', hq: bool = False):

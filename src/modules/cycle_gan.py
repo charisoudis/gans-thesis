@@ -1,6 +1,7 @@
+from typing import Tuple, Optional
+
 import torch.nn as nn
 from torch import Tensor, no_grad
-from typing import Tuple, Optional
 
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
@@ -107,7 +108,7 @@ class CycleGAN(nn.Module):
                      lambda_identity: float = 0.1,
                      lambda_cycle: float = 10) -> Tuple[Tensor, Tensor, Tensor]:
         """
-        Return the loss of the generator given inputs.
+        Get the loss of the generator given inputs.
         :param real_a: the real images from pile A
         :param real_b: the real images from pile B
         :param adv_criterion: the adversarial loss function; takes the discriminator predictions and the true labels

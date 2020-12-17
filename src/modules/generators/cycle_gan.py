@@ -3,9 +3,10 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
+
+from modules.partial.decoding import ExpandingBlock, FeatureMapLayer
 from modules.partial.encoding import ContractingBlock
 from modules.partial.residual import ResidualBlock
-from modules.partial.decoding import ExpandingBlock, FeatureMapLayer
 
 
 class CycleGANGenerator(nn.Module):
@@ -68,7 +69,7 @@ class CycleGANGenerator(nn.Module):
         :param real_x: the real images from pile X
         :param disc_y: the discriminator for class Y; takes images and returns real/fake class Y prediction matrices
         :param adv_criterion: the adversarial loss function; takes the discriminator predictions and the target labels
-        and returns a adversarial loss (which we aim to minimize)
+                              and returns a adversarial loss (which we aim to minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         fake_y = self(real_x)
@@ -83,7 +84,7 @@ class CycleGANGenerator(nn.Module):
         Attention: We suppose that this instance is the Generator from Domain X --> Y: gen_XY
         :param real_y: the real images from domain (or pile) Y
         :param identity_criterion: the identity loss function; takes the real images from Y and those images put
-        through a X->Y generator and returns the identity loss (which we aim to minimize)
+                                   through a X->Y generator and returns the identity loss (which we aim to minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         identity_y = self(real_y)
@@ -99,8 +100,8 @@ class CycleGANGenerator(nn.Module):
         :param real_y: the real images from domain (or pile) Y
         :param fake_x: the generated images of domain X (generated from gen_YX with input real_y)
         :param cycle_criterion: the cycle consistency loss function; takes the real images from Y and those images put
-        through a Y->X generator and then X->Y generator (this one) and returns the cycle consistency loss (which we
-        aim to minimize)
+                                through a Y->X generator and then X->Y generator (this one) and returns the cycle
+                                consistency loss (which we aim to minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         cycle_y = self(fake_x)
