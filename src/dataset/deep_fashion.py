@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+from time import sleep
 from typing import Optional, Tuple, Union
 
 import click
@@ -17,40 +18,116 @@ from utils.string import group_by_prefix
 from utils.string import to_human_readable
 
 
-class InShopClothesRetrievalBenchmarkDataset(Dataset):
+class ICRBDataset(Dataset):
     """
-    InShopClothesRetrievalBenchmarkDataset Class:
+    ICRBCrossPoseDataset Class:
     This class is used to define the way DeepFashion's In-shop Clothes Retrieval Benchmark (ICRB) dataset is accessed.
     """
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 image_transforms: Optional[transforms.Compose] = None, pose: bool = False, hq: bool = False):
+                 image_transforms: Optional[transforms.Compose] = None, hq: bool = False):
         """
-        InShopClothesRetrievalBenchmarkDataset class constructor.
+        ICRBCrossPoseDataset class constructor.
         :param root: the root directory where all image files exist
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
-        :param pose: set to True to have __getitem__ return target pose image as well
         """
-        super(InShopClothesRetrievalBenchmarkDataset, self).__init__()
+        super(ICRBDataset, self).__init__()
         self.logger = CommandLineLogger(log_level='info')
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_info.json'
         # Load item info
         if not os.path.exists(self.items_info_path):
-            self.logger.error('items_info.json not found in image directory')
+            self.logger.error(f'items info file not found in image directory (tried: {self.items_info_path})')
+            sleep(0.5)
             if click.confirm('Do you want to scrape the dataset now?', default=True):
-                InShopClothesRetrievalBenchmarkScraper.run(hq=hq)
+                ICRBScraper.run(hq=hq)
         if not os.path.exists(self.items_info_path):
-            raise FileNotFoundError('items_info.json not found in image directory')
+            raise FileNotFoundError(f'{self.items_info_path} not found in image directory')
         with open(self.items_info_path, 'r') as fp:
             self.items_info = json.load(fp)
         # Save benchmark info
-        self.real_pairs_count = self.items_info["image_pairs_count"]
-        self.total_pairs_count = self.real_pairs_count * 2  # 2nd pair by exchanging images at input/output of the model
-        self.total_images_count = self.items_info["images_count"]
-        self.logger.debug(f'Found {to_human_readable(self.total_pairs_count)} image pairs from a total of' +
-                          f' {to_human_readable(self.total_images_count)} images in benchmark')
+        self.total_images_count = self.items_info['images_count']
+        self.logger.debug(f'Found {to_human_readable(self.total_images_count)} total images in benchmark')
+        # Save transforms
+        self.transforms = image_transforms
+
+    def __getitem__(self, index: int) -> Tensor:
+        """
+        Implements abstract Dataset::__getitem__() method.
+        :param index: integer with the current image index that we want to read from disk
+        :return: an image from ICRB dataset as a torch.Tensor object
+        """
+        # Fetch image
+        image = Image.open(f'{self.img_dir_path}/{self.items_info["images"][index]}')
+        # Apply transforms
+        image = self.transforms(image)
+        # if image.shape[0] != 3:
+        #     image = image.repeat(3, 1, 1)
+        return image
+
+    def __len__(self) -> int:
+        """
+        Implements abstract Dataset::__len__() method. This method returns the total "length" of the dataset which is
+        the total number of  images contained in the In-shop Clothes Retrieval Benchmark.
+        :return: integer
+        """
+        return self.total_images_count
+
+
+class ICRBDataloader(DataLoader):
+
+    def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
+                 image_transforms: Optional[transforms.Compose] = None, batch_size: int = 8, hq: bool = False, *args):
+        """
+        ICRBCrossPoseDataloader class constructor.
+        :param root: the root directory where all image files exist
+        :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param batch_size: the number of images batch
+        :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
+        :param args: argument list for torch.utils.data.Dataloader constructor
+        """
+        _dataset = ICRBDataset(root=root, image_transforms=image_transforms, hq=hq)
+        super(ICRBDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, *args)
+
+
+class ICRBCrossPoseDataset(Dataset):
+    """
+    ICRBCrossPoseDataset Class:
+    This class is used to define the way DeepFashion's In-shop Clothes Retrieval Benchmark (ICRB) dataset is accessed to
+    retrieve cross-pose/scale image pairs.
+    """
+
+    def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
+                 image_transforms: Optional[transforms.Compose] = None, pose: bool = False, hq: bool = False):
+        """
+        ICRBCrossPoseDataset class constructor.
+        :param root: the root directory where all image files exist
+        :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
+        :param pose: set to True to have __getitem__ return target pose image as well, otherwise __getitem__ will return
+                     an image pair without target pose for the second image in pair
+        """
+        super(ICRBCrossPoseDataset, self).__init__()
+        self.logger = CommandLineLogger(log_level='info')
+        self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
+        self.items_info_path = f'{self.img_dir_path}/items_posable_info.json'
+        # Load item info
+        if not os.path.exists(self.items_info_path):
+            self.logger.error(f'items info file not found in image directory (tried: {self.items_info_path})')
+            sleep(0.5)
+            if click.confirm('Do you want to scrape the dataset now?', default=True):
+                ICRBScraper.run(hq=hq)
+        if not os.path.exists(self.items_info_path):
+            raise FileNotFoundError(f'{self.items_info_path} not found in image directory')
+        with open(self.items_info_path, 'r') as fp:
+            self.items_info = json.load(fp)
+        # Save benchmark info
+        self.total_images_count = self.items_info['posable_images_count']
+        self.real_pairs_count = self.items_info["posable_image_pairs_count"]
+        self.total_pairs_count = self.real_pairs_count * 2  # 2nd pair by exchanging images at input/output
+        self.logger.debug(f'Found {to_human_readable(self.total_pairs_count)} posable image pairs from a total of' +
+                          f' {to_human_readable(self.total_images_count)} posable images in benchmark')
         # Save transforms
         self.transforms = image_transforms
         # Save pose switch
@@ -66,7 +143,7 @@ class InShopClothesRetrievalBenchmarkDataset(Dataset):
         _real_index = index % self.real_pairs_count
         _swap = _real_index == index
         # Find pair's image paths
-        image_1_path, image_2_path = self.items_info['image_pairs'][_real_index]
+        image_1_path, image_2_path = self.items_info['posable_image_pairs'][_real_index]
         if _swap:
             image_1_path, image_2_path = image_2_path, image_1_path
 
@@ -105,25 +182,25 @@ class InShopClothesRetrievalBenchmarkDataset(Dataset):
         return self.total_pairs_count
 
 
-class InShopClothesRetrievalBenchmarkDataloader(DataLoader):
+class ICRBCrossPoseDataloader(DataLoader):
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
                  image_transforms: Optional[transforms.Compose] = None, batch_size: int = 8, hq: bool = False, *args):
         """
-        InShopClothesRetrievalBenchmarkDataloader class constructor.
+        ICRBCrossPoseDataloader class constructor.
         :param root: the root directory where all image files exist
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param batch_size: the number of images batch
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         :param args: argument list for torch.utils.data.Dataloader constructor
         """
-        _dataset = InShopClothesRetrievalBenchmarkDataset(root=root, image_transforms=image_transforms, hq=hq)
-        super(InShopClothesRetrievalBenchmarkDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, *args)
+        _dataset = ICRBCrossPoseDataset(root=root, image_transforms=image_transforms, pose=True, hq=hq)
+        super(ICRBCrossPoseDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, *args)
 
 
-class InShopClothesRetrievalBenchmarkScraper:
+class ICRBScraper:
     """
-    InShopClothesRetrievalBenchmarkScraper Class:
+    ICRBScraper Class:
     This class is used to scrape DeepFashion's In-shop Clothes Retrieval Benchmark images and extract image pairs.
     Forward Pass:
         Goes into every item folder (folders that are named item ID "id_<0-padded-8-digit-ID>") and creates a JSON file
@@ -147,7 +224,7 @@ class InShopClothesRetrievalBenchmarkScraper:
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark', hq: bool = False):
         """
-        InShopClothesRetrievalBenchmarkScraper class constructor.
+        ICRBScraper class constructor.
         :param root: DeepFashion benchmark's root directory path
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         """
@@ -212,220 +289,26 @@ class InShopClothesRetrievalBenchmarkScraper:
                 reason = skip_fp.readline().rstrip('\n').split(': ', maxsplit=1)[-1]
             if reason == 'DUPLICATE':
                 return 1
-            if reason == 'IMAGE_SHORTAGE':
+            if reason == 'POSABLE_IMAGE_SHORTAGE':
                 return 2
         return 0
 
-    def _forward_item(self, item_path_abs: str):
+    def clear_info(self, forward_pass: bool = True) -> None:
         """
-        Processes single item. Creates item_info.json file inside $item_path_abs$ containing information about image
-        groups and cross-pose/scale image pairs found in item directory.
-        :param item_path_abs:
-        :return:
+        Clear any non-image files found in any directory inside Img/ root directory of dataset's benchmark.
+        :param forward_pass: set to True to delete files also in item directories (i.e. directories whose names are
+                             "id_<8-digit zero-padded item ID>")
         """
-        item_images = [_f for _f in os.listdir(item_path_abs) if _f.endswith('.jpg')]
-        item_image_pairs = []
-        item_image_groups = group_by_prefix(item_images, '_')
-
-        # Process each image group individually
-        _to_delete_keys = []
-        for group_prefix, group_images in item_image_groups.items():
-            posable_images = [_image for _image in group_images
-                              if self.__class__.is_posable(f'{group_prefix}_{_image}', item_path_abs)]
-            if len(posable_images) < 2:
-                # Remove group if yields no posable image pairs
-                _to_delete_keys.append(group_prefix)
-                continue
-
-            group_image_pairs = get_pairs(posable_images, prefix=f'{group_prefix}_')
-            item_image_pairs += group_image_pairs
-
-        # Delete useless image groups
-        for _k in _to_delete_keys:
-            del item_image_groups[_k]
-
-        # Stamp item if has no usable groups
-        if 0 == len(item_image_groups):
-            with open(f'{item_path_abs}/.skip', 'w') as skip_fp:
-                skip_fp.write('\n'.join(['Reason: IMAGE_SHORTAGE', '']))
-            self.logger.critical(f"Item {os.path.basename(item_path_abs)} should had been skipped...")
-            return
-
-        # Save item information in JSON file
-        with open(f'{item_path_abs}/item_info.json', 'w') as json_fp:
-            json.dump({
-                'id': int(os.path.basename(item_path_abs).replace('id_', '')),
-                'path': item_path_abs.replace(self.img_dir_path, ''),
-                'images_count_initial': len(item_images),
-                'images': join_lists(*[list(map(lambda _i: f'{group_prefix}_{_i}', group_images))
-                                       for group_prefix, group_images in item_image_groups.items()]),
-                'images_count': sum(len(group_images) for _, group_images in item_image_groups.items()),
-                'image_groups': item_image_groups,
-                'image_groups_count': len(item_image_groups.keys()),
-                'image_pairs': item_image_pairs,
-                'image_pairs_count': len(item_image_pairs),
-            }, json_fp, indent=4)
-        # self.logger.debug(f'{item_path_abs}/item_info.json: [DONE]')
-
-    def forward(self) -> None:
-        """
-        Method for completing a forward pass in scraping DeepFashion ICRB images:
-        Visits every item directory, process its images and saves image / pairs information a JSON file, item_info.json.
-        """
-        processed_ids = []
-        useless_items = []
-        processed_count = 0
-        with tqdm(total=self.items_count, colour='yellow') as progress_bar:
+        with tqdm(total=26 + (8082 if forward_pass else 0), colour='yellow') as progress_bar:
             for _root, _dirs, _files in os.walk(self.img_dir_path):
-                _json_files = [_f for _f in _files if _f.endswith('.json')]
-                assert len(_dirs) * (len(_files) - len(_json_files)) == 0, \
-                    "a dir should contain only sub-dirs of image and/or JSON files"
+                if not forward_pass and os.path.basename(_root).startswith('id_'):
+                    continue
 
-                if os.path.basename(_root).startswith('id_'):
-                    item_type = self.__class__.get_item_type(_root)
-                    if item_type in [-1, 1]:
-                        continue
-                    if item_type == 2:
-                        # Duplicate item directory found. Skip processing.
-                        # self.logger.warning(f'Found .skip with reason: DUPLICATE. Adding to useless...')
-                        useless_items.append(os.path.basename(_root))
-                    elif item_type == 0:
-                        self._forward_item(_root)
-                        processed_ids.append(os.path.basename(_root))
-                        # self.logger.info(f'\tProcessed: {os.path.basename(_root)}')
-                    else:
-                        self.logger.critical('Really unexpected path occurred!')
-                        assert False
-
-                    processed_count += 1
-                    progress_bar.update()
-
-        if processed_count != self.items_count:
-            self.logger.error(f'processed_count != total_count ({processed_count} != {self.items_count})')
-            self.logger.error(str(list_diff(self.item_dirs, processed_ids)))
-
-        if len(useless_items) > 0:
-            self.logger.info(f'Found {len(useless_items)} useless items for pose change, i.e. items having 0 pairs')
-            self.logger.info(str(useless_items))
-
-    @staticmethod
-    def _get_item_info(json_filepath_abs: str) -> dict:
-        assert os.path.exists(json_filepath_abs), f"json_filepath_abs not exists (tried: {json_filepath_abs})"
-        with open(json_filepath_abs, 'r') as json_fp:
-            item_or_items_info_dict = json.load(json_fp)
-
-        # Create prefix for info_dict content
-        prefix = os.path.basename(item_or_items_info_dict['path']) + '/'
-
-        """
-        Sample item_info.json:
-        {
-            "id": 80,
-            "path": "/MEN/Denim/id_00000080",
-            "images_count_initial": 4,
-            "images": [
-                "01_1_front.jpg",
-                ...
-            ],
-            "images_count": 4,
-            "image_groups": {
-                "01": [
-                    "1_front.jpg",
-                    ...
-                ],
-                ...
-            },
-            "image_groups_count": 1,
-            "image_pairs": [
-                [
-                    "01_1_front.jpg",
-                    "01_2_side.jpg"
-                ],
-                ...
-            ],
-            "image_pairs_count": 6
-        }
-        """
-        _keys = ['images_count_initial', 'images', 'images_count', 'image_groups', 'image_groups_count',
-                 'image_pairs', 'image_pairs_count']
-        _dict = dict((k, item_or_items_info_dict[k]) for k in _keys if k in item_or_items_info_dict)
-
-        # Prefix images
-        for _i, _name in enumerate(_dict['images']):
-            _dict['images'][_i] = f'{prefix}{_name}'
-        # _to_delete_keys = []
-        for _k, _v in list(_dict['image_groups'].items()):
-            _dict['image_groups'][f'{prefix}{_k}'] = _dict['image_groups'][_k].copy()
-            del _dict['image_groups'][_k]
-        # for _k in _to_delete_keys:
-        #     del _dict['image_groups'][_k]
-        for _i, _pair in enumerate(_dict['image_pairs']):
-            _dict['image_pairs'][_i][0] = f'{prefix}{_pair[0]}'
-            _dict['image_pairs'][_i][1] = f'{prefix}{_pair[1]}'
-
-        return _dict
-
-    def _backward_dir(self, depth: int, dir_abs: str, progress_bar: tqdm) -> None:
-        _dirs = next(os.walk(dir_abs))[1]
-        items_info_dict = {}
-        for _dir in _dirs:
-            _dir_abs = f'{dir_abs}/{_dir}'
-            if os.path.exists(f'{_dir_abs}/.skip') or os.path.exists(f'{_dir_abs}/.duplicate'):
-                continue
-
-            _dir_info_dict = self.__class__._get_item_info(f'{_dir_abs}/item{"s" if depth < 2 else ""}_info.json')
-
-            if not items_info_dict:
-                # Initialize merged dict
-                items_info_dict = _dir_info_dict.copy()
-            else:
-                # Merge _dir_info_dict with current items_info_dict
-                items_info_dict['images_count_initial'] += _dir_info_dict['images_count_initial']
-                items_info_dict['images'] += _dir_info_dict['images']
-                items_info_dict['images_count'] += _dir_info_dict['images_count']
-                # _merged_image_groups = {**items_info_dict['image_groups'], **_dir_info_dict['image_groups']}
-                items_info_dict['image_groups'] = {**items_info_dict['image_groups'], **_dir_info_dict['image_groups']}
-                items_info_dict['image_groups_count'] += _dir_info_dict['image_groups_count']
-                items_info_dict['image_pairs'] += _dir_info_dict['image_pairs']
-                items_info_dict['image_pairs_count'] += _dir_info_dict['image_pairs_count']
-
-            progress_bar.update()
-
-        items_info_dict['id'] = os.path.basename(dir_abs)
-        items_info_dict['path'] = dir_abs.replace(self.img_dir_path, '')
-
-        # Save item information in JSON file
-        with open(f'{dir_abs}/items_info.json', 'w') as json_fp:
-            json.dump(items_info_dict, json_fp, indent=4)
-
-    def backward(self, depth: int = 2) -> None:
-        """
-        Method for completing a backward pass in scraping DeepFashion ICRB images:
-        Recursively visits all directories at given $depth$ and merges information saved in JSON files from children
-        directories.
-        Depths:
-            0: <item dir level> (root: /, dirs: ["MEN", "WOMEN"])
-            1 (e.g.): root: /MEN, dirs: ["Denim", "Jackets_Vests", ...]
-            2 (e.g.): root: /MEN/Denim, dirs: ["id_00000080", "id_00000089", ...]
-            3: <item dir level>  (benchmark's images lay there)
-        :param depth: integer denoting current backward scraping level (supported: 0, 1, 2)
-        """
-        root_dirs_count_at_depth = {
-            0: 2,
-            1: 23,
-            2: (7982 - 12),  # 12 useless items
-            3: 0,  # at item level there should be no dirs, just image files
-        }
-        while depth >= 0:
-            with tqdm(total=root_dirs_count_at_depth[depth], colour='yellow') as progress_bar:
-                for _root, _dirs, _files in os.walk(self.img_dir_path):
-                    _relative_root = _root.replace(self.img_dir_path, '')
-                    _depth = _relative_root.count('/')
-                    if _depth != depth:
-                        continue
-
-                    self._backward_dir(_depth, _root, progress_bar)
-            depth -= 1
+                _non_image_files = [_f for _f in _files if not _f.endswith('.jpg') and not _f.endswith('.png')]
+                if len(_non_image_files) > 0:
+                    for _f in _non_image_files:
+                        os.remove(f'{_root}/{_f}')
+                progress_bar.update()
 
     def resolve_duplicate_items(self):
         """
@@ -498,17 +381,22 @@ class InShopClothesRetrievalBenchmarkScraper:
                                                 f'{len(_dir_info["images"])} of this Dir', '']))
                 progress_bar.update()
 
-    def resolve_useless_items(self):
+    def resolve_non_posable_items(self) -> None:
         """
-        Method to perform useless items resolution:
-        "Useless" items are the ones that yield zero image pairs. Upon finding such items we "stamp" them by adding a
-        ".skip" file in item's directory.
+        Method to perform non-posable items resolution:
+        "Non-Posable" items are the ones that yield zero cross-pose image pairs. Upon finding such items we "stamp"
+        them by adding a ".skip" file in item's directory.
         """
+        non_posable_items = []
         with tqdm(total=self.items_count + 100, colour='yellow') as progress_bar:
             for _root, _dirs, _files in os.walk(self.img_dir_path):
+                if '.duplicate' in _files:
+                    progress_bar.update()
+                    continue
+
                 _json_files = [_f for _f in _files if _f.endswith('.json')]
                 assert len(_dirs) * (len(_files) - len(_json_files)) == 0, \
-                    "a dir should contain only sub-dirs of image and/or JSON files"
+                    "a dir should contain only sub-dirs of image and/or JSON files (or possibly a .duplicate file)"
 
                 if os.path.basename(_root).startswith('id_'):
                     item_images = [_f for _f in os.listdir(_root) if _f.endswith('.jpg')]
@@ -529,112 +417,312 @@ class InShopClothesRetrievalBenchmarkScraper:
                         del item_image_groups[_k]
 
                     # Stamp item if has no usable groups
-                    if 0 == len(item_image_groups):
+                    if 0 == len(item_image_groups.keys()):
                         with open(f'{_root}/.skip', 'w') as skip_fp:
-                            skip_fp.write('\n'.join(['Reason: IMAGE_SHORTAGE', '']))
+                            skip_fp.write('\n'.join(['Reason: POSABLE_IMAGE_SHORTAGE', '']))
                         self.logger.debug(f"Item {os.path.basename(_root)} stamped")
+                        non_posable_items.append(os.path.basename(_root))
 
                     progress_bar.update()
 
-    def test_forward(self) -> bool:
-        """
-        Tests forward pass by re-visiting every directory and checking for information found in *_info.json files.
-        :return: True if everything looks good, False if any error occurs
-        """
-        _result = True
-        with tqdm(total=self.items_count + 100, colour='yellow') as progress_bar:
-            for _root, _dirs, _files in os.walk(self.img_dir_path):
-                if len(_files) > 0 and _files != ['items_info.json'] and _files != ['item_info.json']:
-                    # Check if every POSABLE image has its corresponding pose image
-                    _jpg_files = [_f for _f in _files if _f.endswith('.jpg') and self.__class__.is_posable(_f, _root)]
-                    _jpg_count = len(_jpg_files)
-                    _pose_files = [_f for _f in _files if _f.endswith('IUV.png')]
-                    _pose_count = len(_pose_files)
-                    if len(_jpg_files) != len(_pose_files):
-                        if _jpg_count > _pose_count:
-                            self.logger.critical(f'Found {_jpg_count} JPG files but only {_pose_count} PNG' +
-                                                 f' (id_dir={_root})')
-                        else:
-                            self.logger.critical(f'Found {_pose_count} PNG files but only {_jpg_count} JPG' +
-                                                 f' (id_dir={_root})')
-                        _result = False
-                    # Check items.info
-                    if os.path.basename(_root).startswith('id_'):
-                        if not os.path.exists(f'{_root}/item_info.json') and not (
-                                os.path.exists(f'{_root}/.skip') or os.path.exists(f'{_root}/.duplicate')):
-                            self.logger.critical(f'_root.startswith("id_"), len(_files) = {len(_files)} but no' +
-                                                 f' "item_info.json" (id_dir={_root})')
-                            _result = False
-                        else:
-                            # Check JSON
-                            with open(f'{_root}/item_info.json') as fp:
-                                item_info = json.load(fp)
+        if len(non_posable_items) > 0:
+            self.logger.info(f'Found {len(non_posable_items)} non posable items, i.e. items having 0 cross-pose pairs')
+            self.logger.info(', '.join(non_posable_items))
 
-                            if item_info['id'] != int(os.path.basename(_root).replace('id_', '')):
-                                self.logger.critical(f'item_info.id mismatch ({item_info["id"]}, id_dir={_root})')
-                                _result = False
-                            elif item_info['path'] != _root.replace(self.img_dir_path, ''):
-                                self.logger.critical(f'item_info.path mismatch ({item_info["path"]}, id_dir={_root})')
-                                _result = False
-                            elif item_info['images_count_initial'] != len([_f for _f in _files if _f.endswith('.jpg')]):
-                                self.logger.critical(f'item_info.images_count_initial mismatch' +
-                                                     f' ({item_info["images_count_initial"]}, id_dir={_root})')
-                                _result = False
+    def _forward_item(self, item_path_abs: str, non_posable: bool = False):
+        """
+        Processes single item. Creates item_info.json file inside $item_path_abs$ containing information about image
+        groups and cross-pose/scale image pairs found in item directory.
+        :param item_path_abs: item directory (absolute path)
+        :param non_posable: set to True to avoid creating item_posable_info.json inside item directory
+        :return:
+        """
+        item_images = [_f for _f in os.listdir(item_path_abs) if _f.endswith('.jpg')]
+        item_image_groups = group_by_prefix(item_images, '_')
+        item_posable_image_groups = item_image_groups.copy()
+        item_posable_image_pairs = []
+
+        if not non_posable:
+            # Process each image group individually
+            _non_posable_group_keys = []
+            for group_prefix, group_images in item_posable_image_groups.items():
+                posable_images = [_image for _image in group_images
+                                  if self.__class__.is_posable(f'{group_prefix}_{_image}', item_path_abs)]
+                if len(posable_images) < 2:
+                    # Remove group if yields no posable image pairs
+                    _non_posable_group_keys.append(group_prefix)
+                    continue
+                # Extract group pairs
+                item_posable_image_pairs += get_pairs(posable_images, prefix=f'{group_prefix}_')
+
+            # Delete useless image groups
+            for _k in _non_posable_group_keys:
+                del item_posable_image_groups[_k]
+
+            # Stamp item if has no usable groups
+            if 0 == len(item_posable_image_pairs):
+                with open(f'{item_path_abs}/.skip', 'w') as skip_fp:
+                    skip_fp.write('\n'.join(['Reason: POSABLE_IMAGE_SHORTAGE', '']))
+                self.logger.critical(f"Item {os.path.basename(item_path_abs)} should had been skipped...")
+                return
+
+            # Save item information in JSON files
+            posable_images = join_lists(*[list(map(lambda _i: f'{group_prefix}_{_i}', group_images))
+                                          for group_prefix, group_images in item_posable_image_groups.items()])
+
+            with open(f'{item_path_abs}/item_posable_info.json', 'w') as json_fp:
+                json.dump({
+                    'id': int(os.path.basename(item_path_abs).replace('id_', '')),
+                    'path': item_path_abs.replace(self.img_dir_path, ''),
+                    'posable_images': posable_images,
+                    'posable_images_count': len(posable_images),
+                    'posable_image_groups': item_posable_image_groups,
+                    'posable_image_groups_count': len(item_posable_image_groups.keys()),
+                    'posable_image_pairs': item_posable_image_pairs,
+                    'posable_image_pairs_count': len(item_posable_image_pairs),
+                }, json_fp, indent=4)
+
+        with open(f'{item_path_abs}/item_info.json', 'w') as json_fp:
+            json.dump({
+                'id': int(os.path.basename(item_path_abs).replace('id_', '')),
+                'path': item_path_abs.replace(self.img_dir_path, ''),
+                'images': item_images,
+                'images_count': len(item_images),
+                'image_groups': item_image_groups,
+                'image_groups_count': len(item_image_groups.keys()),
+            }, json_fp, indent=4)
+        # self.logger.debug(f'{item_path_abs}/item_info.json: [DONE]')
+
+    def forward(self) -> None:
+        """
+        Method for completing a forward pass in scraping DeepFashion ICRB images:
+        Visits every item directory, process its images and saves image / pairs information a JSON file, item_info.json.
+        """
+        processed_ids = []
+        processed_count = 0
+        with tqdm(total=self.items_count, colour='yellow') as progress_bar:
+            for _root, _dirs, _files in os.walk(self.img_dir_path):
+                _json_files = [_f for _f in _files if _f.endswith('.json')]
+                assert len(_dirs) * (len(_files) - len(_json_files)) == 0, \
+                    "a dir should contain only sub-dirs of image and/or JSON files"
+
                 if os.path.basename(_root).startswith('id_'):
-                    if len(_files) == 0:
-                        self.logger.critical(f'len(_files) = 0 in id root (id_dir={_root}')
-                        _result = False
-                    elif len(_files) == 1:
-                        self.logger.critical(f'len(_files) = 1 in id root (id_dir={_root}')
-                        _result = False
-                    progress_bar.update()
-        return _result
+                    item_type = self.__class__.get_item_type(_root)
+                    if item_type in [-1, 1]:
+                        # Duplicate item directory found. Skip processing.
+                        continue
 
-    def test_backward(self) -> bool:
-        """
-        Tests backward pass by re-visiting every non ID directory and checking for items_info.json file existence.
-        :return: True if everything looks good, False if any error occurs
-        """
-        _result = True
-        with tqdm(total=25, colour='yellow') as progress_bar:
-            for _root, _dirs, _files in os.walk(self.img_dir_path):
-                if not os.path.basename(_root).startswith('id_') and not os.path.exists(f'{_root}/items_info.json'):
-                    self.logger.critical(f'_root.startswith("id_")=False but "items_info.json" not found' +
-                                         f' (_root={_root}')
-                    _result = False
+                    if item_type not in [0, 2]:
+                        self.logger.critical('Really unexpected path occurred!')
+                        assert False
+
+                    _non_posable = item_type == 2
+                    self._forward_item(_root, _non_posable)
+                    # self.logger.info(f'\tProcessed: {os.path.basename(_root)}')
+                    processed_ids.append(os.path.basename(_root))
+                    processed_count += 1
                     progress_bar.update()
-        return _result
+
+        if processed_count != self.items_count:
+            self.logger.error(f'processed_count != total_count ({processed_count} != {self.items_count})')
+            self.logger.error(str(list_diff(self.item_dirs, processed_ids)))
+
+    @staticmethod
+    def _get_item_info(json_filepath_abs: str, mode: str = 'info') -> dict:
+        assert os.path.exists(json_filepath_abs), f"json_filepath_abs not exists (tried: {json_filepath_abs})"
+        with open(json_filepath_abs, 'r') as json_fp:
+            item_or_items_info_dict = json.load(json_fp)
+
+        # Create prefix for info_dict content
+        prefix = os.path.basename(item_or_items_info_dict['path']) + '/'
+
+        """
+        Sample item_info.json:
+        {
+            "id": 80,
+            "path": "/MEN/Denim/id_00000080",
+            "images": [
+                "01_1_front.jpg",
+                ...
+            ],
+            "images_count": 4,
+            "image_groups": {
+                "01": [
+                    "1_front.jpg",
+                    ...
+                ],
+                ...
+            },
+            "image_groups_count": 1
+        }
+        
+        Sample item_posable_info.json:
+        {
+            "id": 80,
+            "path": "/MEN/Denim/id_00000080",
+            "posable_images": [
+                "01_1_front.jpg",
+                ...
+            ],
+            "posable_images_count": 4,
+            "posable_image_groups": {
+                "01": [
+                    "1_front.jpg",
+                    ...
+                ]
+            },
+            "posable_image_groups_count": 1,
+            "posable_image_pairs": [
+                [
+                    "01_1_front.jpg",
+                    "01_2_side.jpg"
+                ],
+                ...
+            ],
+            "posable_image_pairs_count": 6
+        }
+        """
+        _keys = ['images', 'images_count', 'image_groups', 'image_groups_count'] if mode == 'info' else \
+            ['posable_images', 'posable_images_count', 'posable_image_groups', 'posable_image_groups_count',
+             'posable_image_pairs', 'posable_image_pairs_count']
+
+        _dict = dict((k, item_or_items_info_dict[k]) for k in _keys if k in item_or_items_info_dict)
+
+        # Prefix images
+        _key_prefix = mode.replace('info', '')
+        for _i, _name in enumerate(_dict[f'{_key_prefix}images']):
+            _dict[f'{_key_prefix}images'][_i] = f'{prefix}{_name}'
+        for _k, _v in list(_dict[f'{_key_prefix}image_groups'].items()):
+            _dict[f'{_key_prefix}image_groups'][f'{prefix}{_k}'] = _dict[f'{_key_prefix}image_groups'][_k].copy()
+            del _dict[f'{_key_prefix}image_groups'][_k]
+        if mode == 'posable_info':
+            for _i, _pair in enumerate(_dict['posable_image_pairs']):
+                _dict['posable_image_pairs'][_i][0] = f'{prefix}{_pair[0]}'
+                _dict['posable_image_pairs'][_i][1] = f'{prefix}{_pair[1]}'
+
+        return _dict
+
+    def _backward_dir(self, depth: int, dir_abs: str, progress_bar: tqdm) -> None:
+        _dirs = next(os.walk(dir_abs))[1]
+        items_info_dict = {}
+        items_posable_info_dict = {}
+        for _dir in _dirs:
+            _dir_abs = f'{dir_abs}/{_dir}'
+            if os.path.exists(f'{_dir_abs}/.duplicate'):
+                continue
+
+            _dir_info_dict = self.__class__._get_item_info(f'{_dir_abs}/item{"s" if depth < 2 else ""}_info.json')
+            if not items_info_dict:
+                # Initialize merged dict
+                items_info_dict = _dir_info_dict.copy()
+            else:
+                # Merge _dir_info_dict with current items_info_dict
+                items_info_dict['images'] += _dir_info_dict['images']
+                items_info_dict['images_count'] += _dir_info_dict['images_count']
+                items_info_dict['image_groups'] = {**items_info_dict['image_groups'], **_dir_info_dict['image_groups']}
+                items_info_dict['image_groups_count'] += _dir_info_dict['image_groups_count']
+
+            if not os.path.exists(f'{_dir_abs}/.skip'):
+                _dir_posable_info_dict = self.__class__._get_item_info(f'{_dir_abs}/item{"s" if depth < 2 else ""}' +
+                                                                       f'_posable_info.json', mode='posable_info')
+                if not items_posable_info_dict:
+                    # Initialize merged dict
+                    items_posable_info_dict = _dir_posable_info_dict.copy()
+                else:
+                    # Merge _dir_info_dict with current items_info_dict
+                    items_posable_info_dict['posable_images'] += _dir_posable_info_dict['posable_images']
+                    items_posable_info_dict['posable_images_count'] += _dir_posable_info_dict['posable_images_count']
+                    items_posable_info_dict['posable_image_groups'] = {
+                        **items_posable_info_dict['posable_image_groups'],
+                        **_dir_posable_info_dict['posable_image_groups']
+                    }
+                    items_posable_info_dict['posable_image_groups_count'] += \
+                        _dir_posable_info_dict['posable_image_groups_count']
+                    items_posable_info_dict['posable_image_pairs'] += _dir_posable_info_dict['posable_image_pairs']
+                    items_posable_info_dict['posable_image_pairs_count'] += \
+                        _dir_posable_info_dict['posable_image_pairs_count']
+
+            progress_bar.update()
+
+        # Save items_info.json JSON file
+        items_info_dict['id'] = os.path.basename(dir_abs)
+        items_info_dict['path'] = dir_abs.replace(self.img_dir_path, '')
+        with open(f'{dir_abs}/items_info.json', 'w') as json_fp:
+            json.dump(items_info_dict, json_fp, indent=4)
+
+        # Save items_posable_info.json JSON file
+        if len(items_posable_info_dict.keys()) > 0:
+            items_posable_info_dict['id'] = os.path.basename(dir_abs)
+            items_posable_info_dict['path'] = dir_abs.replace(self.img_dir_path, '')
+            with open(f'{dir_abs}/items_posable_info.json', 'w') as json_fp:
+                json.dump(items_posable_info_dict, json_fp, indent=4)
+
+    def backward(self, depth: int = 2) -> None:
+        """
+        Method for completing a backward pass in scraping DeepFashion ICRB images:
+        Recursively visits all directories at given $depth$ and merges information saved in JSON files from children
+        directories.
+        Depths:
+            0: <item dir level> (root: /, dirs: ["MEN", "WOMEN"])
+            1 (e.g.): root: /MEN, dirs: ["Denim", "Jackets_Vests", ...]
+            2 (e.g.): root: /MEN/Denim, dirs: ["id_00000080", "id_00000089", ...]
+            3: <item dir level>  (benchmark's images lay there)
+        :param depth: integer denoting current backward scraping level (supported: 0, 1, 2)
+        """
+        root_dirs_count_at_depth = {
+            0: 2,
+            1: 23,
+            2: 7982,
+            3: 0,  # at item level there should be no dirs, just image files
+        }
+        while depth >= 0:
+            with tqdm(total=root_dirs_count_at_depth[depth], colour='yellow') as progress_bar:
+                for _root, _dirs, _files in os.walk(self.img_dir_path):
+                    _relative_root = _root.replace(self.img_dir_path, '')
+                    _depth = _relative_root.count('/')
+                    if _depth != depth:
+                        continue
+
+                    self._backward_dir(_depth, _root, progress_bar)
+            depth -= 1
 
     @staticmethod
     def run(forward_pass: bool = True, backward_pass: bool = True, hq: bool = False) -> None:
         """
         Entry point of class.
-        :param forward_pass: indicate if should run scraper's forward pass (create item_info.json files in item dirs)
-        :param backward_pass: indicate if should run scraper's backward pass (recursively merge items JSON files)
+        :param forward_pass: set to True to run scraper's forward pass (create item_info.json files in item dirs)
+        :param backward_pass: set to True to run scraper's backward pass (recursively merge items JSON files)
                               Note: if $forward_pass$ is set to True, then $backward_pass$ is also set to True.
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         """
-        scraper = InShopClothesRetrievalBenchmarkScraper(hq=hq)
+        scraper = ICRBScraper(hq=hq)
         scraper.logger.info(f'SCRAPE DIR = {scraper.img_dir_path}')
-        scraper.logger.info('resolve_duplicate_items(): [STARTING...]')
-        scraper.resolve_duplicate_items()
-        scraper.logger.info(f'resolve_duplicate_items(): [DONE]')
-        scraper.logger.info('resolve_useless_items(): [STARTING...]')
-        scraper.resolve_useless_items()
-        scraper.logger.info(f'resolve_useless_items(): [DONE]')
+        # Clear current files
+        scraper.logger.info('[clear_info] STARTING')
+        scraper.clear_info(forward_pass=forward_pass)
+        scraper.logger.info('[clear_info] DONE')
         if forward_pass:
-            scraper.logger.info('forward(): [STARTING...]')
+            # Resolve duplicate items
+            scraper.logger.info('[resolve_duplicate_items] STARTING')
+            scraper.resolve_duplicate_items()
+            scraper.logger.info('[resolve_duplicate_items] DONE')
+            # Resolve non-posable items
+            scraper.logger.info('[resolve_non_posable_items] STARTING')
+            scraper.resolve_non_posable_items()
+            scraper.logger.info('[resolve_non_posable_items] DONE')
+            # Forward pass
+            scraper.logger.info('[forward] STARTING')
             scraper.forward()
-            # assert scraper.test_forward()
-            scraper.logger.info('forward(): [DONE]')
+            scraper.logger.info('[forward] DONE')
             backward_pass = True
+        # Backward pass
         if backward_pass:
-            scraper.logger.info('backward(): [STARTING...]')
+            scraper.logger.info('[backward] STARTING')
             scraper.backward()
-            # assert scraper.test_backward()
-            scraper.logger.info('backward(): [DONE]')
-        scraper.logger.info('[DONE]')
+            scraper.logger.info('[backward] DONE')
+        scraper.logger.info('DONE')
 
 
 if __name__ == '__main__':
-    InShopClothesRetrievalBenchmarkScraper.run(forward_pass=True, backward_pass=True, hq=False)
+    if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
+        ICRBScraper.run(forward_pass=True, backward_pass=True, hq=False)
