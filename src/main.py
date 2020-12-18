@@ -65,13 +65,9 @@ def preview_icrb_images():
     dataset.logger.info(f'train_set[1234] = {str((train_pair_img_1.shape, train_pair_img_2.shape))}')
     dataset.logger.info(f'test_set[1234] = {str((test_pair_img_1.shape, test_pair_img_2.shape))}')
 
-    plt.imshow(torch.cat((train_pair_img_1, train_pair_img_2), dim=2).permute(1, 2, 0))
+    plt.imshow(torch.cat((train_pair_img_1, train_pair_img_2, train_pair_pose_2), dim=2).permute(1, 2, 0))
     plt.show()
-    plt.imshow(torch.cat((train_pair_img_2, train_pair_pose_2), dim=2).permute(1, 2, 0))
-    plt.show()
-    plt.imshow(torch.cat((test_pair_img_1, test_pair_img_2), dim=2).permute(1, 2, 0))
-    plt.show()
-    plt.imshow(torch.cat((test_pair_img_2, test_pair_pose_2), dim=2).permute(1, 2, 0))
+    plt.imshow(torch.cat((test_pair_img_1, test_pair_img_2, test_pair_pose_2), dim=2).permute(1, 2, 0))
     plt.show()
 
 

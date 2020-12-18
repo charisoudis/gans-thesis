@@ -1,19 +1,18 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 from torch import Tensor
-from typing import Optional
 
-from modules.partial.encoding import ContractingBlock
 from modules.partial.decoding import FeatureMapLayer, ChannelsProjectLayer
+from modules.partial.encoding import ContractingBlock
 
 
 class PatchGANDiscriminator(nn.Module):
     """
     PatchGANDiscriminator Class:
-    Outputs a map of real/fake probabilities.
-    Parameters:
-        c_in: the number of image input channels
-        c_hidden: the initial number of discriminator convolutional filters
+    This class implements the PatchGAN discriminator network used by many GAN architectures, such as pix2pix, pix2pixHD
+    and CycleGAN. Outputs a map of real/fake probabilities instead of scalar per input image.
     """
 
     def __init__(self, c_in: int, c_hidden: int = 8, n_contracting_blocks: int = 4, use_spectral_norm: bool = False):
@@ -47,14 +46,14 @@ class PatchGANDiscriminator(nn.Module):
             x = torch.cat([x, y], dim=1)  # channel-wise concatenation
         return self.patch_gan_discriminator(x)
 
-    def get_loss(self, real: Tensor, fake: Tensor, condition: Tensor = None,
+    def get_loss(self, real: Tensor, fake: Tensor, condition: Optional[Tensor] = None,
                  criterion: nn.modules.Module = nn.BCELoss()) -> Tensor:
         """
         Compute adversarial loss.
         :param real: image tensor of shape (N, C, H, W) from real dataset
         :param fake: image tensor of shape (N, C, H, W) produced by generator (i.e. fake images)
         :param condition: condition image tensor of shape (N, C_in/2, H, W) that is stacked before input to PatchGAN
-        discriminator
+                          discriminator (optional)
         :param criterion: loss function (such as nn.BCELoss, nn.MSELoss and others)
         :return: torch.Tensor containing loss value(s)
         """

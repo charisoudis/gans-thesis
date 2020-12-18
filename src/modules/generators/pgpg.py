@@ -72,7 +72,7 @@ class PGPGGenerator(nn.Module):
         super(PGPGGenerator, self).__init__()
 
         self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=16, w_in=w_in, h_in=h_in)
-        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=3, c_hidden=32)
+        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32)
 
     def forward(self, x: Tensor, y_pose: Tensor) -> Tuple[Tensor, Tensor]:
         """
@@ -87,7 +87,7 @@ class PGPGGenerator(nn.Module):
 
     def get_loss(self, x: Tensor, y_pose: Tensor, y: Tensor, disc: nn.Module,
                  adv_criterion: nn.modules.Module = nn.MSELoss(),
-                 recon_criterion: nn.Module = nn.L1Loss()) -> Tuple[Tensor, Tensor]:
+                 recon_criterion: nn.Module = nn.L1Loss()) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Get the loss of the generator given inputs.
         :param x: input images
@@ -99,7 +99,8 @@ class PGPGGenerator(nn.Module):
         :param recon_criterion: the reconstruction loss function; takes the real images from Y and those images put
                                 through a (X,Yp)->Y generator and returns the image reconstruction loss (which we aim
                                 to minimize)
-        :return: a tuple containing the G1's loss (a scalar) and G2's loss (a scalar)
+        :return: a tuple containing the G1's loss (a scalar) and G2's loss (a scalar) and the outputs (for visualization
+                 purposes)
         """
         g1_out, g_out = self(x, y_pose)
         y_pose[y_pose > 0] = 1   # poss may act as a loss mask since it is a DensePose IUV map
@@ -113,8 +114,8 @@ class PGPGGenerator(nn.Module):
         gen_out_predictions = disc(g_out, x)
         g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
         # Aggregate
-        g2_loss = g2_loss_recon + g2_loss_adv
-        return g1_loss, g2_loss
+        g_loss = g2_loss_recon + g2_loss_adv
+        return g1_loss, g_loss, g1_out, g_out
 
 
 if __name__ == '__main__':
@@ -127,7 +128,7 @@ if __name__ == '__main__':
         print(__y.shape)
         print(__y_pose.shape)
 
-        __g1_loss, __g_loss = __gen.get_loss(__x, __y_pose, __y, disc=__disc)
+        __g1_loss, __g_loss, _, _ = __gen.get_loss(__x, __y_pose, __y, disc=__disc)
         print(__g1_loss)
         print(__g_loss)
         break
