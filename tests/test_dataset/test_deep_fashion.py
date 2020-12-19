@@ -53,7 +53,10 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
         with open(f'{self.deep_fashion_img_root}/items_posable_info.json') as fp:
             self.items_posable_info = json.load(fp)
 
+        self.target_shape = 128
         self.transforms = transforms.Compose([
+            transforms.Resize(self.target_shape),
+            transforms.CenterCrop(self.target_shape),
             transforms.ToTensor()
         ])
         self.dataset = ICRBCrossPoseDataset(root=self.deep_fashion_root, pose=False, image_transforms=self.transforms,
@@ -79,8 +82,10 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
         for _index in np.random.choice(range(len(self.dataset)), 1000):
             self.dataset.pose = False
             image_1, image_2 = self.dataset[_index]
-            self.assertEqual(tuple(image_1.shape), (3, 256, 256), msg=f'image_1.shape={tuple(image_1.shape)}')
-            self.assertEqual(tuple(image_2.shape), (3, 256, 256), msg=f'image_2.shape={tuple(image_2.shape)}')
+            self.assertEqual(tuple(image_1.shape), (3, self.target_shape, self.target_shape),
+                             msg=f'image_1.shape={tuple(image_1.shape)}')
+            self.assertEqual(tuple(image_2.shape), (3, self.target_shape, self.target_shape),
+                             msg=f'image_2.shape={tuple(image_2.shape)}')
             # Check reverse pair
             if _index >= len(self.dataset) // 2:
                 _index_rev = _index - len(self.dataset) // 2
@@ -94,11 +99,11 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
             tensors_tuple = self.dataset[_index]
             self.assertEqual(len(tensors_tuple), 3)
             self.assertEqual(type(tensors_tuple[0]), torch.Tensor)
-            self.assertEqual(tuple(tensors_tuple[0].shape), (3, 256, 256),
+            self.assertEqual(tuple(tensors_tuple[0].shape), (3, self.target_shape, self.target_shape),
                              msg=f'tensors_tuple[0].shape={tuple(tensors_tuple[0].shape)}')
-            self.assertEqual(tuple(tensors_tuple[1].shape), (3, 256, 256),
+            self.assertEqual(tuple(tensors_tuple[1].shape), (3, self.target_shape, self.target_shape),
                              msg=f'tensors_tuple[0].shape={tuple(tensors_tuple[1].shape)}')
-            self.assertEqual(tuple(tensors_tuple[2].shape), (3, 256, 256),
+            self.assertEqual(tuple(tensors_tuple[2].shape), (3, self.target_shape, self.target_shape),
                              msg=f'tensors_tuple[2].shape={tuple(tensors_tuple[2].shape)}')
             # Check reverse pair
             image_1_rev, image_2_rev, target_2_rev = self.dataset[_index_rev]
@@ -113,8 +118,8 @@ class TestICRBScraper(unittest.TestCase):
         self.inside_colab = 'google.colab' in sys.modules or \
                             'google.colab' in str(get_ipython()) or \
                             'COLAB_GPU' in os.environ
-        self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
-        self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
+        self.path_prefix = '/content' if self.inside_colab else ''
+        self.deep_fashion_root = self.path_prefix + '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
 
     def test_forward(self) -> None:
@@ -129,7 +134,7 @@ class TestICRBScraper(unittest.TestCase):
                     self.assertTrue(2, len(dup_file_lines))
                     self.assertTrue(dup_file_lines[0].startswith('Moved To: '))
                     self.assertTrue(dup_file_lines[1].startswith('Reason: '))
-                    moved_to_path = dup_file_lines[0].replace('Moved To: ', '')
+                    moved_to_path = self.path_prefix + dup_file_lines[0].replace('Moved To: ', '')
                     self.assertTrue(os.path.exists(moved_to_path))
                     self.assertFalse(os.path.exists(f'{moved_to_path}/.duplicate'))
                 elif '.skip' in _files:
