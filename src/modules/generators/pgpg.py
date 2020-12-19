@@ -114,8 +114,8 @@ class PGPGGenerator(nn.Module):
         gen_out_predictions = disc(g_out, x)
         g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
         # Aggregate
-        g_loss = g2_loss_recon + g2_loss_adv
-        return g1_loss, g_loss, g1_out, g_out
+        g2_loss = g2_loss_recon + g2_loss_adv
+        return g1_loss, g2_loss, g1_out, g_out
 
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 from time import sleep
 from typing import Optional, Tuple, Union
 
@@ -34,8 +35,9 @@ class ICRBDataset(Dataset):
         """
         super(ICRBDataset, self).__init__()
         # Test if running inside Colab
-        if root.startswith('/data') and os.path.exists('/content'):
-            root = f'/content/{root}'
+        self.inside_colab = 'google.colab' in sys.modules
+        if root.startswith('/data') and self.inside_colab:
+            root = f'/content{root}'
         self.logger = CommandLineLogger(log_level='info')
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_info.json'
@@ -113,8 +115,9 @@ class ICRBCrossPoseDataset(Dataset):
         """
         super(ICRBCrossPoseDataset, self).__init__()
         # Test if running inside Colab
-        if root.startswith('/data') and os.path.exists('/content'):
-            root = f'/content/{root}'
+        self.inside_colab = 'google.colab' in sys.modules
+        if root.startswith('/data') and self.inside_colab:
+            root = f'/content{root}'
         self.logger = CommandLineLogger(log_level='info')
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_posable_info.json'
@@ -186,10 +189,6 @@ class ICRBCrossPoseDataset(Dataset):
         image_1 = self.transforms(image_1)
         image_2 = self.transforms(image_2)
         target_pose_2 = None if not self.pose else self.transforms(target_pose_2)
-        # if image_1.shape[0] != 3:
-        #     image_1 = image_1.repeat(3, 1, 1)
-        # if image_2.shape[0] != 3:
-        #     image_2 = image_2.repeat(3, 1, 1)
         return (image_1, image_2) if not self.pose else (image_1, image_2, target_pose_2)
 
     def __len__(self) -> int:

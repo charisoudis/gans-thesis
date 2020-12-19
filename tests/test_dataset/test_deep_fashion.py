@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import unittest
 
 import numpy as np
@@ -13,7 +14,9 @@ class TestICRBDataset(unittest.TestCase):
 
     # noinspection DuplicatedCode
     def setUp(self) -> None:
+        self.inside_colab = 'google.colab' in sys.modules
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
+        self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
         self.assertTrue(os.path.exists(f'{self.deep_fashion_img_root}/items_info.json'))
         with open(f'{self.deep_fashion_img_root}/items_info.json') as fp:
@@ -37,7 +40,9 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
 
     # noinspection DuplicatedCode
     def setUp(self) -> None:
+        self.inside_colab = 'google.colab' in sys.modules
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
+        self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
         self.assertTrue(os.path.exists(f'{self.deep_fashion_img_root}/items_info.json'))
         with open(f'{self.deep_fashion_img_root}/items_posable_info.json') as fp:
@@ -53,7 +58,7 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
         self.assertEqual(self.items_posable_info['posable_image_pairs_count'], len(self.dataset) // 2)
 
     def test_index_to_paths(self) -> None:
-        for _index in np.random.choice(range(len(self.dataset) // 2), 1000):
+        for _index in range(len(self.dataset) // 2):
             self.dataset.pose = False
             image_1_path, image_2_path = self.dataset.index_to_paths(_index)
             self.assertTrue(os.path.exists(image_1_path), msg=f'image_1_path={image_1_path} does NOT exist')
@@ -100,7 +105,9 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
 class TestICRBScraper(unittest.TestCase):
 
     def setUp(self) -> None:
+        self.inside_colab = 'google.colab' in sys.modules
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
+        self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
 
     def test_forward(self) -> None:
