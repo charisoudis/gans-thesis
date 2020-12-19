@@ -5,7 +5,7 @@ from time import sleep
 from typing import Optional, Tuple, Union
 
 import click
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
@@ -166,9 +166,22 @@ class ICRBCrossPoseDataset(Dataset):
         """
         paths_tuple = self.index_to_paths(index)
         # Fetch images
-        image_1 = Image.open(paths_tuple[0])
-        image_2 = Image.open(paths_tuple[1] if not self.pose else paths_tuple[2])
-        target_pose_2 = None if not self.pose else Image.open(paths_tuple[3])
+        try:
+            image_1 = Image.open(paths_tuple[0])
+        except UnidentifiedImageError:
+            self.logger.critical(f'Image opening failed (path: {paths_tuple[0]})')
+            return self.__getitem__(index + 1)
+        image_2_path = paths_tuple[1] if not self.pose else paths_tuple[2]
+        try:
+            image_2 = Image.open(image_2_path)
+        except UnidentifiedImageError:
+            self.logger.critical(f'Image opening failed (path: {image_2_path})')
+            return self.__getitem__(index + 1)
+        try:
+            target_pose_2 = None if not self.pose else Image.open(paths_tuple[3])
+        except UnidentifiedImageError:
+            self.logger.critical(f'Pose image opening failed (path: {paths_tuple[3]}')
+            return self.__getitem__(index + 1)
         # Apply transforms
         image_1 = self.transforms(image_1)
         image_2 = self.transforms(image_2)
