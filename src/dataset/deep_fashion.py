@@ -6,6 +6,7 @@ from time import sleep
 from typing import Optional, Tuple, Union
 
 import click
+from IPython import get_ipython
 from PIL import Image, UnidentifiedImageError
 from torch import Tensor
 # noinspection PyProtectedMember
@@ -35,7 +36,7 @@ class ICRBDataset(Dataset):
         """
         super(ICRBDataset, self).__init__()
         # Test if running inside Colab
-        self.inside_colab = 'google.colab' in sys.modules
+        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
         if root.startswith('/data') and self.inside_colab:
             root = f'/content{root}'
         self.logger = CommandLineLogger(log_level='info')
@@ -115,7 +116,7 @@ class ICRBCrossPoseDataset(Dataset):
         """
         super(ICRBCrossPoseDataset, self).__init__()
         # Test if running inside Colab
-        self.inside_colab = 'google.colab' in sys.modules
+        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
         if root.startswith('/data') and self.inside_colab:
             root = f'/content{root}'
         self.logger = CommandLineLogger(log_level='info')

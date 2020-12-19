@@ -5,6 +5,7 @@ import unittest
 
 import numpy as np
 import torch
+from IPython import get_ipython
 from torchvision.transforms import transforms
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
@@ -14,7 +15,7 @@ class TestICRBDataset(unittest.TestCase):
 
     # noinspection DuplicatedCode
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules
+        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
         self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
@@ -40,7 +41,7 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
 
     # noinspection DuplicatedCode
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules
+        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
         self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
@@ -105,7 +106,7 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
 class TestICRBScraper(unittest.TestCase):
 
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules
+        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
         self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
