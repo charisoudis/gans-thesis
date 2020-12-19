@@ -36,7 +36,9 @@ class ICRBDataset(Dataset):
         """
         super(ICRBDataset, self).__init__()
         # Test if running inside Colab
-        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
+        self.inside_colab = 'google.colab' in sys.modules or \
+                            'google.colab' in str(get_ipython()) or \
+                            'COLAB_GPU' in os.environ
         if root.startswith('/data') and self.inside_colab:
             root = f'/content{root}'
         self.logger = CommandLineLogger(log_level='info')
@@ -116,7 +118,9 @@ class ICRBCrossPoseDataset(Dataset):
         """
         super(ICRBCrossPoseDataset, self).__init__()
         # Test if running inside Colab
-        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
+        self.inside_colab = 'google.colab' in sys.modules or \
+                            'google.colab' in str(get_ipython()) or \
+                            'COLAB_GPU' in os.environ
         if root.startswith('/data') and self.inside_colab:
             root = f'/content{root}'
         self.logger = CommandLineLogger(log_level='info')

@@ -15,7 +15,9 @@ class TestICRBDataset(unittest.TestCase):
 
     # noinspection DuplicatedCode
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
+        self.inside_colab = 'google.colab' in sys.modules or \
+                            'google.colab' in str(get_ipython()) or \
+                            'COLAB_GPU' in os.environ
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
         self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
@@ -41,7 +43,9 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
 
     # noinspection DuplicatedCode
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
+        self.inside_colab = 'google.colab' in sys.modules or \
+                            'google.colab' in str(get_ipython()) or \
+                            'COLAB_GPU' in os.environ
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
         self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
@@ -106,7 +110,9 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
 class TestICRBScraper(unittest.TestCase):
 
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules or 'google.colab' in str(get_ipython())
+        self.inside_colab = 'google.colab' in sys.modules or \
+                            'google.colab' in str(get_ipython()) or \
+                            'COLAB_GPU' in os.environ
         self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
         self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
