@@ -157,5 +157,5 @@ class TestICRBScraper(unittest.TestCase):
             if os.path.basename(_root).startswith('id_'):
                 continue
 
-            self.assertTrue(['items_info.json', 'items_posable_info.json'] == _files,
-                            msg=f'@{_root}, found files: {str(_files)}')
+            self.assertTrue(['items_info.json', 'items_posable_info.json'] == sorted(_files),
+                            msg=f'@ {_root}, found files: {str(_files)}')

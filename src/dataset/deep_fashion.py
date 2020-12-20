@@ -155,7 +155,7 @@ class ICRBCrossPoseDataset(Dataset):
                  (image_1_path, pose_1_path, image_2_path, pose_2_path) otherwise. All file paths are absolute.
         """
         _real_index = index % self.real_pairs_count
-        _swap = _real_index == index
+        _swap = (_real_index == index)
         # Find pair's image paths
         image_1_path, image_2_path = self.items_info['posable_image_pairs'][_real_index]
         if _swap:

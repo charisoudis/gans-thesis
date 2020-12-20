@@ -61,11 +61,14 @@ class PGPGGenerator(nn.Module):
     Guided Person Image Generation").
     """
 
-    def __init__(self, c_in: int, c_out: int, w_in: int = 256, h_in: int = 256):
+    def __init__(self, c_in: int, c_out: int, g1_c_project_down: int = 10, w_in: int = 256, h_in: int = 256):
         """
         PGPGGenerator class constructor:
         :param c_in: the number of channels to expect from a given input (image's channels + pose maps' channels)
         :param c_out: the number of channels to expect for a given output
+        :param g1_c_project_down: number of channels to down-project to on G1's bottleneck before applying FC layer.
+                                  Down-projecting to P channels is necessary to reduce number of params from 1024*Hp*Wp
+                                  to P*Hp*Wp+1024. Default is 10.
         :param w_in: input image's width
         :param h_in: input image's height
         """
@@ -103,9 +106,9 @@ class PGPGGenerator(nn.Module):
                  purposes)
         """
         g1_out, g_out = self(x, y_pose)
-        y_pose[y_pose > 0] = 1   # poss may act as a loss mask since it is a DensePose IUV map
+        y_pose[y_pose > 0] = 1  # pose may act as a loss mask since it is a DensePose IUV map, not just skeleton points
         save_tensor_to_image_file(y_pose)
-        y_pose += 1              # how much we want to weight on non-background area (original paper weight is 1)
+        y_pose += 1  # how much we want to weight on non-background area (original paper weight is 1)
         # 1) L1 loss for G1
         g1_loss = recon_criterion(g1_out * y_pose, y * y_pose)
         # 2) L1 loss for G2
