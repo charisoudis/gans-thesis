@@ -89,7 +89,7 @@ class SSIM(nn.Module):
 
         # Create convolution kernel (a multivariate gaussian)
         self.window = SSIM._create_window(window_size, c_img)
-        self.window.to(device)
+        self.window = self.window.to(device)
 
         # Save arguments to instance
         self.window_size = window_size
