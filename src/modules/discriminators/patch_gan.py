@@ -65,3 +65,9 @@ class PatchGANDiscriminator(nn.Module):
         loss_on_real = criterion(predictions_on_real, torch.ones_like(predictions_on_real))
         loss_on_fake = criterion(predictions_on_fake, torch.zeros_like(predictions_on_real))
         return 0.5 * (loss_on_real + loss_on_fake)
+
+
+if __name__ == '__main__':
+    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=6, use_spectral_norm=True)
+    print(__disc(torch.randn(1, 6, 128, 128)).shape)
+    print(__disc)

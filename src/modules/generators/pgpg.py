@@ -61,12 +61,12 @@ class PGPGGenerator(nn.Module):
     Guided Person Image Generation").
     """
 
-    def __init__(self, c_in: int, c_out: int, g1_c_project_down: int = 10, w_in: int = 256, h_in: int = 256):
+    def __init__(self, c_in: int, c_out: int, g1_c_bottleneck_down: int = 10, w_in: int = 256, h_in: int = 256):
         """
         PGPGGenerator class constructor:
         :param c_in: the number of channels to expect from a given input (image's channels + pose maps' channels)
         :param c_out: the number of channels to expect for a given output
-        :param g1_c_project_down: number of channels to down-project to on G1's bottleneck before applying FC layer.
+        :param g1_c_bottleneck_down: number of channels to down-project to on G1's bottleneck before applying FC layer.
                                   Down-projecting to P channels is necessary to reduce number of params from 1024*Hp*Wp
                                   to P*Hp*Wp+1024. Default is 10.
         :param w_in: input image's width
@@ -74,7 +74,8 @@ class PGPGGenerator(nn.Module):
         """
         super(PGPGGenerator, self).__init__()
 
-        self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=16, w_in=w_in, h_in=h_in)
+        self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=16, c_bottleneck_down=g1_c_bottleneck_down,
+                                 w_in=w_in, h_in=h_in)
         self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32)
 
     def forward(self, x: Tensor, y_pose: Tensor) -> Tuple[Tensor, Tensor]:
@@ -134,4 +135,10 @@ if __name__ == '__main__':
         __g1_loss, __g_loss, _, _ = __gen.get_loss(__x, __y_pose, __y, disc=__disc)
         print(__g1_loss)
         print(__g_loss)
+
+        # Visualization Code
+        # from torchviz import make_dot, make_dot_from_trace
+        # dot = make_dot(__g2_out, params=dict(__gen.named_parameters()))
+        # dot.render("test.png")
+        # print(dot)
         break
