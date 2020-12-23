@@ -144,6 +144,9 @@ class ICRBCrossPoseDataset(Dataset):
                           f' {to_human_readable(self.total_images_count)} posable images in benchmark')
         # Save transforms
         self.transforms = image_transforms
+        self.pose_transforms = transforms.Compose(
+            [_t for _t in image_transforms.transforms if type(_t) != transforms.Normalize]
+        )
         # Save pose switch
         self.pose = pose
 
@@ -193,7 +196,7 @@ class ICRBCrossPoseDataset(Dataset):
         # Apply transforms
         image_1 = self.transforms(image_1)
         image_2 = self.transforms(image_2)
-        target_pose_2 = None if not self.pose else self.transforms(target_pose_2)
+        target_pose_2 = None if not self.pose else self.pose_transforms(target_pose_2)
         return (image_1, image_2) if not self.pose else (image_1, image_2, target_pose_2)
 
     def __len__(self) -> int:

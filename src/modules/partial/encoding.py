@@ -53,12 +53,12 @@ class UNETContractingBlock(nn.Module):
         super(UNETContractingBlock, self).__init__()
         self.unet_contracting_block = nn.Sequential(
             # 1st convolution layer
-            nn.Conv2d(c_in, c_in * 2, kernel_size=kernel_size, padding=1),
+            nn.Conv2d(c_in, c_in * 2, kernel_size=kernel_size, stride=1, padding=1),
             nn.BatchNorm2d(c_in * 2) if use_bn else nn.Identity(),
             nn.Dropout() if use_dropout else nn.Identity(),
             nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
             # 2nd convolution layer
-            nn.Conv2d(c_in * 2, c_in * 2, kernel_size=kernel_size, padding=1),
+            nn.Conv2d(c_in * 2, c_in * 2, kernel_size=kernel_size, stride=1, padding=1),
             nn.BatchNorm2d(c_in * 2) if use_bn else nn.Identity(),
             nn.Dropout() if use_dropout else nn.Identity(),
             nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),

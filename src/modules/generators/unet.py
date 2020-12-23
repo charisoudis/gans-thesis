@@ -17,8 +17,8 @@ class UNETWithSkipConnections(nn.Module):
     """
 
     def __init__(self, c_in, c_out, c_hidden=32, n_contracting_blocks: int = 4, use_dropout: bool = False,
-                 fc_in_bottleneck: bool = False, h_in: Optional[int] = None, w_in: Optional[int] = None,
-                 c_bottleneck_down: int = 10):
+                 use_bn: bool = False, fc_in_bottleneck: bool = False, h_in: Optional[int] = None,
+                 w_in: Optional[int] = None, c_bottleneck_down: int = 10):
         """
         UNETWithSkipConnections class constructor.
         :param c_in: the number of channels to expect from a given input
@@ -26,6 +26,7 @@ class UNETWithSkipConnections(nn.Module):
         :param c_hidden: the base number of channels multiples of which are used through-out the UNET network
         :param n_contracting_blocks: the base number of contracting (and corresponding expanding) blocks
         :param use_dropout: set to True to use DropOut in the 1st half of the encoder part of the network
+        :param use_bn: set to True to use Batch Normalization after every convolution layer
         :param fc_in_bottleneck: set to True to apply a FC layer in the bottleneck (e.g. for PGPG this is set to True)
         :param h_in: required if fc_in_bottleneck is True, to calculate FC layer size
         :param w_in: required if fc_in_bottleneck is True, to calculate FC layer size
@@ -39,7 +40,8 @@ class UNETWithSkipConnections(nn.Module):
         # Contracting blocks
         for i in range(n_contracting_blocks):
             setattr(self, f'contract{(i + 1)}',
-                    UNETContractingBlock(c_hidden * 2 ** i, use_dropout=use_dropout and i < n_contracting_blocks // 2))
+                    UNETContractingBlock(c_hidden * 2 ** i, use_bn=use_bn,
+                                         use_dropout=use_dropout and i < n_contracting_blocks // 2))
 
         # Bottleneck FC
         self.c_bottleneck = c_hidden * 2 ** n_contracting_blocks
@@ -54,7 +56,7 @@ class UNETWithSkipConnections(nn.Module):
                 ChannelsProjectLayer(self.c_bottleneck, c_bottleneck_down),
                 nn.Flatten(),
                 nn.Linear(bottleneck_neurons_count, bottleneck_neurons_count),
-                nn.LeakyReLU(inplace=True),
+                # nn.LeakyReLU(inplace=True),
                 nn.Unflatten(1, (c_bottleneck_down, h_bottleneck, w_bottleneck)),
                 ChannelsProjectLayer(c_bottleneck_down, self.c_bottleneck),
             )
@@ -66,7 +68,7 @@ class UNETWithSkipConnections(nn.Module):
         # Output block
         self.out = nn.Sequential(
             FeatureMapLayer(c_hidden, c_out),
-            torch.nn.Sigmoid()
+            torch.nn.Tanh()
         )
 
     def forward(self, x: Tensor) -> Tensor:

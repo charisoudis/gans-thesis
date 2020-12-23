@@ -16,8 +16,8 @@ class PGPGGenerator1(UNETWithSkipConnections):
     This class implements the G1 generator network from the PGPG paper ("Pose Guided Person Image Generation").
     """
 
-    def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, c_bottleneck_down: int = 10, w_in: int = 256,
-                 h_in: int = 256):
+    def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, n_contracting_blocks: int = 6,
+                 c_bottleneck_down: int = 10, w_in: int = 256, h_in: int = 256):
         """
         PGPGGenerator1 class constructor.
         :param c_in: the number of channels to expect from a given input
@@ -28,9 +28,9 @@ class PGPGGenerator1(UNETWithSkipConnections):
         :param h_in: the input image height
         :param w_in: the input image width
         """
-        super(PGPGGenerator1, self).__init__(c_in=c_in, c_out=c_out, c_hidden=c_hidden, n_contracting_blocks=4,
-                                             use_dropout=False, fc_in_bottleneck=True, h_in=h_in, w_in=w_in,
-                                             c_bottleneck_down=c_bottleneck_down)
+        super(PGPGGenerator1, self).__init__(c_in=c_in, c_out=c_out, c_hidden=c_hidden, use_dropout=False, use_bn=False,
+                                             n_contracting_blocks=n_contracting_blocks, fc_in_bottleneck=True,
+                                             h_in=h_in, w_in=w_in, c_bottleneck_down=c_bottleneck_down)
 
 
 class PGPGGenerator2(UNETWithSkipConnections):
@@ -39,7 +39,7 @@ class PGPGGenerator2(UNETWithSkipConnections):
     This class implements the G2 generator network from the PGPG paper ("Pose Guided Person Image Generation").
     """
 
-    def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, n_contracting_blocks: int = 6,
+    def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, n_contracting_blocks: int = 4,
                  use_dropout: bool = True):
         """
         PGPGGenerator2 class constructor.
@@ -49,9 +49,8 @@ class PGPGGenerator2(UNETWithSkipConnections):
         :param n_contracting_blocks: the base number of contracting (and corresponding expanding) blocks
         :param use_dropout: set to True to use DropOut in the 1st half of the encoder part of the network
         """
-        super(PGPGGenerator2, self).__init__(c_in=c_in, c_out=c_out, c_hidden=c_hidden,
-                                             n_contracting_blocks=n_contracting_blocks,
-                                             use_dropout=use_dropout)
+        super(PGPGGenerator2, self).__init__(c_in=c_in, c_out=c_out, c_hidden=c_hidden, use_bn=False,
+                                             use_dropout=use_dropout, n_contracting_blocks=n_contracting_blocks)
 
 
 class PGPGGenerator(nn.Module):
@@ -61,7 +60,7 @@ class PGPGGenerator(nn.Module):
     Guided Person Image Generation").
     """
 
-    def __init__(self, c_in: int, c_out: int, g1_c_bottleneck_down: int = 10, w_in: int = 256, h_in: int = 256):
+    def __init__(self, c_in: int, c_out: int, g1_c_bottleneck_down: int = 256, w_in: int = 256, h_in: int = 256):
         """
         PGPGGenerator class constructor:
         :param c_in: the number of channels to expect from a given input (image's channels + pose maps' channels)
@@ -74,9 +73,9 @@ class PGPGGenerator(nn.Module):
         """
         super(PGPGGenerator, self).__init__()
 
-        self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=16, c_bottleneck_down=g1_c_bottleneck_down,
-                                 w_in=w_in, h_in=h_in)
-        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32)
+        self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=32, n_contracting_blocks=6,
+                                 c_bottleneck_down=g1_c_bottleneck_down, w_in=w_in, h_in=h_in)
+        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32, n_contracting_blocks=4, use_dropout=False)
 
     def forward(self, x: Tensor, y_pose: Tensor) -> Tuple[Tensor, Tensor]:
         """
@@ -116,6 +115,7 @@ class PGPGGenerator(nn.Module):
         g2_loss_recon = recon_criterion(g_out * y_pose, y * y_pose)
         # 3) Adversarial loss for G2
         gen_out_predictions = disc(g_out, x)
+        print('gen_out_predictions.shape', gen_out_predictions.shape)
         g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
         # Aggregate
         g2_loss = g2_loss_recon + g2_loss_adv
@@ -124,8 +124,9 @@ class PGPGGenerator(nn.Module):
 
 if __name__ == '__main__':
     __gen = PGPGGenerator(c_in=6, c_out=3, w_in=256, h_in=256)
-    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=6, use_spectral_norm=True)
-    __dl = ICRBCrossPoseDataloader(image_transforms=transforms.Compose([transforms.ToTensor()]), batch_size=1)
+    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=5, use_spectral_norm=True)
+    __dl = ICRBCrossPoseDataloader(image_transforms=transforms.Compose(
+        [transforms.ToTensor(), transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))]), batch_size=1)
     for _, __images in enumerate(__dl):
         __x, __y, __y_pose = __images
         print(__x.shape)
