@@ -59,6 +59,9 @@ class IS(FID):
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
         gen_transforms_inv = invert_transforms(gen_transforms)
 
+        if self.device == 'cuda' and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         cur_samples = 0
         fake_predictions_list = []
         for real_samples in tqdm(dataloader, total=self.n_samples // self.batch_size):

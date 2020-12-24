@@ -126,6 +126,9 @@ class SSIM(nn.Module):
         """
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
 
+        if self.device == 'cuda' and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         cur_samples = 0
         ssim_maps_list = []
         for real_samples in tqdm(dataloader, total=self.n_samples // self.batch_size):
@@ -137,7 +140,7 @@ class SSIM(nn.Module):
             target_output = target_output.to(self.device)
             assert target_output.min() < 0, f'target_output.min() < 0: FAILED, min = {target_output.min()}'
             assert target_output.min() >= -1, f'target_output.min() >= -1: FAILED, min = {target_output.min()}'
-            assert target_output.max() > 0.5, f'target_output.max() > 0.5: FAILED, max = {target_output.max()}'
+            assert target_output.max() > 0, f'target_output.max() > 0: FAILED, max = {target_output.max()}'
             assert target_output.max() <= 1, f'target_output.max() <= 1: FAILED, max = {target_output.max()}'
             cur_batch_size = len(target_output)
 
@@ -151,7 +154,7 @@ class SSIM(nn.Module):
                 fake_output = fake_output[-1]
             assert fake_output.min() < 0, f'fake_output.min() < 0: FAILED, min = {fake_output.min()}'
             assert fake_output.min() >= -1, f'fake_output.min() >= -1: FAILED, min = {fake_output.min()}'
-            assert fake_output.max() > 0.5, f'fake_output.max() > 0.5: FAILED, max = {fake_output.max()}'
+            assert fake_output.max() > 0, f'fake_output.max() > 0: FAILED, max = {fake_output.max()}'
             assert fake_output.max() <= 1, f'fake_output.max() <= 1: FAILED, max = {fake_output.max()}'
 
             # Compute SSIM difference maps

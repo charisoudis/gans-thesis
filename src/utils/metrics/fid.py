@@ -141,6 +141,10 @@ class FID(nn.Module):
         :return: a scalar torch.Tensor object containing the computed FID value
         """
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
+
+        if self.device == 'cuda' and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         real_embeddings, fake_embeddings = self.get_embeddings(dataloader, gen, gen_transforms, target_index,
                                                                condition_indices, z_dim)
 

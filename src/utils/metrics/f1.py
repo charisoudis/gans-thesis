@@ -131,7 +131,8 @@ class F1(FID):
                           number gets, the more accurate the metric is)
         :param batch_size: the number of samples to precess at each loop
         """
-        super(F1, self).__init__(chkpts_root, device, n_samples, batch_size, crop_fc=True)
+        super(F1, self).__init__(chkpts_root=chkpts_root, device=device, n_samples=n_samples, batch_size=batch_size,
+                                 crop_fc=True)
 
     def forward(self, dataset: Dataset, gen: nn.Module, gen_transforms: transforms.Compose,
                 target_index: Optional[int] = None, condition_indices: Optional[Union[int, tuple]] = None,
@@ -156,6 +157,10 @@ class F1(FID):
         :return: a tuple containing (f1, precision, recall) as torch.Tensor objects
         """
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
+
+        if self.device == 'cuda' and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         real_embeddings, fake_embeddings = self.get_embeddings(dataloader, gen=gen, gen_transforms=gen_transforms,
                                                                target_index=target_index,
                                                                condition_indices=condition_indices, z_dim=z_dim)

@@ -1,3 +1,4 @@
+import os
 import unittest
 
 import torch
@@ -46,12 +47,14 @@ class TestPytorchUtils(unittest.TestCase):
         self.assertEqual(UnNormalize, type(ts_i.transforms[0]))
 
         # Evaluate on a real image
-        x = Image.open('/home/achariso/Pictures/me.jpg')
-        x_tensor = ts(x)
-        self.assertEqual(torch.Tensor, type(x_tensor))
-        self.assertEqual((3, shape, shape), tuple(x_tensor.shape))
-        x_tensor_hat = UnNormalize(mean=mean, std=std)(x_tensor)
-        self.assertEqual(torch.Tensor, type(x_hat))
-        self.assertEqual(tuple(x_tensor.shape), tuple(x_tensor_hat.shape))
-        self.assertGreaterEqual(x_tensor_hat.min(), 0)  # test if is normalized in [0, 1] as if only ToTensor() existed
-        self.assertLessEqual(x_tensor_hat.max(), 1)     # test if is normalized in [0, 1] as if only ToTensor() existed
+        test_img_path = '/home/achariso/Pictures/me.jpg'
+        if os.path.exists(test_img_path):
+            x = Image.open(test_img_path)
+            x_tensor = ts(x)
+            self.assertEqual(torch.Tensor, type(x_tensor))
+            self.assertEqual((3, shape, shape), tuple(x_tensor.shape))
+            x_tensor_hat = UnNormalize(mean=mean, std=std)(x_tensor)
+            self.assertEqual(torch.Tensor, type(x_hat))
+            self.assertEqual(tuple(x_tensor.shape), tuple(x_tensor_hat.shape))
+            self.assertGreaterEqual(x_tensor_hat.min(), 0)  # test if is normalized in [0, 1] as if used ToTensor()
+            self.assertLessEqual(x_tensor_hat.max(), 1)     # test if is normalized in [0, 1] as if used ToTensor()
