@@ -27,7 +27,8 @@ class CycleGAN(nn.Module):
         :param c_hidden_disc: the number of hidden channels in discriminators
         :param n_contracting_blocks_disc: the number of contracting blocks in discriminators
         :param use_spectral_norm_disc: if use spectral_norm (to penalize weight gradients) in discriminators
-        :param lr_scheduler_type: if specified, optimizers use LR scheduling of given type
+        :param lr_scheduler_type: if specified, optimizers use LR scheduling of given type (supported: 'on_plateau',
+                                  'cyclic', )
         """
         super(CycleGAN, self).__init__()
         # Domain Generators
@@ -50,9 +51,9 @@ class CycleGAN(nn.Module):
         # Optimizer LR Schedulers
         self.lr_scheduler_type = lr_scheduler_type
         if lr_scheduler_type is not None:
-            self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt, schedule_type='on_plateau')
-            self.disc_a_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_a_opt, schedule_type='on_plateau')
-            self.disc_b_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_b_opt, schedule_type='on_plateau')
+            self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt, schedule_type=lr_scheduler_type)
+            self.disc_a_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_a_opt, schedule_type=lr_scheduler_type)
+            self.disc_b_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_b_opt, schedule_type=lr_scheduler_type)
 
     def opt_zero_grad(self) -> None:
         """
