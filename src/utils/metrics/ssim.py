@@ -11,10 +11,9 @@ from torch import Tensor
 from torch.autograd import Variable
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import transforms
 from tqdm import tqdm
 
-from dataset.deep_fashion import ICRBCrossPoseDataset
+from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 
 
@@ -136,6 +135,10 @@ class SSIM(nn.Module):
             # Get target (real) images
             target_output = real_samples[target_index] if target_index is not None else real_samples
             target_output = target_output.to(self.device)
+            assert target_output.min() < 0, f'target_output.min() < 0: FAILED, min = {target_output.min()}'
+            assert target_output.min() >= -1, f'target_output.min() >= -1: FAILED, min = {target_output.min()}'
+            assert target_output.max() > 0.5, f'target_output.max() > 0.5: FAILED, max = {target_output.max()}'
+            assert target_output.max() <= 1, f'target_output.max() <= 1: FAILED, max = {target_output.max()}'
             cur_batch_size = len(target_output)
 
             # Generate fake images from conditions
@@ -146,6 +149,10 @@ class SSIM(nn.Module):
             fake_output = gen(*gen_inputs)
             if type(fake_output) == tuple or type(fake_output) == list:
                 fake_output = fake_output[-1]
+            assert fake_output.min() < 0, f'fake_output.min() < 0: FAILED, min = {fake_output.min()}'
+            assert fake_output.min() >= -1, f'fake_output.min() >= -1: FAILED, min = {fake_output.min()}'
+            assert fake_output.max() > 0.5, f'fake_output.max() > 0.5: FAILED, max = {fake_output.max()}'
+            assert fake_output.max() <= 1, f'fake_output.max() <= 1: FAILED, max = {fake_output.max()}'
 
             # Compute SSIM difference maps
             ssim_maps_list.append(_ssim_map(target_output, fake_output, self.window, self.window_size, self.c_img))
@@ -158,7 +165,8 @@ class SSIM(nn.Module):
 
 if __name__ == '__main__':
     ssim_calculator = SSIM(n_samples=2, batch_size=1, device='cpu')
-    _dataset = ICRBCrossPoseDataset(image_transforms=transforms.Compose([transforms.ToTensor()]), pose=True)
-    _gen = PGPGGenerator(c_in=6, c_out=3)
+    _gen = PGPGGenerator(c_in=6, c_out=3, w_in=128, h_in=128)
+    _gen_transforms = ICRBDataset.get_image_transforms(target_shape=128, target_channels=3)
+    _dataset = ICRBCrossPoseDataset(image_transforms=_gen_transforms, pose=True)
     ssim_score = ssim_calculator(_dataset, _gen, target_index=1, condition_indices=(0, 2))
     print(ssim_score)

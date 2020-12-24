@@ -3,9 +3,11 @@ from typing import Any
 import numpy as np
 import scipy.optimize
 import torch
+import torchvision.transforms.functional as f
 from torch import Tensor
 from torch.autograd import Function
 from torch.nn import Module
+from torchvision.transforms import transforms
 
 from utils.string import to_human_readable
 
@@ -121,3 +123,43 @@ def corr(x: Tensor, eps: float = 1e-08) -> Tensor:
     x /= torch.std(x, dim=0) + eps
     print('x.shape', x.shape)
     return 1 / (n_samples - 1) * x.transpose(-1, -2) @ x
+
+
+class UnNormalize(torch.nn.Module):
+    def __init__(self, mean, std, inplace=False):
+        super(UnNormalize, self).__init__()
+        self.mean = mean
+        self.std = std
+        self.inplace = inplace
+
+    def forward(self, tensor: Tensor) -> Tensor:
+        tensor = f.normalize(tensor, list(np.zeros_like(self.mean)), list(np.reciprocal(self.std)), self.inplace)
+        return f.normalize(tensor, list(-1 * np.asarray(self.mean)), list(np.ones_like(self.std)), self.inplace)
+
+
+def invert_transforms(ts: transforms.Compose) -> transforms.Compose:
+    """
+    Inverts Normalize and ToTensor transforms in a transformation sequence defined via torchvision.transforms.Compose.
+    :param ts: transforms.Compose object with the list of transforms to be inverted
+    :return: a torchvision.transforms.Compose object with the last transforms inverted
+    """
+    inverse_transforms_list = []
+    for i in reversed(range(len(ts.transforms))):
+        t = ts.transforms[i]
+        if type(t) == transforms.Normalize:
+            inverse_transforms_list.append(UnNormalize(mean=t.mean, std=t.std, inplace=t.inplace))
+        elif type(t) == transforms.ToTensor:
+            # inverse_transforms_list.append(transforms.ToPILImage())
+            # We reached the ToTensor() transform; no point in continuing inverting upwards where the image was still a
+            # PIL image object
+            break
+    return transforms.Compose(inverse_transforms_list)
+
+
+class ToTensorOrPass(transforms.ToTensor):
+    """
+    ToTensorOrPass Class:
+    Completes ToTensor() transform class by skipping if input is already a tensor.
+    """
+    def __call__(self, pic_or_tensor):
+        return pic_or_tensor if type(pic_or_tensor) == Tensor else super(ToTensorOrPass, self).__call__(pic_or_tensor)

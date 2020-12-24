@@ -6,6 +6,7 @@ from time import sleep
 from typing import Optional, Tuple, Union
 
 import click
+import numpy as np
 from IPython import get_ipython
 from PIL import Image, UnidentifiedImageError
 from torch import Tensor
@@ -18,18 +19,23 @@ from utils.command_line_logger import CommandLineLogger
 from utils.list import get_pairs, list_diff, join_lists
 from utils.string import group_by_prefix
 from utils.string import to_human_readable
+from utils.torch import ToTensorOrPass
 
 
 class ICRBDataset(Dataset):
     """
-    ICRBCrossPoseDataset Class:
+    ICRBDataset Class:
     This class is used to define the way DeepFashion's In-shop Clothes Retrieval Benchmark (ICRB) dataset is accessed.
     """
+
+    # Default normalization parameters for ICRB (converts tensors' ranges to [-1,1]
+    NormalizeMean = 0.5
+    NormalizeStd = 0.5
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
                  image_transforms: Optional[transforms.Compose] = None, hq: bool = False):
         """
-        ICRBCrossPoseDataset class constructor.
+        ICRBDataset class constructor.
         :param root: the root directory where all image files exist
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
@@ -82,19 +88,55 @@ class ICRBDataset(Dataset):
         """
         return self.total_images_count
 
+    @staticmethod
+    def get_image_transforms(target_shape: int, target_channels: int, norm_mean: Optional[float] = None,
+                             norm_std: Optional[float] = None) -> transforms.Compose:
+        """
+        Get the torchvision transforms to apply to the dataset based on default normalization parameters
+        :param target_shape: the H and W in the tensor coming out of image transforms
+        :param target_channels: the number of channels in the tensor coming out of image transforms
+        :param norm_mean: mean (same for all channels) or None to use dataset's default mean normalization parameter
+        :param norm_std: standard deviation (same for all channels) or None to use dataset's default std normalization
+                         parameter
+        :return: a torchvision.transforms.Compose object with the transforms to apply to each dataset image
+        """
+        assert target_channels in [1, 3]
+        norm_mean = ICRBDataset.NormalizeMean if norm_mean is None else norm_mean
+        norm_std = ICRBDataset.NormalizeStd if norm_std is None else norm_std
+        transforms_list = [
+            transforms.Resize(target_shape),
+            transforms.CenterCrop(target_shape),
+        ]
+        if target_channels == 1:
+            transforms_list.append(transforms.Grayscale(1))
+        transforms_list += [
+            ToTensorOrPass(),
+            transforms.Normalize(mean=tuple(np.ones(target_channels) * norm_mean),
+                                 std=tuple(np.ones(target_channels) * norm_std))
+        ]
+        return transforms.Compose(transforms_list)
+
 
 class ICRBDataloader(DataLoader):
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
+                 target_channels: Optional[int] = None, target_shape: Optional[int] = None,
                  image_transforms: Optional[transforms.Compose] = None, batch_size: int = 8, hq: bool = False, *args):
         """
-        ICRBCrossPoseDataloader class constructor.
+        ICRBDataloader class constructor.
         :param root: the root directory where all image files exist
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param batch_size: the number of images batch
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         :param args: argument list for torch.utils.data.Dataloader constructor
         """
+        assert image_transforms is None or (target_channels is None and target_shape is None), \
+            'Do not define image_transforms when target_channels and target_shape is not None'
+        assert (target_channels is not None and target_shape is not None) or (target_channels is None and target_shape
+                                                                              is None), \
+            'target_channels and target_shape can either both be None or both set'
+        image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels) if target_shape is not None \
+            else image_transforms
         _dataset = ICRBDataset(root=root, image_transforms=image_transforms, hq=hq)
         super(ICRBDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, *args)
 
@@ -102,16 +144,18 @@ class ICRBDataloader(DataLoader):
 class ICRBCrossPoseDataset(Dataset):
     """
     ICRBCrossPoseDataset Class:
-    This class is used to define the way DeepFashion's In-shop Clothes Retrieval Benchmark (ICRB) dataset is accessed to
-    retrieve cross-pose/scale image pairs.
+    This class is used to define the way DeepFashion's In-shop Clothes Retrieval Benchmark (ICRB) dataset is accessed so
+    as to retrieve cross-pose/scale image pairs.
     """
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 image_transforms: Optional[transforms.Compose] = None, pose: bool = False, hq: bool = False):
+                 image_transforms: Optional[transforms.Compose] = None, skip_pose_norm: bool = True,
+                 pose: bool = False, hq: bool = False):
         """
         ICRBCrossPoseDataset class constructor.
         :param root: the root directory where all image files exist
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param skip_pose_norm: set to True to remove Normalize() transform from pose images' transforms
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         :param pose: set to True to have __getitem__ return target pose image as well, otherwise __getitem__ will return
                      an image pair without target pose for the second image in pair
@@ -143,10 +187,14 @@ class ICRBCrossPoseDataset(Dataset):
         self.logger.debug(f'Found {to_human_readable(self.total_pairs_count)} posable image pairs from a total of' +
                           f' {to_human_readable(self.total_images_count)} posable images in benchmark')
         # Save transforms
-        self.transforms = image_transforms
-        self.pose_transforms = transforms.Compose(
-            [_t for _t in image_transforms.transforms if type(_t) != transforms.Normalize]
-        )
+        if image_transforms:
+            self.transforms = image_transforms
+            self.pose_transforms = image_transforms if not skip_pose_norm else transforms.Compose(
+                [_t for _t in image_transforms.transforms if type(_t) != transforms.Normalize]
+            )
+        else:
+            self.transforms = None
+            self.pose_transforms = None
         # Save pose switch
         self.pose = pose
 
@@ -194,9 +242,15 @@ class ICRBCrossPoseDataset(Dataset):
             self.logger.critical(f'Pose image opening failed (path: {paths_tuple[3]}')
             return self.__getitem__(index + 1)
         # Apply transforms
-        image_1 = self.transforms(image_1)
-        image_2 = self.transforms(image_2)
-        target_pose_2 = None if not self.pose else self.pose_transforms(target_pose_2)
+        if self.transforms:
+            image_1 = self.transforms(image_1)
+            image_2 = self.transforms(image_2)
+            target_pose_2 = None if not self.pose else self.pose_transforms(target_pose_2)
+        else:
+            to_tensor = transforms.ToTensor()
+            image_1 = to_tensor(image_1)
+            image_2 = to_tensor(image_2)
+            target_pose_2 = None if not self.pose else to_tensor(target_pose_2)
         return (image_1, image_2) if not self.pose else (image_1, image_2, target_pose_2)
 
     def __len__(self) -> int:
@@ -211,16 +265,35 @@ class ICRBCrossPoseDataset(Dataset):
 class ICRBCrossPoseDataloader(DataLoader):
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 image_transforms: Optional[transforms.Compose] = None, batch_size: int = 8, hq: bool = False, *args):
+                 image_transforms: Optional[transforms.Compose] = None,
+                 target_shape: Optional[int] = None, target_channels: Optional[int] = None,
+                 norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
+                 skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False, *args):
         """
         ICRBCrossPoseDataloader class constructor.
         :param root: the root directory where all image files exist
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param target_shape: the H and W in the tensor coming out of image transforms
+        :param target_channels: the number of channels in the tensor coming out of image transforms
+        :param norm_mean: mean (same for all channels) or None to use dataset's default mean normalization parameter
+        :param norm_std: standard deviation (same for all channels) or None to use dataset's default std normalization
+                         parameter
+        :param skip_pose_norm: set to True to remove Normalize() transform from pose images' transforms
         :param batch_size: the number of images batch
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         :param args: argument list for torch.utils.data.Dataloader constructor
         """
-        _dataset = ICRBCrossPoseDataset(root=root, image_transforms=image_transforms, pose=True, hq=hq)
+        if image_transforms is None and target_shape is None and target_channels is None:
+            image_transforms = transforms.Compose([transforms.ToTensor()])
+        assert image_transforms is None or (target_channels is None and target_shape is None), \
+            'Do not define image_transforms when target_channels and target_shape is not None'
+        assert (target_channels is not None and target_shape is not None) or (target_channels is None and target_shape
+                                                                              is None), \
+            'target_channels and target_shape can either both be None or both set'
+        image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels, norm_mean, norm_std) \
+            if target_shape is not None else image_transforms
+        _dataset = ICRBCrossPoseDataset(root=root, image_transforms=image_transforms, skip_pose_norm=skip_pose_norm,
+                                        pose=True, hq=hq)
         super(ICRBCrossPoseDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, *args)
 
 

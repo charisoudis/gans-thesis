@@ -18,7 +18,7 @@ class UNETWithSkipConnections(nn.Module):
 
     def __init__(self, c_in, c_out, c_hidden=32, n_contracting_blocks: int = 4, use_dropout: bool = False,
                  use_bn: bool = False, fc_in_bottleneck: bool = False, h_in: Optional[int] = None,
-                 w_in: Optional[int] = None, c_bottleneck_down: int = 10):
+                 w_in: Optional[int] = None, c_bottleneck_down: int = 10, use_out_tanh: bool = True):
         """
         UNETWithSkipConnections class constructor.
         :param c_in: the number of channels to expect from a given input
@@ -32,6 +32,8 @@ class UNETWithSkipConnections(nn.Module):
         :param w_in: required if fc_in_bottleneck is True, to calculate FC layer size
         :param c_bottleneck_down: the number of channels to project down to before flattening for FC layer (this is
                                   necessary since otherwise memory will be exhausted)
+        :param use_out_tanh: set to True to use Tanh() activation in output layer; otherwise no output activation will
+                             be used
         """
         super(UNETWithSkipConnections, self).__init__()
         self.upfeature = FeatureMapLayer(c_in, c_hidden)
@@ -69,7 +71,7 @@ class UNETWithSkipConnections(nn.Module):
         self.out = nn.Sequential(
             FeatureMapLayer(c_hidden, c_out),
             torch.nn.Tanh()
-        )
+        ) if use_out_tanh else FeatureMapLayer(c_hidden, c_out)
 
     def forward(self, x: Tensor) -> Tensor:
         """

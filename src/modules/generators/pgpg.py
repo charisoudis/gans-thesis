@@ -17,7 +17,7 @@ class PGPGGenerator1(UNETWithSkipConnections):
     """
 
     def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, n_contracting_blocks: int = 6,
-                 c_bottleneck_down: int = 10, w_in: int = 256, h_in: int = 256):
+                 c_bottleneck_down: int = 10, w_in: int = 256, h_in: int = 256, use_out_tanh: bool = True):
         """
         PGPGGenerator1 class constructor.
         :param c_in: the number of channels to expect from a given input
@@ -27,10 +27,13 @@ class PGPGGenerator1(UNETWithSkipConnections):
                                   necessary since otherwise memory will be exhausted), in generator 1 network.
         :param h_in: the input image height
         :param w_in: the input image width
+        :param use_out_tanh: set to True to use Tanh() activation in output layer; otherwise no output activation will
+                             be used
         """
         super(PGPGGenerator1, self).__init__(c_in=c_in, c_out=c_out, c_hidden=c_hidden, use_dropout=False, use_bn=False,
                                              n_contracting_blocks=n_contracting_blocks, fc_in_bottleneck=True,
-                                             h_in=h_in, w_in=w_in, c_bottleneck_down=c_bottleneck_down)
+                                             h_in=h_in, w_in=w_in, c_bottleneck_down=c_bottleneck_down,
+                                             use_out_tanh=use_out_tanh)
 
 
 class PGPGGenerator2(UNETWithSkipConnections):
@@ -40,7 +43,7 @@ class PGPGGenerator2(UNETWithSkipConnections):
     """
 
     def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, n_contracting_blocks: int = 4,
-                 use_dropout: bool = True):
+                 use_dropout: bool = True, use_out_tanh: bool = True):
         """
         PGPGGenerator2 class constructor.
         :param c_in: the number of channels to expect from a given input
@@ -48,9 +51,12 @@ class PGPGGenerator2(UNETWithSkipConnections):
         :param c_hidden: the base number of channels multiples of which are used through-out the UNET network
         :param n_contracting_blocks: the base number of contracting (and corresponding expanding) blocks
         :param use_dropout: set to True to use DropOut in the 1st half of the encoder part of the network
+        :param use_out_tanh: set to True to use Tanh() activation in output layer; otherwise no output activation will
+                             be used
         """
         super(PGPGGenerator2, self).__init__(c_in=c_in, c_out=c_out, c_hidden=c_hidden, use_bn=False,
-                                             use_dropout=use_dropout, n_contracting_blocks=n_contracting_blocks)
+                                             use_dropout=use_dropout, n_contracting_blocks=n_contracting_blocks,
+                                             use_out_tanh=use_out_tanh)
 
 
 class PGPGGenerator(nn.Module):
@@ -74,8 +80,11 @@ class PGPGGenerator(nn.Module):
         super(PGPGGenerator, self).__init__()
 
         self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=32, n_contracting_blocks=6,
-                                 c_bottleneck_down=g1_c_bottleneck_down, w_in=w_in, h_in=h_in)
-        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32, n_contracting_blocks=4, use_dropout=False)
+                                 c_bottleneck_down=g1_c_bottleneck_down, w_in=w_in, h_in=h_in,
+                                 use_out_tanh=True)
+        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32, n_contracting_blocks=4,
+                                 use_dropout=False, use_out_tanh=False)
+        self.output_activation = nn.Tanh()
 
     def forward(self, x: Tensor, y_pose: Tensor) -> Tuple[Tensor, Tensor]:
         """
@@ -86,7 +95,7 @@ class PGPGGenerator(nn.Module):
         """
         g1_out = self.g1(torch.cat((x, y_pose), dim=1))
         g2_out = self.g2(torch.cat((x, g1_out), dim=1))
-        return g1_out, g2_out + g1_out
+        return g1_out, self.output_activation(g2_out + g1_out)
 
     def get_loss(self, x: Tensor, y_pose: Tensor, y: Tensor, disc: nn.Module,
                  adv_criterion: nn.modules.Module = nn.MSELoss(),
