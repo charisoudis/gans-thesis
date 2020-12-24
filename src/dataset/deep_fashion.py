@@ -290,8 +290,9 @@ class ICRBCrossPoseDataloader(DataLoader):
         assert (target_channels is not None and target_shape is not None) or (target_channels is None and target_shape
                                                                               is None), \
             'target_channels and target_shape can either both be None or both set'
-        image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels, norm_mean, norm_std) \
-            if target_shape is not None else image_transforms
+        if target_shape is not None:
+            image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
+                                                                norm_mean=norm_mean, norm_std=norm_std)
         _dataset = ICRBCrossPoseDataset(root=root, image_transforms=image_transforms, skip_pose_norm=skip_pose_norm,
                                         pose=True, hq=hq)
         super(ICRBCrossPoseDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, *args)
