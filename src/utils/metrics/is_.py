@@ -7,7 +7,6 @@ from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
-from tqdm import tqdm
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
@@ -64,7 +63,7 @@ class IS(FID):
 
         cur_samples = 0
         fake_predictions_list = []
-        for real_samples in tqdm(dataloader, total=self.n_samples // self.batch_size):
+        for real_samples in self.tqdm(dataloader, total=self.n_samples // self.batch_size):
             if cur_samples >= self.n_samples:
                 break
 

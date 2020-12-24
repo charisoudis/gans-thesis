@@ -12,6 +12,7 @@ from torch.autograd import Variable
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
+from tqdm.notebook import tqdm as tqdm_nb
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
@@ -85,6 +86,9 @@ class SSIM(nn.Module):
                             'COLAB_GPU' in os.environ
         if self.inside_colab:
             device = 'cuda'
+            self.tqdm = tqdm_nb
+        else:
+            self.tqdm = tqdm
 
         # Create convolution kernel (a multivariate gaussian)
         self.window = SSIM._create_window(window_size, c_img)
@@ -133,7 +137,7 @@ class SSIM(nn.Module):
 
         cur_samples = 0
         ssim_maps_list = []
-        for real_samples in tqdm(dataloader, total=self.n_samples // self.batch_size):
+        for real_samples in self.tqdm(dataloader, total=self.n_samples // self.batch_size):
             if cur_samples >= self.n_samples:
                 break
 

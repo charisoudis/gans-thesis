@@ -8,6 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.models import inception_v3
 from torchvision.transforms import transforms
 from tqdm import tqdm
+from tqdm.notebook import tqdm as tqdm_nb
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
@@ -54,6 +55,15 @@ class FID(nn.Module):
         :param crop_fc: set to True to crop FC layer from Inception v3 network
         """
         super(FID, self).__init__()
+        self.inside_colab = 'google.colab' in sys.modules or \
+                            'google.colab' in str(get_ipython()) or \
+                            'COLAB_GPU' in os.environ
+        if self.inside_colab:
+            device = 'cuda'
+            self.tqdm = tqdm_nb
+        else:
+            self.tqdm = tqdm
+
         # Instantiate Inception v3 model
         self.inception = inception_v3(pretrained=False, init_weights=False)
         load_model_chkpt(model=self.inception, model_name='inception_v3', chkpts_root=chkpts_root)
@@ -90,7 +100,7 @@ class FID(nn.Module):
         cur_samples = 0
         real_embeddings_list = []
         fake_embeddings_list = []
-        for real_samples in tqdm(dataloader, total=self.n_samples // self.batch_size):
+        for real_samples in self.tqdm(dataloader, total=self.n_samples // self.batch_size):
             if cur_samples >= self.n_samples:
                 break
 
