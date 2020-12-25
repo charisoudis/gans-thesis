@@ -20,7 +20,7 @@ from utils.list import get_pairs, list_diff, join_lists
 from utils.string import group_by_prefix
 from utils.string import to_human_readable
 from utils.torch import ToTensorOrPass
-from utils.train import ResumableRandomSampler
+from utils.train import ResumableRandomSampler, train_test_split
 
 
 class ICRBDataset(Dataset):
@@ -124,7 +124,7 @@ class ICRBDataloader(DataLoader):
                  target_shape: Optional[int] = None, target_channels: Optional[int] = None,
                  norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
                  image_transforms: Optional[transforms.Compose] = None, batch_size: int = 8, hq: bool = False,
-                 shuffle: bool = True, seed: int = 42, pin_memory: bool = True):
+                 shuffle: bool = True, seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
         """
         ICRBDataloader class constructor.
         :param root: the root directory where all image files exist
@@ -140,6 +140,7 @@ class ICRBDataloader(DataLoader):
         :param seed: manual seed parameter of torch.Generator (used in dataset sampler)
         :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
                            explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
+        :param splits: if not None performs training/testing sets split based on given :attr:`split` percentages
         """
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
@@ -153,6 +154,9 @@ class ICRBDataloader(DataLoader):
                                                                 norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
         _dataset = ICRBDataset(root=root, image_transforms=image_transforms, hq=hq)
+        if splits:
+            _dataset, _test_set = train_test_split(_dataset, splits=splits)
+            self.test_set = _test_set
         # Create sample instance
         self._sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=seed)
         # Finally, instantiate dataloader
@@ -293,7 +297,7 @@ class ICRBCrossPoseDataloader(DataLoader):
                  target_shape: Optional[int] = None, target_channels: Optional[int] = None,
                  norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
                  skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False, shuffle: bool = True,
-                 pin_memory: bool = True):
+                 pin_memory: bool = True, splits: Optional[list] = None):
         """
         ICRBCrossPoseDataloader class constructor.
         :param root: the root directory where all image files exist
@@ -309,6 +313,7 @@ class ICRBCrossPoseDataloader(DataLoader):
         :param shuffle: set to True to have sampler shuffle indices when reaches the end
         :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
                            explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
+        :param splits: if not None performs training/testing sets split based on given :attr:`split` percentages
         """
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
@@ -323,6 +328,9 @@ class ICRBCrossPoseDataloader(DataLoader):
         # Create dataset instance based on the transforms
         _dataset = ICRBCrossPoseDataset(root=root, image_transforms=image_transforms, skip_pose_norm=skip_pose_norm,
                                         pose=True, hq=hq)
+        if splits:
+            _dataset, _test_set = train_test_split(_dataset, splits=splits)
+            self.test_set = _test_set
         # Create sample instance
         self._sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=47)
         # Finally, instantiate dataloader
