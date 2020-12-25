@@ -1,6 +1,9 @@
 import logging
+from typing import Optional
 
 from colorlog import ColoredFormatter
+
+from utils.string import get_random_string
 
 
 class CommandLineLogger:
@@ -46,14 +49,15 @@ class CommandLineLogger:
     def logger(self):
         return self._logger
 
-    def __init__(self, log_level: str = 'debug', log_format: str = LOG_FORMAT_DEFAULT):
+    def __init__(self, log_level: str = 'debug', log_format: str = LOG_FORMAT_DEFAULT, name: Optional[str] = None):
         """
         CommandLineLogger constructor.
-        :param str log_level: Debug Level (one of 'info', 'debug', 'warning', 'error', 'critical')
-        :param str log_format: Log format or default
+        :param (str) log_level: Debug Level (one of 'info', 'debug', 'warning', 'error', 'critical')
+        :param (str) log_format: Log format or default
+        :param (str) name: logger name (enables logs grouping/isolation)
         """
         self._stream = logging.StreamHandler()
-        self._logger = logging.getLogger('pythonConfig')
+        self._logger = logging.getLogger(name if name else get_random_string(length=10))
         self._formatter = ColoredFormatter(log_format)
 
         self._log_level = None

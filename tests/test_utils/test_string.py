@@ -1,6 +1,6 @@
 import unittest
 
-from utils.string import group_by_prefix, to_human_readable
+from utils.string import group_by_prefix, to_human_readable, get_random_string
 
 
 class TestStringUtils(unittest.TestCase):
@@ -45,3 +45,10 @@ class TestStringUtils(unittest.TestCase):
         self.assertEqual('1.51M', to_human_readable(number, size_format='%.2f'))
         number = 1_515_500_001
         self.assertEqual('1.52B', to_human_readable(number, size_format='%.2f'))
+
+    def test_get_random_string(self) -> None:
+        test_lengths = [0, 1, 10, 20]
+        for test_length in test_lengths:
+            test_str = get_random_string(length=test_length)
+            self.assertEqual(str, type(test_str))
+            self.assertEqual(test_length, len(test_str))

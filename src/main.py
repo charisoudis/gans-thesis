@@ -1,17 +1,16 @@
 import argparse
-import math
 
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 # noinspection PyProtectedMember
-from torch.utils.data import random_split
 from torchvision.transforms import transforms
 
 from dataset.deep_fashion import ICRBCrossPoseDataset
 from modules.discriminators.cycle_gan import CycleGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
 from utils.command_line_logger import CommandLineLogger
+from utils.train import train_test_split
 
 
 def cli_parse() -> argparse:
@@ -35,7 +34,6 @@ def main():
 
     g = CycleGANGenerator(c_in=3, c_out=3)
     print(g)
-    exit(0)
 
     logger = CommandLineLogger(log_level='debug')
     # logger.log_format = "> %(log_color)s%(message)s%(reset)s"
@@ -52,11 +50,9 @@ def main():
 # noinspection DuplicatedCode
 def preview_icrb_images():
     dataset = ICRBCrossPoseDataset(image_transforms=transforms.Compose([transforms.ToTensor()]), pose=True)
-    dataset_len = len(dataset)
 
-    # Get splits
-    split_lengths = [math.floor(dataset_len * 0.9), math.ceil(dataset_len * 0.1)]
-    train_set, test_set = random_split(dataset, lengths=split_lengths, generator=torch.Generator().manual_seed(42))
+    # Split dataset into training and test subsets
+    train_set, test_set = train_test_split(dataset, splits=[90, 10])
     dataset.logger.info(f'len(train_set) = {len(train_set)} | len(test_set) = {len(test_set)}')
 
     # Check a pair of both
@@ -73,7 +69,6 @@ def preview_icrb_images():
 
 if __name__ == '__main__':
     # args = cli_parse()
-    # main()
-
+    main()
     preview_icrb_images()
     pass

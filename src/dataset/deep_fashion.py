@@ -20,6 +20,7 @@ from utils.list import get_pairs, list_diff, join_lists
 from utils.string import group_by_prefix
 from utils.string import to_human_readable
 from utils.torch import ToTensorOrPass
+from utils.train import ResumableRandomSampler
 
 
 class ICRBDataset(Dataset):
@@ -47,7 +48,7 @@ class ICRBDataset(Dataset):
                             'COLAB_GPU' in os.environ
         if root.startswith('/data') and self.inside_colab:
             root = f'/content{root}'
-        self.logger = CommandLineLogger(log_level='info')
+        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_info.json'
         # Load item info
@@ -64,7 +65,7 @@ class ICRBDataset(Dataset):
         self.total_images_count = self.items_info['images_count']
         self.logger.debug(f'Found {to_human_readable(self.total_images_count)} total images in benchmark')
         # Save transforms
-        self.transforms = image_transforms
+        self.transforms = image_transforms if image_transforms else transforms.ToTensor()
 
     def __getitem__(self, index: int) -> Tensor:
         """
@@ -120,25 +121,49 @@ class ICRBDataset(Dataset):
 class ICRBDataloader(DataLoader):
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 target_channels: Optional[int] = None, target_shape: Optional[int] = None,
-                 image_transforms: Optional[transforms.Compose] = None, batch_size: int = 8, hq: bool = False, *args):
+                 target_shape: Optional[int] = None, target_channels: Optional[int] = None,
+                 norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
+                 image_transforms: Optional[transforms.Compose] = None, batch_size: int = 8, hq: bool = False,
+                 shuffle: bool = True, seed: int = 42, pin_memory: bool = True):
         """
         ICRBDataloader class constructor.
         :param root: the root directory where all image files exist
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param target_shape: the H and W in the tensor coming out of image transforms
+        :param target_channels: the number of channels in the tensor coming out of image transforms
+        :param norm_mean: mean (same for all channels) or None to use dataset's default mean normalization parameter
+        :param norm_std: standard deviation (same for all channels) or None to use dataset's default std normalization
+                         parameter
         :param batch_size: the number of images batch
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
-        :param args: argument list for torch.utils.data.Dataloader constructor
+        :param shuffle: set to True to have sampler shuffle indices when reaches the end
+        :param seed: manual seed parameter of torch.Generator (used in dataset sampler)
+        :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
+                           explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
         """
+        if image_transforms is None and target_shape is None and target_channels is None:
+            image_transforms = transforms.Compose([transforms.ToTensor()])
         assert image_transforms is None or (target_channels is None and target_shape is None), \
             'Do not define image_transforms when target_channels and target_shape is not None'
         assert (target_channels is not None and target_shape is not None) or (target_channels is None and target_shape
                                                                               is None), \
             'target_channels and target_shape can either both be None or both set'
-        image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels) if target_shape is not None \
-            else image_transforms
+        if target_shape is not None:
+            image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
+                                                                norm_mean=norm_mean, norm_std=norm_std)
+        # Create dataset instance based on the transforms
         _dataset = ICRBDataset(root=root, image_transforms=image_transforms, hq=hq)
-        super(ICRBDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, *args)
+        # Create sample instance
+        _sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=seed)
+        # Finally, instantiate dataloader
+        super(ICRBDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, sampler=_sampler,
+                                             pin_memory=pin_memory)
+
+    def get_state(self) -> dict:
+        return self.sampler.get_state()
+
+    def set_state(self, state: dict) -> None:
+        return self.sampler.set_state(state)
 
 
 class ICRBCrossPoseDataset(Dataset):
@@ -167,7 +192,7 @@ class ICRBCrossPoseDataset(Dataset):
                             'COLAB_GPU' in os.environ
         if root.startswith('/data') and self.inside_colab:
             root = f'/content{root}'
-        self.logger = CommandLineLogger(log_level='info')
+        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_posable_info.json'
         # Load item info
@@ -187,13 +212,12 @@ class ICRBCrossPoseDataset(Dataset):
         self.logger.debug(f'Found {to_human_readable(self.total_pairs_count)} posable image pairs from a total of' +
                           f' {to_human_readable(self.total_images_count)} posable images in benchmark')
         # Save transforms
+        self.transforms = image_transforms
         if image_transforms:
-            self.transforms = image_transforms
             self.pose_transforms = image_transforms if not skip_pose_norm else transforms.Compose(
                 [_t for _t in image_transforms.transforms if type(_t) != transforms.Normalize]
             )
         else:
-            self.transforms = None
             self.pose_transforms = None
         # Save pose switch
         self.pose = pose
@@ -268,7 +292,8 @@ class ICRBCrossPoseDataloader(DataLoader):
                  image_transforms: Optional[transforms.Compose] = None,
                  target_shape: Optional[int] = None, target_channels: Optional[int] = None,
                  norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
-                 skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False, *args):
+                 skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False, shuffle: bool = True,
+                 pin_memory: bool = True):
         """
         ICRBCrossPoseDataloader class constructor.
         :param root: the root directory where all image files exist
@@ -281,7 +306,9 @@ class ICRBCrossPoseDataloader(DataLoader):
         :param skip_pose_norm: set to True to remove Normalize() transform from pose images' transforms
         :param batch_size: the number of images batch
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
-        :param args: argument list for torch.utils.data.Dataloader constructor
+        :param shuffle: set to True to have sampler shuffle indices when reaches the end
+        :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
+                           explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
         """
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
@@ -293,9 +320,20 @@ class ICRBCrossPoseDataloader(DataLoader):
         if target_shape is not None:
             image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
                                                                 norm_mean=norm_mean, norm_std=norm_std)
+        # Create dataset instance based on the transforms
         _dataset = ICRBCrossPoseDataset(root=root, image_transforms=image_transforms, skip_pose_norm=skip_pose_norm,
                                         pose=True, hq=hq)
-        super(ICRBCrossPoseDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, *args)
+        # Create sample instance
+        self._sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=47)
+        # Finally, instantiate dataloader
+        super(ICRBCrossPoseDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, sampler=self._sampler,
+                                                      pin_memory=pin_memory)
+
+    def get_state(self) -> dict:
+        return self._sampler.get_state()
+
+    def set_state(self, state: dict) -> None:
+        return self._sampler.set_state(state)
 
 
 class ICRBScraper:

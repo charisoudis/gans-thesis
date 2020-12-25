@@ -1,3 +1,5 @@
+import random
+import string
 from typing import List
 
 import humanize
@@ -28,5 +30,14 @@ def to_human_readable(number: int, size_format: str = '%.1f', return_number: boo
     """
     string = humanize.naturalsize(number, format=size_format)
     string = string.replace('.0', '').replace('Byte', '').replace('kB', 'K').rstrip('Bs').replace(' ', '')
-    string = string.replace('G', 'B')   # billions
+    string = string.replace('G', 'B')  # billions
     return string + (f' ({number})' if return_number else '')
+
+
+def get_random_string(length: int) -> str:
+    """
+    Get a random string containing ASCII alphanumerical characters.
+    :param length: the length of generated string
+    :return: a str object with length equal to :attr:`length` containing random characters.
+    """
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
