@@ -82,8 +82,8 @@ class PGPGGenerator(nn.Module):
         self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=32, n_contracting_blocks=6,
                                  c_bottleneck_down=g1_c_bottleneck_down, w_in=w_in, h_in=h_in,
                                  use_out_tanh=True)
-        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32, n_contracting_blocks=4,
-                                 use_dropout=False, use_out_tanh=False)
+        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32, n_contracting_blocks=6,
+                                 use_dropout=True, use_out_tanh=False)
         self.output_activation = nn.Tanh()
 
     def forward(self, x: Tensor, y_pose: Tensor) -> Tuple[Tensor, Tensor]:
