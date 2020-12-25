@@ -170,7 +170,7 @@ class SSIM(nn.Module):
             cur_samples += cur_batch_size
 
         # Compute SSIM from difference maps
-        ssim_maps = torch.cat(ssim_maps_list, dim=0)
+        ssim_maps = torch.cat(ssim_maps_list, dim=0).cpu()
         return ssim_maps.mean() if self.size_average else ssim_maps.mean(1).mean(1).mean(1)
 
 
