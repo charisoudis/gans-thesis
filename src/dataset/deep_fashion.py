@@ -154,16 +154,16 @@ class ICRBDataloader(DataLoader):
         # Create dataset instance based on the transforms
         _dataset = ICRBDataset(root=root, image_transforms=image_transforms, hq=hq)
         # Create sample instance
-        _sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=seed)
+        self._sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=seed)
         # Finally, instantiate dataloader
-        super(ICRBDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, sampler=_sampler,
+        super(ICRBDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, sampler=self._sampler,
                                              pin_memory=pin_memory)
 
     def get_state(self) -> dict:
-        return self.sampler.get_state()
+        return self._sampler.get_state()
 
     def set_state(self, state: dict) -> None:
-        return self.sampler.set_state(state)
+        return self._sampler.set_state(state)
 
 
 class ICRBCrossPoseDataset(Dataset):
