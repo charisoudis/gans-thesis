@@ -62,7 +62,7 @@ class FID(nn.Module):
                             'google.colab' in str(get_ipython()) or \
                             'COLAB_GPU' in os.environ
         if self.inside_colab:
-            device = 'cuda'
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
             self.tqdm = tqdm_nb
         else:
             self.tqdm = tqdm

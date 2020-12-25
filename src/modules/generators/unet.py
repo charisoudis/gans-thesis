@@ -58,7 +58,7 @@ class UNETWithSkipConnections(nn.Module):
                 ChannelsProjectLayer(self.c_bottleneck, c_bottleneck_down),
                 nn.Flatten(),
                 nn.Linear(bottleneck_neurons_count, bottleneck_neurons_count),
-                # nn.LeakyReLU(inplace=True),
+                # nn.LeakyReLU(),
                 nn.Unflatten(1, (c_bottleneck_down, h_bottleneck, w_bottleneck)),
                 ChannelsProjectLayer(c_bottleneck_down, self.c_bottleneck),
             )

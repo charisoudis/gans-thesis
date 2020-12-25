@@ -1,6 +1,7 @@
+from typing import Tuple
+
 import torch.nn as nn
 from torch import Tensor
-from typing import Tuple
 
 from modules.partial.decoding import ChannelsProjectLayer
 from modules.partial.normalization import LayerNorm2d
@@ -66,7 +67,7 @@ class MUNITContentEncoder(nn.Module):
                 nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride)
             ),
             nn.InstanceNorm2d(c_out) if use_instance_norm else nn.Identity(),
-            nn.ReLU(inplace=True)
+            nn.ReLU()
         )
 
 

@@ -26,7 +26,7 @@ class ResidualBlock(nn.Module):
         self.norm1 = nn.BatchNorm2d(c_in) if norm_type == 'BN' else (
             nn.InstanceNorm2d(c_in) if norm_type == 'IN' else AdaptiveInstanceNorm2d(c_in, s_dim, h_dim)
         )
-        self.activation = nn.ReLU(inplace=True)
+        self.activation = nn.ReLU()
         self.conv2 = nn.Conv2d(c_in, c_in, kernel_size=3, padding=1, padding_mode='reflect')
         self.norm2 = nn.BatchNorm2d(c_in) if norm_type == 'BN' else (
             nn.InstanceNorm2d(c_in) if norm_type == 'IN' else AdaptiveInstanceNorm2d(c_in, s_dim, h_dim)

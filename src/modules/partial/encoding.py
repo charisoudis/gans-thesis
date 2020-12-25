@@ -93,9 +93,9 @@ class MLPBlock(nn.Module):
         super(MLPBlock, self).__init__()
         self.mlp_block = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
-            nn.ReLU(inplace=True) if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(inplace=True) if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(hidden_dim, out_dim),
         )
 
