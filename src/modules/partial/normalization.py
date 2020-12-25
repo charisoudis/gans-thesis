@@ -1,27 +1,30 @@
+from typing import Union
+
 import torch
 import torch.nn as nn
 from torch import Tensor
+from torch.nn import functional
 
 from modules.partial.encoding import MLPBlock
 
 
-class PixelNormalizationLayer(nn.Module):
+class PixelNorm2d(nn.Module):
     """
-    PixelNormalizationLayer class:
+    PixelNorm2d class:
     This is the per pixel normalization layer. This will divide each (x, y) pixel by channel's root mean square.
     """
 
     def __init__(self, eps: float = 1e-8):
         """
-        PixelNormalizationLayer class constructor.
+        PixelNorm2d class constructor.
         :param eps: added in formula's denominator to avoid division by zero
         """
-        super(PixelNormalizationLayer, self).__init__()
+        super(PixelNorm2d, self).__init__()
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
         """
-        Function for completing a forward pass of PixelNormalizationLayer:
+        Function for completing a forward pass of PixelNorm2d:
         Given an image tensor, and for every spatial location (aka pixel) in this image it computes the
         sqrt(avg(pixel_channels .^ 2)).
         :param x: image tensor of shape (N, C_in, H, W)
@@ -30,6 +33,42 @@ class PixelNormalizationLayer(nn.Module):
         x_norm = x / (torch.mean(x ** 2, dim=1, keepdim=True) + self.eps) ** 0.5
         assert isinstance(x_norm, Tensor)
         return x_norm
+
+
+class LayerNorm2d(nn.Module):
+    """
+    LayerNorm2d Class:
+    Performs Layer-wise normalization according to Hinton's paper. LayerNorm2d is placed as follows:
+        - InstanceNorm2d: per instance AND per channel
+        - BatchNorm2d: per channel
+        - LayerNorm2d: per instance
+    """
+
+    def __init__(self, c_in: int, eps: float = 1e-5, affine: bool = True):
+        """
+        LayerNorm2d class constructor.
+        :param c_in: number of channels in input tensor
+        :param eps: epsilon parameter to avoid division by zero
+        :param affine: whether to apply affine de-normalization
+        """
+        super(LayerNorm2d, self).__init__()
+        self.affine = affine
+        self.eps = eps
+        if self.affine:
+            self.gamma = nn.Parameter(torch.rand(c_in))
+            self.beta = nn.Parameter(torch.zeros(c_in))
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Function for completing a forward pass of LayerNorm2d:
+        Given an image tensor it returns the normalized image that has been scaled and shifted by the affine transform.
+        :param x: the feature map of shape (N, C, H, W)
+        :return: torch.Tensor
+        """
+        mean = x.flatten(1).mean(1).reshape(-1, 1, 1, 1)
+        std = x.flatten(1).std(1).reshape(-1, 1, 1, 1)
+        x = (x - mean) / (std + self.eps)
+        return x * self.gamma.reshape(1, -1, 1, 1) + self.beta.reshape(1, -1, 1, 1) if self.affine else x
 
 
 class AdaptiveInstanceNorm2d(nn.Module):
@@ -68,37 +107,75 @@ class AdaptiveInstanceNorm2d(nn.Module):
         return style_scale * normalized_x + style_shift
 
 
-class LayerNorm2d(nn.Module):
+class ModulatedConv2d(nn.Module):
     """
-    LayerNorm2d Class:
-    Performs Layer-wise normalization according to Hinton's paper. LayerNorm2d is placed as follows:
-        - InstanceNorm2d: per instance AND per channel
-        - BatchNorm2d: per channel
-        - LayerNorm2d: per instance
+    ModulatedConv2d Class:
+    This class implements a simpler version of the modulated convolution proposed in StyleGANv2 to fix artifacts created
+    by InstanceNorm2d in the original StyleGAN.
     """
 
-    def __init__(self, c_in: int, eps: float = 1e-5, affine: bool = True):
+    def __init__(self, s_dim: int, c_in: int, c_out: int, kernel_size: Union[int, tuple],
+                 stride: Union[int, tuple] = 1, padding: Union[int, tuple] = 1):
         """
-        LayerNorm2d class constructor.
-        :param c_in: number of channels in input tensor
-        :param eps: epsilon parameter to avoid division by zero
-        :param affine: whether to apply affine de-normalization
+        ModulatedConv2d class constructor.
+        :param s_dim: the dimension of the style vector, s
+        :param c_in: the number of channels the expected input tensor should have
+        :param c_out: the number of channels the expected output tensor should have
+        :param kernel_size: kernel_size param of Conv2d layer
+        :param padding: padding param of Conv2d layer
         """
-        super(LayerNorm2d, self).__init__()
-        self.affine = affine
-        self.eps = eps
-        if self.affine:
-            self.gamma = nn.Parameter(torch.rand(c_in))
-            self.beta = nn.Parameter(torch.zeros(c_in))
+        super(ModulatedConv2d, self).__init__()
 
-    def forward(self, x: Tensor) -> Tensor:
+        # Weights of the conv2d filters (each C_in x K_h x K_w, there will be C_out of them)
+        # Weights are randomly initialized
+        k_h = kernel_size[0] if type(kernel_size) == tuple else kernel_size
+        k_w = kernel_size[1] if type(kernel_size) == tuple else kernel_size
+        self.conv_weight = nn.Parameter(torch.randn(1, c_out, c_in, k_h, k_w))
+        # FC layer ([N,w_dim] --> [N,C_in])
+        self.style_scale_transform = nn.Linear(s_dim, c_in)
+        self.eps = 1e-6
+        # Save for forward pass
+        self.c_out = c_out
+        self.padding = padding
+        self.stride = stride
+
+    def forward(self, x: Tensor, s: Tensor) -> Tensor:
         """
-        Function for completing a forward pass of LayerNorm2d:
-        Given an image tensor it returns the normalized image that has been scaled and shifted by the affine transform.
-        :param x: the feature map of shape (N, C, H, W)
-        :return: torch.Tensor
+        Forward pass of layer.
+        :param x: input "image" tensor of shape (N, C_in, H, W)
+        :param s: input style tensor of shape (N, w_dim)
+        :return: a torch.Tensor object of shape (N, C_out, H, W)
         """
-        mean = x.flatten(1).mean(1).reshape(-1, 1, 1, 1)
-        std = x.flatten(1).std(1).reshape(-1, 1, 1, 1)
-        x = (x - mean) / (std + self.eps)
-        return x * self.gamma.reshape(1, -1, 1, 1) + self.beta.reshape(1, -1, 1, 1) if self.affine else x
+        batch_size, c_in, h, w = x.shape
+
+        # Calculate s_i, for the i-th channel (i in range [0, self.c_in])
+        style_scale = self.style_scale_transform(s)
+        style_scale = style_scale.view(batch_size, 1, c_in, 1, 1)
+        #  W_dot_ijk = s_i * W_ijk
+        w_dot = self.conv_weight * style_scale
+        # W_dot.shape = (N, C_out, C_in, K_h, K_w)
+
+        # W_dot_dot_ijk = W_dot_ijk / (var(j) + eps)
+        w_dot_dot = w_dot / torch.sqrt(
+            (w_dot ** 2).sum([2, 3, 4])[:, :, None, None, None] + self.eps
+        )
+        # W_dot_dot.shape = (N, C_out, C_in, K_h, K_w)
+
+        # Now, the trick is that we'll make the images into one image, and
+        # all of the conv filters into one filter, and then use the "groups"
+        # parameter of F.conv2d to apply them all at once
+        x = x.view(1, batch_size * c_in, h, w)
+        # x.shape = (1, N * C_in, H, W)
+        kernel = w_dot_dot.view(batch_size * self.c_out, c_in, *w_dot_dot.shape[3:])
+        # kernel.shape = (N * C_out, C_in, H, W)
+        out = functional.conv2d(x, kernel, stride=self.stride, padding=self.padding, groups=batch_size)
+        # out.shape = (1, N * C_out, C_in, H, W)
+        return out.view(batch_size, out.shape[1] // batch_size, *out.shape[2:])
+
+
+if __name__ == '__main__':
+    ml = ModulatedConv2d(32, 4, 8, kernel_size=3, stride=3, padding=1)
+    _x = torch.randn(1, 4, 128, 128)
+    _s = torch.randn(1, 32)
+    _out = ml(_x, _s)
+    print(_out.shape)

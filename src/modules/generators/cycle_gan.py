@@ -73,7 +73,8 @@ class CycleGANGenerator(nn.Module):
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         fake_y = self(real_x)
-        fake_y_predictions = disc_y(fake_y)
+        with torch.no_grad():
+            fake_y_predictions = disc_y(fake_y)
         adversarial_loss = adv_criterion(fake_y_predictions, torch.ones_like(fake_y_predictions))
         return adversarial_loss, fake_y
 

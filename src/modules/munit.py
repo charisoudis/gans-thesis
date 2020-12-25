@@ -88,8 +88,9 @@ class MUNIT(nn.Module):
         c_b_loss, s_a_loss, x_ba = self.gen_a.ae_latent_recon_loss(c_b, s_a)
         c_a_loss, s_b_loss, x_ab = self.gen_b.ae_latent_recon_loss(c_a, s_b)
         # Compute adversarial losses
-        gen_a_adv_loss = self.disc_a.get_loss(x_ba, is_real=True)
-        gen_b_adv_loss = self.disc_b.get_loss(x_ab, is_real=True)
+        with torch.no_grad():
+            gen_a_adv_loss = self.disc_a.get_loss(x_ba, is_real=True)
+            gen_b_adv_loss = self.disc_b.get_loss(x_ab, is_real=True)
         # Update discriminators
         disc_loss = (
             # Discriminator for domain A

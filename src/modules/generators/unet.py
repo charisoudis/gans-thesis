@@ -117,7 +117,8 @@ class UNETWithSkipConnections(nn.Module):
         :param lambda_recon: the degree to which the reconstruction loss should be weighted
         """
         fake_images = self(condition)
-        fake_predictions = disc(fake_images, condition)
+        with torch.no_grad():
+            fake_predictions = disc(fake_images, condition)
         recon_loss = recon_criterion(fake_images, real)
         if type(adv_criterion) == torch.nn.modules.loss.BCELoss:
             fake_predictions = nn.Sigmoid()(fake_predictions)
