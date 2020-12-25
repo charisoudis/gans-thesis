@@ -180,7 +180,6 @@ def train_test_split(dataset: Union[Dataset, Sized], splits: list, seed: int = 4
     if splits[0] > 1:
         splits *= 0.01
     splits *= dataset_len
-    print(splits)
     split_lengths = np.floor(splits).astype(np.int32)
     split_lengths[0] += dataset_len - split_lengths.sum()
     # Perform the split
