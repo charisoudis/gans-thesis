@@ -123,8 +123,7 @@ class PGPGGenerator(nn.Module):
         # 2) L1 loss for G2
         g2_loss_recon = recon_criterion(g_out * y_pose, y * y_pose)
         # 3) Adversarial loss for G2
-        with torch.no_grad():
-            gen_out_predictions = disc(g_out, x)
+        gen_out_predictions = disc(g_out, x)
         g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
         # Aggregate
         g2_loss = g2_loss_recon + g2_loss_adv
