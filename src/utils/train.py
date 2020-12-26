@@ -96,7 +96,7 @@ def load_model_chkpt(model: nn.Module, model_name: str, dict_key: Optional[str] 
     if not state_dict:
         # Find correct checkpoint path
         _, _, chkpt_files = next(os.walk(chkpts_root))
-        chkpt_files = sorted([_f for _f in chkpt_files if _f.lower().startswith(model_name.lower())], reverse=False)
+        chkpt_files = sorted([_f for _f in chkpt_files if _f.lower().startswith(model_name.lower())], reverse=True)
         assert len(chkpt_files) > 0, 'No model checkpoints found in given checkpoints dir'
         chkpt_file = chkpt_files[0]
         chkpt_info_parts = chkpt_file.replace(model_name, '').lstrip('_').replace('.pth', '').split('_')
