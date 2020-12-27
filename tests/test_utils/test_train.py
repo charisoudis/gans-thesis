@@ -27,6 +27,8 @@ class TestTrainUtils(unittest.TestCase):
         self.batch_size = 10
         self.conv_weight_value = 1.5
 
+        self.chkpt_path = f'{self.chkpts_root}/pgpg_{self.cur_step}_{self.batch_size}.pth'
+
     def test_ResumableRandomSampler(self) -> None:
         sized_source = range(0, 1000)
         sampler = ResumableRandomSampler(data_source=sized_source, shuffle=False)
@@ -60,7 +62,7 @@ class TestTrainUtils(unittest.TestCase):
         torch.save({
             'gen': gen.state_dict(),
             'gen_opt': gen_opt.state_dict(),
-        }, f'{self.chkpts_root}/pgpg_{self.cur_step}_{self.batch_size}.pth')
+        }, self.chkpt_path)
 
         # Signature of load_model_chkpt:  load_model_chkpt(model, model_name, dict_key, model_opt, chkpts_root)
         self.assertRaises(AssertionError, load_model_chkpt, gen, 'pgpg1', 'gen', gen_opt)
@@ -158,6 +160,5 @@ class TestTrainUtils(unittest.TestCase):
         self.assertEqual(type(test_dataset), type(test_set.dataset))
 
     def tearDown(self) -> None:
-        chkpt_path = f'{self.chkpts_root}/pgpg_{self.cur_step}_{self.batch_size}.pth'
-        if os.path.exists(chkpt_path):
-            os.remove(chkpt_path)
+        if os.path.exists(self.chkpt_path):
+            os.remove(self.chkpt_path)
