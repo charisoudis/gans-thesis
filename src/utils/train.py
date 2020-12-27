@@ -1,15 +1,15 @@
 import os
+import sys
 from typing import Union, Optional, Sized, Tuple
 
 import numpy as np
 import torch
+from IPython import get_ipython
 from torch import nn
 from torch.optim import Optimizer, Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
 # noinspection PyProtectedMember
 from torch.utils.data import Sampler, random_split, Dataset
-
-from dataset.deep_fashion import ICRBDataset
 
 
 class ResumableRandomSampler(Sampler):
@@ -70,27 +70,25 @@ class ResumableRandomSampler(Sampler):
 
 
 def load_model_chkpt(model: nn.Module, model_name: str, dict_key: Optional[str] = None,
-                     model_opt: Optional[Optimizer] = None,
-                     chkpts_root: str = '/home/achariso/PycharmProjects/gans-thesis/.checkpoints',
+                     model_opt: Optional[Optimizer] = None, chkpts_root: Optional[dict] = None,
                      state_dict: Optional[dict] = None) -> Tuple[Optional[int], dict]:
     """
     Load model (and model's optimizer) checkpoint. The checkpoint is searched in given checkpoints root (absolute path)
     and if one found it is loaded. The function also returns the checkpoint step as well as
     :param (nn.Module) model: the model as a torch.nn.Module instance
     :param (str) model_name: name of model which is also model checkpoint's file name prefix
-    :param (Optimizer) model_opt: (optional) model's optimizer instance
-    :param (str) dict_key: (optional) name of the key state dictionary regarding the model's state
-    :param (str) chkpts_root: absolute path to model checkpoints directory
-    :param (dict) state_dict: state dict (used to avoid duplicate calls)
+    :param (optional) dict_key: name of the key state dictionary regarding the model's state
+    :param (optional) model_opt: model's optimizer instance
+    :param (optional) chkpts_root: absolute path to model checkpoints directory
+    :param (optional) state_dict: state dict (used to avoid duplicate calls)
     :return: a tuple containing the total number of images and the loaded state dict
     """
-    # If run from inside Google Colab, then override given path
-    root_prefix = ICRBDataset.get_root_prefix()
-    if root_prefix.startswith('/content'):
-        chkpts_root = f'{root_prefix}/drive/MyDrive/Model Checkpoints'
-    elif root_prefix.startswith('/kaggle'):
-        chkpts_root = f'{root_prefix}/Model Checkpoints'
-    else:
+    # Check if running inside Colab or Kaggle (auto prefixing)
+    if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
+        chkpts_root = f'/content/drive/MyDrive/Model Checkpoints'
+    elif 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:
+        chkpts_root = f'/kaggle/working/Model Checkpoints'
+    elif not chkpts_root:
         chkpts_root: str = '/home/achariso/PycharmProjects/gans-thesis/.checkpoints'
     assert os.path.exists(chkpts_root) and os.path.isdir(chkpts_root), 'Checkpoints dir not existent or not readable'
     assert model_opt is None or dict_key is not None, 'model_opt and dict_key cannot be None simultaneously'
