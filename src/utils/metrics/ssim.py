@@ -1,12 +1,9 @@
-import os
-import sys
 from math import exp
 from typing import Optional, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from IPython import get_ipython
 from torch import Tensor
 from torch.autograd import Variable
 # noinspection PyProtectedMember
@@ -81,10 +78,11 @@ class SSIM(nn.Module):
         :param size_average: SSIM size average flag (set to True to output a scalar value of SSIM index)
         """
         super(SSIM, self).__init__()
-        self.inside_colab = 'google.colab' in sys.modules or \
-                            'google.colab' in str(get_ipython()) or \
-                            'COLAB_GPU' in os.environ
-        if self.inside_colab:
+        try:
+            self.runs_interactively = __IPYTHON__
+        except NameError:
+            self.runs_interactively = False
+        if self.runs_interactively:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             self.tqdm = tqdm_nb
         else:

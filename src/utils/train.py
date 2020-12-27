@@ -1,15 +1,15 @@
 import os
-import sys
 from typing import Union, Optional, Sized, Tuple
 
 import numpy as np
 import torch
-from IPython import get_ipython
 from torch import nn
 from torch.optim import Optimizer, Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
 # noinspection PyProtectedMember
 from torch.utils.data import Sampler, random_split, Dataset
+
+from dataset.deep_fashion import ICRBDataset
 
 
 class ResumableRandomSampler(Sampler):
@@ -85,11 +85,13 @@ def load_model_chkpt(model: nn.Module, model_name: str, dict_key: Optional[str] 
     :return: a tuple containing the total number of images and the loaded state dict
     """
     # If run from inside Google Colab, then override given path
-    inside_colab = 'google.colab' in sys.modules or \
-                   'google.colab' in str(get_ipython()) or \
-                   'COLAB_GPU' in os.environ
-    if inside_colab:
-        chkpts_root = '/content/drive/MyDrive/Model Checkpoints'
+    root_prefix = ICRBDataset.get_root_prefix()
+    if root_prefix.startswith('/content'):
+        chkpts_root = f'{root_prefix}/drive/MyDrive/Model Checkpoints'
+    elif root_prefix.startswith('/kaggle'):
+        chkpts_root = f'{root_prefix}/Model Checkpoints'
+    else:
+        chkpts_root: str = '/home/achariso/PycharmProjects/gans-thesis/.checkpoints'
     assert os.path.exists(chkpts_root) and os.path.isdir(chkpts_root), 'Checkpoints dir not existent or not readable'
     assert model_opt is None or dict_key is not None, 'model_opt and dict_key cannot be None simultaneously'
 

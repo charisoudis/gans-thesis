@@ -1,10 +1,8 @@
 import os
-import sys
 import unittest
 
 import torch
 import torch.nn as nn
-from IPython import get_ipython
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.models import inception_v3
 
@@ -18,11 +16,13 @@ from utils.train import get_adam_optimizer, load_model_chkpt, ResumableRandomSam
 class TestTrainUtils(unittest.TestCase):
 
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules or \
-                            'google.colab' in str(get_ipython()) or \
-                            'COLAB_GPU' in os.environ
-        self.chkpts_root: str = '/home/achariso/PycharmProjects/gans-thesis/.checkpoints' if not self.inside_colab \
-            else '/content/drive/MyDrive/Model Checkpoints'
+        root_prefix = ICRBDataset.get_root_prefix()
+        if root_prefix.startswith('/content'):
+            self.chkpts_root = f'{root_prefix}/drive/MyDrive/Model Checkpoints'
+        elif root_prefix.startswith('/kaggle'):
+            self.chkpts_root = f'{root_prefix}/Model Checkpoints'
+        else:
+            self.chkpts_root: str = '/home/achariso/PycharmProjects/gans-thesis/.checkpoints'
         self.cur_step = 1024
         self.batch_size = 10
         self.conv_weight_value = 1.5

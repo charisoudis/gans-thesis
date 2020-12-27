@@ -1,11 +1,9 @@
 import json
 import os
-import sys
 import unittest
 
 import numpy as np
 import torch
-from IPython import get_ipython
 from torchvision.transforms import transforms
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
@@ -15,20 +13,16 @@ class TestICRBDataset(unittest.TestCase):
 
     # noinspection DuplicatedCode
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules or \
-                            'google.colab' in str(get_ipython()) or \
-                            'COLAB_GPU' in os.environ
-        self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
-        self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
+        self.transforms = transforms.Compose([
+            transforms.ToTensor()
+        ])
+        self.dataset = ICRBDataset(image_transforms=self.transforms)
+
+        self.deep_fashion_root = self.dataset.root
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
         self.assertTrue(os.path.exists(f'{self.deep_fashion_img_root}/items_info.json'))
         with open(f'{self.deep_fashion_img_root}/items_info.json') as fp:
             self.items_info = json.load(fp)
-
-        self.transforms = transforms.Compose([
-            transforms.ToTensor()
-        ])
-        self.dataset = ICRBDataset(root=self.deep_fashion_root, image_transforms=self.transforms, hq=False)
 
     def test_len(self) -> None:
         self.assertEqual(self.items_info['images_count'], len(self.dataset))
@@ -43,24 +37,19 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
 
     # noinspection DuplicatedCode
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules or \
-                            'google.colab' in str(get_ipython()) or \
-                            'COLAB_GPU' in os.environ
-        self.deep_fashion_root = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
-        self.deep_fashion_root = f'{"/content" if self.inside_colab else ""}{self.deep_fashion_root}'
-        self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
-        self.assertTrue(os.path.exists(f'{self.deep_fashion_img_root}/items_info.json'))
-        with open(f'{self.deep_fashion_img_root}/items_posable_info.json') as fp:
-            self.items_posable_info = json.load(fp)
-
         self.target_shape = 128
         self.transforms = transforms.Compose([
             transforms.Resize(self.target_shape),
             transforms.CenterCrop(self.target_shape),
             transforms.ToTensor()
         ])
-        self.dataset = ICRBCrossPoseDataset(root=self.deep_fashion_root, pose=False, image_transforms=self.transforms,
-                                            hq=False)
+        self.dataset = ICRBCrossPoseDataset(pose=False, image_transforms=self.transforms)
+
+        self.deep_fashion_root = self.dataset.root
+        self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
+        self.assertTrue(os.path.exists(f'{self.deep_fashion_img_root}/items_info.json'))
+        with open(f'{self.deep_fashion_img_root}/items_posable_info.json') as fp:
+            self.items_posable_info = json.load(fp)
 
     def test_len(self) -> None:
         self.assertEqual(self.items_posable_info['posable_image_pairs_count'], len(self.dataset) // 2)
@@ -115,11 +104,8 @@ class TestICRBCrossPoseDataset(unittest.TestCase):
 class TestICRBScraper(unittest.TestCase):
 
     def setUp(self) -> None:
-        self.inside_colab = 'google.colab' in sys.modules or \
-                            'google.colab' in str(get_ipython()) or \
-                            'COLAB_GPU' in os.environ
-        self.path_prefix = '/content' if self.inside_colab else ''
-        self.deep_fashion_root = self.path_prefix + '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
+        self.path_prefix = ICRBDataset.get_root_prefix()
+        self.deep_fashion_root = f'{self.path_prefix}/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark'
         self.deep_fashion_img_root = f'{self.deep_fashion_root}/Img'
 
     def test_forward(self) -> None:

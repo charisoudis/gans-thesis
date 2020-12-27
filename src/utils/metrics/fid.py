@@ -1,10 +1,7 @@
-import os
-import sys
 from typing import Optional, Union, Tuple
 
 import torch
 import torch.nn as nn
-from IPython import get_ipython
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
@@ -58,11 +55,11 @@ class FID(nn.Module):
         :param crop_fc: set to True to crop FC layer from Inception v3 network
         """
         super(FID, self).__init__()
-        self.inside_colab = 'google.colab' in sys.modules or \
-                            'google.colab' in str(get_ipython()) or \
-                            'COLAB_GPU' in os.environ
-        if self.inside_colab:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        try:
+            self.runs_interactively = __IPYTHON__
+        except NameError:
+            self.runs_interactively = False
+        if self.runs_interactively:
             self.tqdm = tqdm_nb
         else:
             self.tqdm = tqdm

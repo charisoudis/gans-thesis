@@ -34,22 +34,19 @@ class ICRBDataset(Dataset):
     NormalizeStd = 0.5
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 image_transforms: Optional[transforms.Compose] = None, hq: bool = False):
+                 root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
+                 hq: bool = False):
         """
         ICRBDataset class constructor.
         :param root: the root directory where all image files exist
+        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         """
         super(ICRBDataset, self).__init__()
-        # Test if running inside Colab
-        self.inside_colab = 'google.colab' in sys.modules or \
-                            'google.colab' in str(get_ipython()) or \
-                            'COLAB_GPU' in os.environ
-        if root.startswith('/data') and self.inside_colab:
-            root = f'/content{root}'
+        self.root = f'{ICRBDataset.get_root_prefix(root_prefix)}/{root}'
         self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
-        self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
+        self.img_dir_path = f'{self.root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_info.json'
         # Load item info
         if not os.path.exists(self.items_info_path):
@@ -117,17 +114,40 @@ class ICRBDataset(Dataset):
         ]
         return transforms.Compose(transforms_list)
 
+    @staticmethod
+    def get_root_prefix(default_prefix: Optional[str] = None) -> str:
+        """
+        Get default root prefix based on execution environment and given :attr:`default_prefix`
+        :param (optional) default_prefix: if provided no automatic detection occurs
+        :return: an str object containing the path prefix with the last "/" stripped
+        """
+        if not default_prefix:
+            # Check if running inside Colab or Kaggle (auto prefixing)
+            if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
+                default_prefix = 'colab'
+            elif 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:
+                default_prefix = 'kaggle'
+        # Find prefix path
+        if default_prefix == 'colab':
+            return '/content'
+        elif default_prefix == 'kaggle':
+            return '/kaggle/working'
+
+        return default_prefix.rstrip('/') if default_prefix else ''
+
 
 class ICRBDataloader(DataLoader):
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
+                 root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
                  target_shape: Optional[int] = None, target_channels: Optional[int] = None,
                  norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
-                 image_transforms: Optional[transforms.Compose] = None, batch_size: int = 8, hq: bool = False,
-                 shuffle: bool = True, seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
+                 batch_size: int = 8, hq: bool = False, shuffle: bool = True, seed: int = 42, pin_memory: bool = True,
+                 splits: Optional[list] = None):
         """
         ICRBDataloader class constructor.
         :param root: the root directory where all image files exist
+        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
@@ -153,7 +173,7 @@ class ICRBDataloader(DataLoader):
             image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
                                                                 norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = ICRBDataset(root=root, image_transforms=image_transforms, hq=hq)
+        _dataset = ICRBDataset(root=root, root_prefix=root_prefix, image_transforms=image_transforms, hq=hq)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set
@@ -178,11 +198,12 @@ class ICRBCrossPoseDataset(Dataset):
     """
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 image_transforms: Optional[transforms.Compose] = None, skip_pose_norm: bool = True,
-                 pose: bool = False, hq: bool = False):
+                 root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
+                 skip_pose_norm: bool = True, pose: bool = False, hq: bool = False):
         """
         ICRBCrossPoseDataset class constructor.
         :param root: the root directory where all image files exist
+        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param skip_pose_norm: set to True to remove Normalize() transform from pose images' transforms
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
@@ -190,14 +211,10 @@ class ICRBCrossPoseDataset(Dataset):
                      an image pair without target pose for the second image in pair
         """
         super(ICRBCrossPoseDataset, self).__init__()
-        # Test if running inside Colab
-        self.inside_colab = 'google.colab' in sys.modules or \
-                            'google.colab' in str(get_ipython()) or \
-                            'COLAB_GPU' in os.environ
-        if root.startswith('/data') and self.inside_colab:
-            root = f'/content{root}'
+        # Format root
+        self.root = f'{ICRBDataset.get_root_prefix(root_prefix)}/{root}'
         self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
-        self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
+        self.img_dir_path = f'{self.root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_posable_info.json'
         # Load item info
         if not os.path.exists(self.items_info_path):
@@ -293,7 +310,7 @@ class ICRBCrossPoseDataset(Dataset):
 class ICRBCrossPoseDataloader(DataLoader):
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 image_transforms: Optional[transforms.Compose] = None,
+                 root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
                  target_shape: Optional[int] = None, target_channels: Optional[int] = None,
                  norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
                  skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False, shuffle: bool = True,
@@ -301,6 +318,7 @@ class ICRBCrossPoseDataloader(DataLoader):
         """
         ICRBCrossPoseDataloader class constructor.
         :param root: the root directory where all image files exist
+        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
@@ -326,8 +344,8 @@ class ICRBCrossPoseDataloader(DataLoader):
             image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
                                                                 norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = ICRBCrossPoseDataset(root=root, image_transforms=image_transforms, skip_pose_norm=skip_pose_norm,
-                                        pose=True, hq=hq)
+        _dataset = ICRBCrossPoseDataset(root=root, root_prefix=root_prefix, image_transforms=image_transforms,
+                                        skip_pose_norm=skip_pose_norm, pose=True, hq=hq)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set
