@@ -3,4 +3,3 @@
 venv
 .checkpoints/*
 .ipynb_checkpoints/*
-*.ipynb
