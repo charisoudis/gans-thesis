@@ -1,22 +1,27 @@
 import random
 import string
-from typing import List
+from typing import List, Union, Optional
 
 import humanize
 
 
-def group_by_prefix(str_list: List[str], separator: str = '_') -> dict:
+def group_by_prefix(str_list: Union[List[str], List[dict]], separator: str = '_',
+                    dict_key: Optional[str] = None) -> dict:
     """
     Groups a list of strings by the common prefixes found in the strings.
     :param str_list: list of strings that will be grouped by their prefixes
-    :param separator: prefix separator, splits string in two parts: before and after the 1st appearance of the separator
+    :param separator: prefix separator, splits string in two parts: before and after the 1st appearance of the
+                      separator (defaults to "_")
+    :param (optional) dict_key: if str_list contains dictionaries, this will be used to extract the key to separate
+                                strings upon
     :return: dict in the form {'prefix1': [suffix1, suffix2, ...], 'prefix2': [suffix1, suffix2, ...]}
     """
     strings_by_prefix = {}
     for s in str_list:
-        prefix, suffix = map(str.strip, s.split(sep=separator, maxsplit=1))
+        _key_to_split = s[dict_key] if isinstance(s, dict) else s
+        prefix, suffix = map(str.strip, _key_to_split.split(sep=separator, maxsplit=1))
         group = strings_by_prefix.setdefault(prefix, [])
-        group.append(suffix)
+        group.append(suffix if type(s) == str else s)
     return strings_by_prefix
 
 

@@ -1,5 +1,7 @@
 .idea
 *.json
+*.bak
 venv
 .checkpoints/*
 .ipynb_checkpoints/*
+.http_cache/*

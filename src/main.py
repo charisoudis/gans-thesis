@@ -44,8 +44,6 @@ def main():
     logger.info('tensor_out.shape = ' + str([*tensor_out.shape]))
     logger.info('tensor_out.max = ' + str(tensor_out.detach().cpu().max().item()))
 
-    logger.debug(torch.cuda.get_device_capability(device=0).__str__())
-
 
 # noinspection DuplicatedCode
 def preview_icrb_images():

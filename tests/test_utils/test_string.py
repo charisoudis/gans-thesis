@@ -28,6 +28,16 @@ class TestStringUtils(unittest.TestCase):
         self.assertEqual(('suffix1',), tuple(test_groups['prefix3']))
         self.assertEqual(('3_suffix1',), tuple(test_groups['prefix']))
 
+        test_str_dicts = [
+            {'id': 1, 'name': 'prefix1_suffix1'},
+            {'id': 2, 'name': 'prefix1_suffix1_1'},
+            {'id': 3, 'name': 'prefix2_suffix1'},
+            {'id': 4, 'name': 'prefix2_suffix2'},
+        ]
+        test_groups = group_by_prefix(test_str_dicts, separator='_', dict_key='name')
+        self.assertEqual(dict, type(test_groups))
+        self.assertEqual(('prefix1', 'prefix2'), tuple(test_groups.keys()))
+
     def test_to_human_readable(self) -> None:
         number = 11
         self.assertEqual('11', to_human_readable(number))

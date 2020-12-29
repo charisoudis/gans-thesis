@@ -5,7 +5,7 @@ from typing import List, Optional
 def get_pairs(input_list: list, exclude_same: bool = True, forward_only: bool = True, prefix: Optional[str] = None)\
         -> List[tuple]:
     """
-    Pair-ify $input_string$ be returning a list of tuples containing pairs of items from list.
+    Pair-ify :attr:`input_string` be returning a list of tuples containing pairs of items from list.
     :param input_list: the input list
     :param exclude_same: if True, will exclude (item, item) tuples from paired output list
     :param forward_only: if True, will exclude associative pairs
