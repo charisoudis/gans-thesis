@@ -15,6 +15,7 @@ from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 
 
+# TODO: finish documentation
 def _ssim_map(img1: Tensor, img2: Tensor, window, window_size, c_img) -> Tensor:
     """
     Function to calculate the SSIM difference maps between two (batches of) images.

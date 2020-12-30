@@ -66,7 +66,7 @@ class ManifoldEstimator:
             self.kth_distance[self.kth_distance > max_distances] = 0
 
     @staticmethod
-    def _batch_pairwise_distances(u: Tensor, v: Tensor):
+    def _batch_pairwise_distances(u: Tensor, v: Tensor) -> Tensor:
         """
         Compute pairwise distances between two batches of feature vectors.
         :param u: 1st input vector of shape (batch_size, n_features)

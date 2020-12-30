@@ -5,7 +5,7 @@ import torch
 from PIL import Image
 from torchvision.transforms import transforms
 
-from utils.torch import get_total_params, invert_transforms, UnNormalize
+from utils.pytorch import get_total_params, invert_transforms, UnNormalize
 
 
 class TestPytorchUtils(unittest.TestCase):

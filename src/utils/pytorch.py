@@ -3,12 +3,14 @@ from typing import Any
 import numpy as np
 import scipy.optimize
 import torch
+import torch.nn as nn
 import torchvision.transforms.functional as f
 from torch import Tensor
 from torch.autograd import Function
 from torch.nn import Module
 from torchvision.transforms import transforms
 
+from utils.command_line_logger import CommandLineLogger
 from utils.string import to_human_readable
 
 
@@ -52,6 +54,17 @@ def get_total_params(model: Module, print_table: bool = False, sort_desc: bool =
         return None
 
     return total_count
+
+
+def enable_verbose(model: nn.Module) -> None:
+    """
+    Register verbose hooks on model's forward pass to output the shape of each layer's output tensor.
+    :param model: an torch.nn.Module instance
+    """
+    logger = model.logger if hasattr(model, 'logger') else CommandLineLogger()
+    # Register a hook for each layer
+    for _name, _layer in model.named_children():
+        _layer.register_forward_hook(lambda _l, _, _out: logger.debug(f"{_name}: {_out.shape}"))
 
 
 class MatrixSquareRoot(Function):

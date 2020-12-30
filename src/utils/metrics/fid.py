@@ -12,7 +12,7 @@ from tqdm.notebook import tqdm as tqdm_nb
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
-from utils.torch import matrix_sqrt, cov, ToTensorOrPass, invert_transforms
+from utils.pytorch import matrix_sqrt, cov, ToTensorOrPass, invert_transforms
 from utils.train import load_model_chkpt
 
 

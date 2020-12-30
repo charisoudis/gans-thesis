@@ -1,6 +1,7 @@
 import os
 import sys
-from typing import Union, Optional, Sized, Tuple
+from threading import Thread
+from typing import Union, Optional, Sized, Tuple, Dict
 
 import numpy as np
 import torch
@@ -9,7 +10,96 @@ from torch import nn
 from torch.optim import Optimizer, Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
 # noinspection PyProtectedMember
-from torch.utils.data import Sampler, random_split, Dataset
+from torch.utils.data import Sampler, random_split, Dataset, DataLoader
+
+from dataset.resumable_dataloader import ResumableDataLoader
+from utils.gdrive import GDriveModelCheckpoints
+
+
+def get_adam_optimizer(*models, lr: float = 1e-4, betas: tuple = (0.9, 0.999), delta: float = 1e-8) -> Optimizer:
+    """
+    Get Adam optimizer for jointly training ${models} argument.
+    :param models: one or more models to apply optimizer on
+    :param lr: learning rate
+    :param betas: (p_1, p_2) exponential decay parameters for Adam optimiser's moment estimates. According to
+    Goodfellow, good defaults are (0.9, 0.999).
+    :param delta: small constant that's used for numerical stability. According to Goodfellow, good defaults is 1e-8.
+    :return: instance of torch.optim.Adam optimizer
+    """
+    joint_params = []
+    for model in models:
+        joint_params += list(model.parameters())
+    return Adam(joint_params, lr=lr, betas=betas, eps=delta)
+
+
+def get_optimizer_lr_scheduler(optimizer: Optimizer, schedule_type: str, **kwargs) \
+        -> CyclicLR or ReduceLROnPlateau:
+    """
+    Set optimiser's learning rate scheduler based on $schedule_type$ string.
+    :param optimizer: instance of torch.optim.Optimizer subclass
+    :param schedule_type: learning-rate schedule type (supported: 'on_plateau', 'cyclic',)
+    :param kwargs: scheduler-specific keyword arguments
+    """
+    switcher = {
+        'on_plateau': ReduceLROnPlateau,
+        'cyclic': CyclicLR,
+    }
+    return switcher[schedule_type](optimizer=optimizer, **kwargs)
+
+
+def load_model_chkpt(model: nn.Module, model_name: str, dict_key: Optional[str] = None,
+                     model_opt: Optional[Optimizer] = None, chkpts_root: Optional[str] = None,
+                     state_dict: Optional[dict] = None) -> Tuple[Optional[int], dict]:
+    """
+    Load model (and model's optimizer) checkpoint. The checkpoint is searched in given checkpoints root (absolute path)
+    and if one found it is loaded. The function also returns the checkpoint step as well as
+    :param (nn.Module) model: the model as a torch.nn.Module instance
+    :param (str) model_name: name of model which is also model checkpoint's file name prefix
+    :param (optional) dict_key: name of the key state dictionary regarding the model's state
+    :param (optional) model_opt: model's optimizer instance
+    :param (optional) chkpts_root: absolute path to model checkpoints directory
+    :param (optional) state_dict: state dict (used to avoid duplicate calls)
+    :return: a tuple containing the total number of images and the loaded state dict
+    """
+    # Check if running inside Colab or Kaggle (auto prefixing)
+    if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
+        chkpts_root = f'/content/drive/MyDrive/Model Checkpoints'
+    elif 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:
+        chkpts_root = f'/kaggle/working/Model Checkpoints'
+    elif not chkpts_root:
+        chkpts_root: str = '/home/achariso/PycharmProjects/gans-thesis/.checkpoints'
+    assert os.path.exists(chkpts_root) and os.path.isdir(chkpts_root), 'Checkpoints dir not existent or not readable'
+    assert model_opt is None or dict_key is not None, 'model_opt and dict_key cannot be None simultaneously'
+
+    if not state_dict:
+        # Find correct checkpoint path
+        _, _, chkpt_files = next(os.walk(chkpts_root))
+        chkpt_files = sorted([_f for _f in chkpt_files if _f.lower().startswith(model_name.lower())], reverse=True)
+        assert len(chkpt_files) > 0, 'No model checkpoints found in given checkpoints dir'
+        chkpt_file = chkpt_files[0]
+        chkpt_info_parts = chkpt_file.replace(model_name, '').lstrip('_').replace('.pth', '').split('_')
+        chkpt_path = os.path.join(chkpts_root, chkpt_file)
+
+        # Load checkpoint
+        state_dict = torch.load(chkpt_path, map_location='cpu')
+    else:
+        chkpt_info_parts = ['None']
+
+    assert dict_key is None or dict_key in state_dict.keys(), f'dict_key={str(dict_key)} not found in state_dict.keys()'
+    model.load_state_dict(state_dict[dict_key] if dict_key else state_dict)
+    if model_opt:
+        assert f'{dict_key}_opt' in state_dict.keys(), '$dict_key$_opt not found in state_dict.keys()'
+        model_opt.load_state_dict(state_dict[f'{dict_key}_opt'])
+
+    # Find epoch/current step
+    chkpt_images = None
+    if len(chkpt_info_parts) == 2:
+        chkpt_cur_step = int(chkpt_info_parts[0])
+        chkpt_batch_size = int(chkpt_info_parts[1])
+        chkpt_images = chkpt_cur_step * chkpt_batch_size
+    elif len(chkpt_info_parts) == 0 and chkpt_info_parts[0].isnumeric():
+        chkpt_images = int(chkpt_info_parts[0])
+    return chkpt_images, state_dict
 
 
 class ResumableRandomSampler(Sampler):
@@ -69,75 +159,63 @@ class ResumableRandomSampler(Sampler):
         self.generator.set_state(state["generator_state"])
 
 
-def load_model_chkpt(model: nn.Module, model_name: str, dict_key: Optional[str] = None,
-                     model_opt: Optional[Optimizer] = None, chkpts_root: Optional[dict] = None,
-                     state_dict: Optional[dict] = None) -> Tuple[Optional[int], dict]:
+def save_model_chkpt_thread(*args, **kwargs) -> bool:
+    return save_model_chkpt(*args, **kwargs)
+
+
+def save_model_chkpt(*models: Dict[str, nn.Module], model_chkpts_root: str, cur_step: int, batch_size: int,
+                     chkpt_file_prefix: Optional[str] = None, use_threads: bool = False,
+                     metrics_dict: Optional[dict] = None, dataloader: Optional[DataLoader],
+                     gdmc: Optional[GDriveModelCheckpoints] = None) -> Thread or bool:
     """
-    Load model (and model's optimizer) checkpoint. The checkpoint is searched in given checkpoints root (absolute path)
-    and if one found it is loaded. The function also returns the checkpoint step as well as
-    :param (nn.Module) model: the model as a torch.nn.Module instance
-    :param (str) model_name: name of model which is also model checkpoint's file name prefix
-    :param (optional) dict_key: name of the key state dictionary regarding the model's state
-    :param (optional) model_opt: model's optimizer instance
-    :param (optional) chkpts_root: absolute path to model checkpoints directory
-    :param (optional) state_dict: state dict (used to avoid duplicate calls)
-    :return: a tuple containing the total number of images and the loaded state dict
+
+    :param models:
+    :param model_chkpts_root:
+    :param cur_step:
+    :param batch_size:
+    :param chkpt_file_prefix:
+    :param use_threads:
+    :param metrics_dict:
+    :param dataloader:
+    :param gdmc:
+    :return:
     """
-    # Check if running inside Colab or Kaggle (auto prefixing)
-    if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
-        chkpts_root = f'/content/drive/MyDrive/Model Checkpoints'
-    elif 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:
-        chkpts_root = f'/kaggle/working/Model Checkpoints'
-    elif not chkpts_root:
-        chkpts_root: str = '/home/achariso/PycharmProjects/gans-thesis/.checkpoints'
-    assert os.path.exists(chkpts_root) and os.path.isdir(chkpts_root), 'Checkpoints dir not existent or not readable'
-    assert model_opt is None or dict_key is not None, 'model_opt and dict_key cannot be None simultaneously'
+    # Check arguments
+    assert dataloader is None or isinstance(dataloader, ResumableDataLoader)
+    assert metrics_dict is None or dict == type(metrics_dict)
+    # Check if should run on a new thread
+    if use_threads:
+        thread = Thread(target=save_model_chkpt_thread, args=[*models], kwargs={'use_threads': False,
+                                                                                'model_chkpts_root': model_chkpts_root,
+                                                                                'cur_step': cur_step,
+                                                                                'batch_size': batch_size,
+                                                                                'chkpt_file_prefix': chkpt_file_prefix,
+                                                                                'metrics_dict': metrics_dict,
+                                                                                'dataloader': dataloader,
+                                                                                'gdmc': gdmc})
+        thread.start()
+        return thread
 
-    if not state_dict:
-        # Find correct checkpoint path
-        _, _, chkpt_files = next(os.walk(chkpts_root))
-        chkpt_files = sorted([_f for _f in chkpt_files if _f.lower().startswith(model_name.lower())], reverse=True)
-        assert len(chkpt_files) > 0, 'No model checkpoints found in given checkpoints dir'
-        chkpt_file = chkpt_files[0]
-        chkpt_info_parts = chkpt_file.replace(model_name, '').lstrip('_').replace('.pth', '').split('_')
-        chkpt_path = os.path.join(chkpts_root, chkpt_file)
-
-        # Load checkpoint
-        state_dict = torch.load(chkpt_path, map_location='cpu')
-    else:
-        chkpt_info_parts = ['None']
-
-    assert dict_key is None or dict_key in state_dict.keys(), f'dict_key={str(dict_key)} not found in state_dict.keys()'
-    model.load_state_dict(state_dict[dict_key] if dict_key else state_dict)
-    if model_opt:
-        assert f'{dict_key}_opt' in state_dict.keys(), '$dict_key$_opt not found in state_dict.keys()'
-        model_opt.load_state_dict(state_dict[f'{dict_key}_opt'])
-
-    # Find epoch/current step
-    chkpt_images = None
-    if len(chkpt_info_parts) == 2:
-        chkpt_cur_step = int(chkpt_info_parts[0])
-        chkpt_batch_size = int(chkpt_info_parts[1])
-        chkpt_images = chkpt_cur_step * chkpt_batch_size
-    elif len(chkpt_info_parts) == 0 and chkpt_info_parts[0].isnumeric():
-        chkpt_images = int(chkpt_info_parts[0])
-    return chkpt_images, state_dict
-
-
-def get_adam_optimizer(*models, lr: float = 1e-4, betas: tuple = (0.9, 0.999), delta: float = 1e-8) -> Optimizer:
-    """
-    Get Adam optimizer for jointly training ${models} argument.
-    :param models: one or more models to apply optimizer on
-    :param lr: learning rate
-    :param betas: (p_1, p_2) exponential decay parameters for Adam optimiser's moment estimates. According to
-    Goodfellow, good defaults are (0.9, 0.999).
-    :param delta: small constant that's used for numerical stability. According to Goodfellow, good defaults is 1e-8.
-    :return: instance of torch.optim.Adam optimizer
-    """
-    joint_params = []
-    for model in models:
-        joint_params += list(model.parameters())
-    return Adam(joint_params, lr=lr, betas=betas, eps=delta)
+    # Initiate state dict
+    state_dict = {}
+    # Fill with model state dicts
+    for _model_dict in models:
+        for _name, _model in _model_dict.items():
+            state_dict[_name] = _model.state_dict()
+    # Fill rest data
+    if metrics_dict:
+        state_dict['metrics'] = metrics_dict
+    if dataloader:
+        state_dict['dataloader'] = dataloader.get_state()
+    # Remove .pth file if exists
+    chkpt_filepath = f'{model_chkpts_root}/{chkpt_file_prefix}_{str(cur_step).zfill(10)}_{batch_size}.pth'
+    if os.path.exists(chkpt_filepath):
+        os.remove(chkpt_filepath)
+    # Save local file
+    torch.save(state_dict, chkpt_filepath)
+    # Return result (if requested, upload to google drive first)
+    return True if gdmc is None else \
+        gdmc.upload_model_checkpoint(chkpt_filepath=chkpt_filepath, use_threads=False, delete_after=False)
 
 
 def set_optimizer_lr(optimizer: Optimizer, new_lr: float) -> None:
@@ -150,23 +228,8 @@ def set_optimizer_lr(optimizer: Optimizer, new_lr: float) -> None:
         group['lr'] = new_lr
 
 
-def get_optimizer_lr_scheduler(optimizer: Optimizer, schedule_type: str, **kwargs) \
-        -> Union[CyclicLR, ReduceLROnPlateau]:
-    """
-    Set optimiser's learning rate scheduler based on $schedule_type$ string.
-    :param optimizer: instance of torch.optim.Optimizer subclass
-    :param schedule_type: learning-rate schedule type (supported: 'on_plateau', 'cyclic',)
-    :param kwargs: scheduler-specific keyword arguments
-    """
-    switcher = {
-        'on_plateau': ReduceLROnPlateau,
-        'cyclic': CyclicLR,
-    }
-    return switcher[schedule_type](optimizer=optimizer, **kwargs)
-
-
 def train_test_split(dataset: Union[Dataset, Sized], splits: list, seed: int = 42) \
-        -> Tuple[Union[Dataset, Sized], Union[Dataset, Sized]]:
+        -> Tuple[Dataset or Sized, Dataset or Sized]:
     """
     Split :attr:`dataset` to training set and test set based on the percentages from :attr:`splits`.
     :param dataset: the dataset upon which to perform the split

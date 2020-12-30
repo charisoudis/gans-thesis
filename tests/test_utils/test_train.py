@@ -1,5 +1,6 @@
 import os
 import unittest
+from threading import Thread
 
 import torch
 import torch.nn as nn
@@ -8,9 +9,10 @@ from torchvision.models import inception_v3
 
 from dataset.deep_fashion import ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
-from utils.torch import get_total_params
+from utils.gdrive import GDriveModelCheckpoints
+from utils.pytorch import get_total_params
 from utils.train import get_adam_optimizer, load_model_chkpt, ResumableRandomSampler, train_test_split, \
-    get_optimizer_lr_scheduler
+    get_optimizer_lr_scheduler, save_model_chkpt
 
 
 class TestTrainUtils(unittest.TestCase):
@@ -28,67 +30,7 @@ class TestTrainUtils(unittest.TestCase):
         self.conv_weight_value = 1.5
 
         self.chkpt_path = f'{self.chkpts_root}/pgpg_{self.cur_step}_{self.batch_size}.pth'
-
-    def test_ResumableRandomSampler(self) -> None:
-        sized_source = range(0, 1000)
-        sampler = ResumableRandomSampler(data_source=sized_source, shuffle=False)
-        self.assertListEqual([i for i in sized_source], [s_i for s_i in sampler])
-
-        sized_source = range(0, 10)
-        test_indices_with_seed_42 = [2, 6, 1, 8, 4, 5, 0, 9, 3, 7]
-        sampler2 = ResumableRandomSampler(data_source=sized_source, shuffle=True, seed=42)
-        self.assertListEqual(test_indices_with_seed_42, [s_i for s_i in sampler2])
-
-        test_indices = [i for i in range(0, 10)] + [i for i in range(0, 10)]
-        sampler3 = ResumableRandomSampler(data_source=range(0, 10), shuffle=False)
-        self.assertListEqual(test_indices, [next(iter(sampler3)) for _ in range(20)])
-
-        sized_source = range(0, 10)
-        test_indices_with_seed_42 = [2, 6, 1, 8, 4, 5, 0, 9, 3, 7, 2, 6, 1, 8, 4, 5, 0, 9, 3, 7]
-        sampler4 = ResumableRandomSampler(data_source=sized_source, shuffle=True, seed=42)
-        sampler_indices = [next(iter(sampler4)) for _ in range(20)]
-        self.assertEqual(len(test_indices_with_seed_42), len(sampler_indices))
-        self.assertListEqual(test_indices_with_seed_42[:10], sampler_indices[:10])
-
-    def test_load_model_chkpt(self) -> None:
-        gen = PGPGGenerator(c_in=6, c_out=3, w_in=128, h_in=128).cpu()
-        gen_opt = get_adam_optimizer(gen)
-
-        def _weights_init(_m: nn.Module) -> None:
-            if isinstance(_m, nn.Conv2d) or isinstance(_m, nn.ConvTranspose2d):
-                torch.nn.init.constant_(_m.weight, self.conv_weight_value)
-
-        gen = gen.apply(_weights_init)
-        torch.save({
-            'gen': gen.state_dict(),
-            'gen_opt': gen_opt.state_dict(),
-        }, self.chkpt_path)
-
-        # Signature of load_model_chkpt:  load_model_chkpt(model, model_name, dict_key, model_opt, chkpts_root)
-        self.assertRaises(AssertionError, load_model_chkpt, gen, 'pgpg1', 'gen', gen_opt)
-        self.assertRaises(AssertionError, load_model_chkpt, gen, 'pgpg', 'gen1', gen_opt)
-        try:
-            total_images_in_checkpoint, _ = load_model_chkpt(gen, 'pgpg', 'gen', gen_opt)
-        except AssertionError:
-            self.fail("load_model_chkpt() raised AssertionError")
-        self.assertEqual(self.cur_step * self.batch_size, total_images_in_checkpoint)
-
-        # Check loading of state dict to a new model
-        gen2 = PGPGGenerator(c_in=6, c_out=3, w_in=128, h_in=128).cpu()
-        load_model_chkpt(gen2, 'pgpg', 'gen')
-
-        def _check_weights(_m):
-            if isinstance(_m, nn.Conv2d) or isinstance(_m, nn.ConvTranspose2d):
-                self.assertTrue(torch.all(_m.weight.data.eq(self.conv_weight_value * torch.ones_like(_m.weight.data))))
-
-        gen2.apply(_check_weights)
-
-        # Try loading inception checkpoint
-        inception = inception_v3(pretrained=False, init_weights=False)
-        try:
-            load_model_chkpt(inception, 'inception_v3')
-        except AssertionError:
-            self.fail("load_model_chkpt(inception, 'inception_v3') raised AssertionError")
+        self.files_to_remove = [self.chkpt_path, ]
 
     def test_get_adam_optimizer(self) -> None:
         # Training of a single model
@@ -149,6 +91,121 @@ class TestTrainUtils(unittest.TestCase):
         test_lr_scheduler_2 = get_optimizer_lr_scheduler(test_model_opt_2, schedule_type='on_plateau')
         self.assertEqual(ReduceLROnPlateau, type(test_lr_scheduler_2))
 
+    def test_load_model_chkpt(self) -> None:
+        gen = PGPGGenerator(c_in=6, c_out=3, w_in=128, h_in=128).cpu()
+        gen_opt = get_adam_optimizer(gen)
+
+        def _weights_init(_m: nn.Module) -> None:
+            if isinstance(_m, nn.Conv2d) or isinstance(_m, nn.ConvTranspose2d):
+                torch.nn.init.constant_(_m.weight, self.conv_weight_value)
+
+        gen = gen.apply(_weights_init)
+        torch.save({
+            'gen': gen.state_dict(),
+            'gen_opt': gen_opt.state_dict(),
+        }, self.chkpt_path)
+
+        # Signature of load_model_chkpt:  load_model_chkpt(model, model_name, dict_key, model_opt, chkpts_root)
+        self.assertRaises(AssertionError, load_model_chkpt, gen, 'pgpg1', 'gen', gen_opt)
+        self.assertRaises(AssertionError, load_model_chkpt, gen, 'pgpg', 'gen1', gen_opt)
+        try:
+            total_images_in_checkpoint, _ = load_model_chkpt(gen, 'pgpg', 'gen', gen_opt)
+        except AssertionError:
+            self.fail("load_model_chkpt() raised AssertionError")
+        self.assertEqual(self.cur_step * self.batch_size, total_images_in_checkpoint)
+
+        # Check loading of state dict to a new model
+        gen2 = PGPGGenerator(c_in=6, c_out=3, w_in=128, h_in=128).cpu()
+        load_model_chkpt(gen2, 'pgpg', 'gen')
+
+        def _check_weights(_m):
+            if isinstance(_m, nn.Conv2d) or isinstance(_m, nn.ConvTranspose2d):
+                self.assertTrue(torch.all(_m.weight.data.eq(self.conv_weight_value * torch.ones_like(_m.weight.data))))
+
+        gen2.apply(_check_weights)
+
+        # Try loading inception checkpoint
+        inception = inception_v3(pretrained=False, init_weights=False)
+        try:
+            load_model_chkpt(inception, 'inception_v3')
+        except AssertionError:
+            self.fail("load_model_chkpt(inception, 'inception_v3') raised AssertionError")
+
+    def test_ResumableRandomSampler(self) -> None:
+        sized_source = range(0, 1000)
+        sampler = ResumableRandomSampler(data_source=sized_source, shuffle=False)
+        self.assertListEqual([i for i in sized_source], [s_i for s_i in sampler])
+
+        sized_source = range(0, 10)
+        test_indices_with_seed_42 = [2, 6, 1, 8, 4, 5, 0, 9, 3, 7]
+        sampler2 = ResumableRandomSampler(data_source=sized_source, shuffle=True, seed=42)
+        self.assertListEqual(test_indices_with_seed_42, [s_i for s_i in sampler2])
+
+        test_indices = [i for i in range(0, 10)] + [i for i in range(0, 10)]
+        sampler3 = ResumableRandomSampler(data_source=range(0, 10), shuffle=False)
+        self.assertListEqual(test_indices, [next(iter(sampler3)) for _ in range(20)])
+
+        sized_source = range(0, 10)
+        test_indices_with_seed_42 = [2, 6, 1, 8, 4, 5, 0, 9, 3, 7, 2, 6, 1, 8, 4, 5, 0, 9, 3, 7]
+        sampler4 = ResumableRandomSampler(data_source=sized_source, shuffle=True, seed=42)
+        sampler_indices = [next(iter(sampler4)) for _ in range(20)]
+        self.assertEqual(len(test_indices_with_seed_42), len(sampler_indices))
+        self.assertListEqual(test_indices_with_seed_42[:10], sampler_indices[:10])
+
+    def test_save_model_chkpt(self) -> None:
+        gdmc = GDriveModelCheckpoints.instance()
+        self.assertIsNotNone(gdmc)
+
+        conv1 = nn.Conv2d(3, 3, 3)
+        conv2 = nn.Conv2d(3, 3, 3)
+
+        use_threads_enum = [False, True]
+        use_gdmc_enum = [False, True]
+        for i, use_threads in enumerate(use_threads_enum):
+            for j, use_gdmc in enumerate(use_gdmc_enum):
+                target_chkpt_filepath = f'{self.chkpts_root}/test_{str(self.cur_step + i + j).zfill(10)}_' + \
+                                        f'{self.batch_size}.pth'
+                self.files_to_remove.append(target_chkpt_filepath)
+
+                thread_or_result = save_model_chkpt({'conv1': conv1}, {'conv2': conv2},
+                                                    model_chkpts_root=self.chkpts_root, chkpt_file_prefix='test',
+                                                    cur_step=self.cur_step + i + j, batch_size=self.batch_size,
+                                                    metrics_dict=None, dataloader=None,
+                                                    use_threads=use_threads, gdmc=gdmc if use_gdmc else None)
+                # Test return type
+                if use_threads:
+                    self.assertEqual(Thread, type(thread_or_result))
+                    thread_or_result.join()
+                else:
+                    self.assertEqual(bool, type(thread_or_result))
+                    self.assertTrue(thread_or_result)
+                # Test that local file created
+                self.assertTrue(os.path.exists(target_chkpt_filepath))
+                # Test that file has be uploaded to drive
+                gdmc_file = None
+                if use_gdmc:
+                    # Test file name
+                    test_chkpt_gdrive = gdmc.get_latest_model_chkpt_data('test')
+                    self.assertEqual(dict, type(test_chkpt_gdrive))
+                    self.assertEqual(os.path.basename(target_chkpt_filepath), test_chkpt_gdrive['title'])
+                    # Download file locally to read its contents
+                    gdmc_file = gdmc.gdrive.CreateFile({'id': test_chkpt_gdrive['id']})
+                    target_chkpt_filepath = f'{self.chkpts_root}/test_gdrive.pth'
+                    gdmc_file.GetContentFile(filename=target_chkpt_filepath)
+                # Check file contents
+                target_state_dict = torch.load(target_chkpt_filepath)
+                self.assertListEqual(['conv1', 'conv2'], list(target_state_dict.keys()),
+                                     msg=f'target_state_dict.keys()={str(target_state_dict.keys())}')
+                self.assertListEqual(['bias', 'weight'], sorted(list(target_state_dict['conv1'].keys())),
+                                     msg=f'conv1.keys()={str(target_state_dict["conv1"].keys())}')
+                self.assertListEqual(['bias', 'weight'], sorted(list(target_state_dict['conv2'].keys())),
+                                     msg=f'conv2.keys()={str(target_state_dict["conv2"].keys())}')
+                # Remove file for next iteration
+                os.remove(target_chkpt_filepath)
+                # Remove file from Google Drive
+                if use_gdmc and gdmc_file:
+                    gdmc_file.Delete()
+
     # noinspection PyUnresolvedReferences
     def test_train_test_split(self) -> None:
         test_dataset = ICRBDataset()
@@ -160,5 +217,6 @@ class TestTrainUtils(unittest.TestCase):
         self.assertEqual(type(test_dataset), type(test_set.dataset))
 
     def tearDown(self) -> None:
-        if os.path.exists(self.chkpt_path):
-            os.remove(self.chkpt_path)
+        for file in self.files_to_remove:
+            if os.path.exists(file):
+                os.remove(file)
