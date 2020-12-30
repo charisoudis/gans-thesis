@@ -1,4 +1,4 @@
-from __future__ import annotations
+# from __future__ import annotations
 
 import json
 import os
@@ -174,7 +174,7 @@ class GDriveModelCheckpoints(object):
         return sorted(model_chkpts, key=lambda _f: _f['title'], reverse=True)[0]
 
     @staticmethod
-    def download_model_checkpoint_thread(gdmc: GDriveModelCheckpoints, chkpt_data: dict) -> None:
+    def download_model_checkpoint_thread(gdmc, chkpt_data: dict) -> None:
         result, _ = gdmc.download_model_checkpoint(chkpt_data=chkpt_data, use_threads=False)
         if not result:
             raise ValueError('gdmc.download_model_checkpoint() returned False')
@@ -223,7 +223,7 @@ class GDriveModelCheckpoints(object):
         return self.download_model_checkpoint(chkpt_data=model_chkpt_data, use_threads=use_threads)
 
     @staticmethod
-    def upload_model_checkpoint_thread(gdmc: GDriveModelCheckpoints, filepath: str, delete_after: bool) -> None:
+    def upload_model_checkpoint_thread(gdmc, filepath: str, delete_after: bool) -> None:
         if not gdmc.upload_model_checkpoint(chkpt_filepath=filepath, use_threads=False, delete_after=delete_after):
             raise ValueError('gdmc.upload_model_checkpoint() returned False')
 
@@ -314,7 +314,7 @@ class GDriveModelCheckpoints(object):
     @staticmethod
     def instance(client_secrets_filepath: str = '/home/achariso/PycharmProjects/gans-thesis/client_secrets.json',
                  cache_directory: Optional[str] = '/home/achariso/PycharmProjects/gans-thesis/.http_cache') \
-            -> Optional[GDriveModelCheckpoints]:
+            -> Optional:
         """
         Get a new GDriveModelCheckpoints instance while also instantiating firstly a GoogleDrive API service
         :param client_secrets_filepath: absolute path to client_secrets.json
