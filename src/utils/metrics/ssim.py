@@ -15,16 +15,15 @@ from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 
 
-# TODO: finish documentation
-def _ssim_map(img1: Tensor, img2: Tensor, window, window_size, c_img) -> Tensor:
+def _ssim_map(img1: Tensor, img2: Tensor, window, window_size: int, c_img: int) -> Tensor:
     """
     Function to calculate the SSIM difference maps between two (batches of) images.
     :param img1: the 1st image batch (real image or perfect reconstruction)
     :param img2: the 2nd image batch (real image or perfect reconstruction)
-    :param window:
-    :param window_size:
-    :param c_img:
-    :return:
+    :param window: the convolution kernel (should be in the same device as image tensors)
+    :param window_size: width (or height, is the same) of window kernel
+    :param c_img: the image channels of both img1 and img2 batches
+    :return: a torch.Tensor object with SSIM difference maps
     """
     padding = window_size // 2
     mu1 = functional.conv2d(img1, window, padding=padding, groups=c_img)
@@ -44,18 +43,20 @@ def _ssim_map(img1: Tensor, img2: Tensor, window, window_size, c_img) -> Tensor:
     return ssim_map
 
 
-def _ssim(img1: Tensor, img2: Tensor, window, window_size, c_img, size_average=True) -> Tensor:
+def _ssim(img1: Tensor, img2: Tensor, window, window_size: int, c_img: int, size_average=True) -> Tensor:
     """
-    Function to calculate the SSIM index between two batches of images
-    :param img1:
-    :param img2:
-    :param window:
-    :param window_size:
-    :param c_img:
-    :param size_average:
-    :return:
+    Function to calculate the SSIM index between the two given batches of images, :attr:`img1` and :attr:`img2`.
+    :param img1: the 1st image batch (real image or perfect reconstruction)
+    :param img2: the 2nd image batch (real image or perfect reconstruction)
+    :param window: the convolution kernel (should be in the same device as image tensors)
+    :param window_size: width (or height, is the same) of window kernel
+    :param c_img: the image channels of both img1 and img2 batches
+    :param size_average: set to True to average SSIM index over all image channels, else :attr:`c_img` SSIM indices will
+                         be returned, one for each channel
+    :return: a torch.Tensor object with the overall mean SSIM index if :attr:`size_average`=True or with the SSIM
+             indices for each channel if False
     """
-    ssim_map = _ssim_map(img1, img2, window, window_size, c_img)
+    ssim_map = _ssim_map(img1, img2, window=window, window_size=window_size, c_img=c_img)
     return ssim_map.mean() if size_average else ssim_map.mean(1).mean(1).mean(1)
 
 

@@ -1,11 +1,9 @@
-# from __future__ import annotations
-
 import json
 import os
 import sys
 from datetime import datetime as dt, timedelta
 from threading import Thread
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Union
 
 import httplib2
 import humanize
@@ -174,12 +172,13 @@ class GDriveModelCheckpoints(object):
         return sorted(model_chkpts, key=lambda _f: _f['title'], reverse=True)[0]
 
     @staticmethod
-    def download_model_checkpoint_thread(gdmc, chkpt_data: dict) -> None:
+    def download_model_checkpoint_thread(gdmc: 'GDriveModelCheckpoints', chkpt_data: dict) -> None:
         result, _ = gdmc.download_model_checkpoint(chkpt_data=chkpt_data, use_threads=False)
         if not result:
             raise ValueError('gdmc.download_model_checkpoint() returned False')
 
-    def download_model_checkpoint(self, chkpt_data: dict, use_threads: bool = True) -> Tuple[Thread or bool, str]:
+    def download_model_checkpoint(self, chkpt_data: dict, use_threads: bool = False) \
+            -> Tuple[Union[Thread, bool], Optional[str]]:
         """
         Download model checkpoint described in :attr:`chkpt_data` from Google Drive to local filesystem at
         :attr:`self.local_chkpts_root`.
@@ -204,13 +203,15 @@ class GDriveModelCheckpoints(object):
             return True, local_chkpt_filepath
         # Download file from Google Drive to local checkpoints root
         try:
-            file = self.gdrive.CreateFile({'id': chkpt_data})
+            file = self.gdrive.CreateFile({'id': chkpt_data['id']})
             file.GetContentFile(filename=local_chkpt_filepath)
             return True, local_chkpt_filepath
         except ApiRequestError or FileNotUploadedError or FileNotDownloadableError as e:
             self.logger.critical(f'download_model_checkpoint() FAILed: {str(e)}')
+            return False, None
 
-    def download_latest_model_checkpoint(self, model_name: str, use_threads: bool = True) -> Tuple[Thread or bool, str]:
+    def download_latest_model_checkpoint(self, model_name: str, use_threads: bool = False) \
+            -> Tuple[Union[Thread, bool], Optional[str]]:
         """
         Download latest model checkpoint from Google Drive to local filesystem at :attr:`self.local_chkpts_root`.
         :param model_name: model' name (it is also the checkpoint file name prefix)
@@ -223,12 +224,12 @@ class GDriveModelCheckpoints(object):
         return self.download_model_checkpoint(chkpt_data=model_chkpt_data, use_threads=use_threads)
 
     @staticmethod
-    def upload_model_checkpoint_thread(gdmc, filepath: str, delete_after: bool) -> None:
+    def upload_model_checkpoint_thread(gdmc: 'GDriveModelCheckpoints', filepath: str, delete_after: bool) -> None:
         if not gdmc.upload_model_checkpoint(chkpt_filepath=filepath, use_threads=False, delete_after=delete_after):
             raise ValueError('gdmc.upload_model_checkpoint() returned False')
 
     def upload_model_checkpoint(self, chkpt_filepath: str, use_threads: bool = False,
-                                delete_after: bool = False) -> Thread or bool:
+                                delete_after: bool = False) -> Union[Thread, bool]:
         """
         Upload locally-saved model checkpoint to Google Drive for permanent storage.
         :param chkpt_filepath: absolute path of the locally-saved checkpoint file
@@ -314,7 +315,7 @@ class GDriveModelCheckpoints(object):
     @staticmethod
     def instance(client_secrets_filepath: str = '/home/achariso/PycharmProjects/gans-thesis/client_secrets.json',
                  cache_directory: Optional[str] = '/home/achariso/PycharmProjects/gans-thesis/.http_cache') \
-            -> Optional:
+            -> Optional['GDriveModelCheckpoints']:
         """
         Get a new GDriveModelCheckpoints instance while also instantiating firstly a GoogleDrive API service
         :param client_secrets_filepath: absolute path to client_secrets.json
@@ -332,19 +333,3 @@ class GDriveModelCheckpoints(object):
 
         # Instantiate self
         return GDriveModelCheckpoints(gdrive=gdrive)
-
-
-if __name__ == '__main__':
-    _gdmc = GDriveModelCheckpoints.instance()
-
-    print('before')
-    _thread = _gdmc.upload_model_checkpoint(
-        chkpt_filepath='/home/achariso/PycharmProjects/gans-thesis/client_secrets.json',
-        use_threads=True,
-        delete_after=False
-    )
-    print('after upload_model_checkpoint()')
-    # print(json.dumps(_gdmc.chkpt_groups, indent=4))
-    # print(json.dumps(_gdmc.latest_chkpts, indent=4))
-    _thread.join()
-    print('[DONE]')
