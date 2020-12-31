@@ -66,7 +66,8 @@ class PGPGGenerator(nn.Module):
     Guided Person Image Generation").
     """
 
-    def __init__(self, c_in: int, c_out: int, g1_c_bottleneck_down: int = 256, w_in: int = 256, h_in: int = 256):
+    def __init__(self, c_in: int, c_out: int, g1_c_bottleneck_down: int = 256, w_in: int = 256, h_in: int = 256,
+                 use_dropout_in_g2: bool = False):
         """
         PGPGGenerator class constructor:
         :param c_in: the number of channels to expect from a given input (image's channels + pose maps' channels)
@@ -76,6 +77,7 @@ class PGPGGenerator(nn.Module):
                                   to P*Hp*Wp+1024. Default is 10.
         :param w_in: input image's width
         :param h_in: input image's height
+        :param use_dropout_in_g2: set to True to apply Dropout in G2's encoder's first half
         """
         super(PGPGGenerator, self).__init__()
 
@@ -83,7 +85,7 @@ class PGPGGenerator(nn.Module):
                                  c_bottleneck_down=g1_c_bottleneck_down, w_in=w_in, h_in=h_in,
                                  use_out_tanh=True)
         self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32, n_contracting_blocks=6,
-                                 use_dropout=True, use_out_tanh=False)
+                                 use_dropout=use_dropout_in_g2, use_out_tanh=False)
         self.output_activation = nn.Tanh()
 
     def forward(self, x: Tensor, y_pose: Tensor) -> Tuple[Tensor, Tensor]:
