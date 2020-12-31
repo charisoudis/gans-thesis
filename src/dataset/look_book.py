@@ -3,18 +3,184 @@ import os
 import re
 from shutil import copyfile
 from time import sleep
+from typing import Optional, Tuple
 
 import click
+from PIL import Image, UnidentifiedImageError
+from torch import Tensor
+# noinspection PyProtectedMember
+from torch.utils.data import Dataset
+from torchvision.transforms import transforms
 from tqdm import tqdm
 
+from dataset.deep_fashion import ICRBDataset
 from utils.command_line_logger import CommandLineLogger
-from utils.data import squarify_img
+from utils.data import squarify_img, ResumableDataLoader
+from utils.string import to_human_readable
+from utils.train import train_test_split, ResumableRandomSampler
 
 
-class LookBookScraper:
+class PixelDTDataset(Dataset):
     """
-    LookBookScraper Class:
-    This class is used to scrape LookBook dataset's images.
+    PixelDTDataset Class:
+    This class is used to define the way LookBook dataset is accessed for the purpose of pixel-wise domain transfer
+    (PixelDT).
+    """
+
+    # Default normalization parameters for ICRB (converts tensors' ranges to [-1,1]
+    NormalizeMean = 0.5
+    NormalizeStd = 0.5
+
+    def __init__(self, root: str = '/data/Datasets/LookBook', root_prefix: Optional[str] = None,
+                 image_transforms: Optional[transforms.Compose] = None):
+        """
+        PixelDTDataset class constructor.
+        :param root: the root directory where all image files exist
+        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
+        :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        """
+        super(PixelDTDataset, self).__init__()
+        self.root = f'{ICRBDataset.get_root_prefix(root_prefix)}/{root}'
+        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
+        self.img_dir_path = f'{self.root}/Img'
+        self.items_dt_info_path = f'{self.img_dir_path}/items_dt_info.json'
+        # Load item info
+        if not os.path.exists(self.items_dt_info_path):
+            self.logger.error(f'items info file not found in image directory (tried: {self.items_dt_info_path})')
+            sleep(0.5)
+            if click.confirm('Do you want to scrape the dataset now?', default=True):
+                PixelDTScraper.run()
+        if not os.path.exists(self.items_dt_info_path):
+            raise FileNotFoundError(f'{self.items_dt_info_path} not found in image directory')
+        with open(self.items_dt_info_path) as fp:
+            self.items_dt_info = json.load(fp)
+        # Save benchmark info
+        self.dt_image_pairs = self.items_dt_info['dt_image_pairs']
+        self.dt_image_pairs_count = self.items_dt_info['dt_image_pairs_count']
+        self.logger.debug(f'Found {to_human_readable(self.dt_image_pairs_count)} image pairs in dataset')
+        # Save transforms
+        self.transforms = image_transforms if image_transforms else transforms.ToTensor()
+
+    def index_to_paths(self, index: int) -> Tuple[str, str]:
+        """
+        Given an image-pair index it returns the file paths of the pair's images.
+        :param index: image-pair's index
+        :return: a tuple containing (image_1_path, image_2_path), where lll file paths are absolute
+        """
+        image_1_path, image_2_path = self.dt_image_pairs[index]
+        return f'{self.img_dir_path}/{image_1_path}', f'{self.img_dir_path}/{image_2_path}'
+
+    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
+        """
+        Implements abstract Dataset::__getitem__() method.
+        :param index: integer with the current image index that we want to read from disk
+        :return: a tuple containing the images from domain A (human) and B (product), each as a torch.Tensor object
+        """
+        paths_tuple = self.index_to_paths(index)
+        # Fetch images
+        try:
+            image_1 = Image.open(paths_tuple[0])
+        except UnidentifiedImageError:
+            self.logger.critical(f'Image opening failed (path: {paths_tuple[0]})')
+            return self.__getitem__(index + 1)
+        image_2_path = paths_tuple[1]
+        try:
+            image_2 = Image.open(image_2_path)
+        except UnidentifiedImageError:
+            self.logger.critical(f'Image opening failed (path: {image_2_path})')
+            return self.__getitem__(index + 1)
+        # Apply transforms
+        if self.transforms:
+            image_1 = self.transforms(image_1)
+            image_2 = self.transforms(image_2)
+        return image_1, image_2
+
+    def __len__(self) -> int:
+        """
+        Implements abstract Dataset::__len__() method. This method returns the total "length" of the dataset which is
+        the total number of  images contained in each pile (or the min of them if they differ).
+        :return: integer
+        """
+        return self.dt_image_pairs_count
+
+    @staticmethod
+    def get_image_transforms(target_shape: int, target_channels: int, norm_mean: Optional[float] = None,
+                             norm_std: Optional[float] = None) -> transforms.Compose:
+        """
+        Get the torchvision transforms to apply to the dataset based on default normalization parameters
+        :param target_shape: the H and W in the tensor coming out of image transforms
+        :param target_channels: the number of channels in the tensor coming out of image transforms
+        :param norm_mean: mean (same for all channels) or None to use dataset's default mean normalization parameter
+        :param norm_std: standard deviation (same for all channels) or None to use dataset's default std normalization
+                         parameter
+        :return: a torchvision.transforms.Compose object with the transforms to apply to each dataset image
+        """
+        return ICRBDataset.get_image_transforms(target_shape=target_shape, target_channels=target_channels,
+                                                norm_mean=norm_mean if norm_mean else PixelDTDataset.NormalizeMean,
+                                                norm_std=norm_std if norm_std else PixelDTDataset.NormalizeStd)
+
+
+class PixelDTDataloader(ResumableDataLoader):
+    """
+    PixelDTDataloader Class:
+    This class implement torch.utils.data.DataLoader and is used to access the underlying LookBook dataset with all the
+    automation that PyTorch provides.
+    """
+
+    def __init__(self, root: str = '/data/Datasets/LookBook', root_prefix: Optional[str] = None,
+                 image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
+                 target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
+                 norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True,
+                 seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
+        """
+        PixelDTDataloader class constructor.
+        :param root: the root directory where all image files exist
+        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
+        :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param target_shape: the H and W in the tensor coming out of image transforms
+        :param target_channels: the number of channels in the tensor coming out of image transforms
+        :param norm_mean: mean (same for all channels) or None to use dataset's default mean normalization parameter
+        :param norm_std: standard deviation (same for all channels) or None to use dataset's default std normalization
+                         parameter
+        :param batch_size: the number of images batch
+        :param shuffle: set to True to have sampler shuffle indices when reaches the end
+        :param seed: manual seed parameter of torch.Generator (used in dataset sampler)
+        :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
+                           explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
+        :param splits: if not None performs training/testing sets split based on given :attr:`split` percentages
+        """
+        if image_transforms is None and target_shape is None and target_channels is None:
+            image_transforms = transforms.Compose([transforms.ToTensor()])
+        assert image_transforms is None or (target_channels is None and target_shape is None), \
+            'Do not define image_transforms when target_channels and target_shape is not None'
+        assert (target_channels is not None and target_shape is not None) or (target_channels is None and target_shape
+                                                                              is None), \
+            'target_channels and target_shape can either both be None or both set'
+        if target_shape is not None:
+            image_transforms = PixelDTDataset.get_image_transforms(target_shape, target_channels,
+                                                                   norm_mean=norm_mean, norm_std=norm_std)
+        # Create dataset instance based on the transforms
+        _dataset = PixelDTDataset(root=root, root_prefix=root_prefix, image_transforms=image_transforms)
+        if splits:
+            _dataset, _test_set = train_test_split(_dataset, splits=splits)
+            self.test_set = _test_set
+        # Create sample instance
+        self._sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=seed)
+        # Finally, instantiate dataloader
+        super(PixelDTDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, sampler=self._sampler,
+                                                pin_memory=pin_memory)
+
+    def get_state(self) -> dict:
+        return self._sampler.get_state()
+
+    def set_state(self, state: dict) -> None:
+        return self._sampler.set_state(state)
+
+
+class PixelDTScraper:
+    """
+    PixelDTScraper Class:
+    This class is used to scrape LookBook dataset's images for the purpose of pixel-wise domain transfer (PixelDT).
     """
 
     def __init__(self, root: str = '/data/Datasets/LookBook'):
@@ -263,7 +429,7 @@ class LookBookScraper:
         :param backward_pass: set to True to run scraper's backward pass (recursively merge items JSON files)
                               Note: if $forward_pass$ is set to True, then $backward_pass$ is also set to True.
         """
-        scraper = LookBookScraper()
+        scraper = PixelDTScraper()
         scraper.logger.info(f'SCRAPE DIR = {scraper.img_dir_path}')
         if forward_pass:
             # Forward pass
@@ -281,4 +447,4 @@ class LookBookScraper:
 
 if __name__ == '__main__':
     if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
-        LookBookScraper.run(forward_pass=True, backward_pass=True)
+        PixelDTScraper.run(forward_pass=True, backward_pass=True)

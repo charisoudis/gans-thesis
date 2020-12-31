@@ -246,7 +246,7 @@ class ICRBCrossPoseDataset(Dataset):
 
     def index_to_paths(self, index: int) -> Union[Tuple[str, str], Tuple[str, str, str, str]]:
         """
-        Given a image-pair index it returns the file paths of the pair's images.
+        Given an image-pair index it returns the file paths of the pair's images.
         :param index: image-pair's index
         :return: a tuple containing (image_1_path, image_2_path) if pose is set to False, a tuple containing
                  (image_1_path, pose_1_path, image_2_path, pose_2_path) otherwise. All file paths are absolute.
