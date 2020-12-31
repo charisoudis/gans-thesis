@@ -15,8 +15,8 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
-from dataset.resumable_dataloader import ResumableDataLoader
 from utils.command_line_logger import CommandLineLogger
+from utils.data import ResumableDataLoader
 from utils.list import get_pairs, list_diff, join_lists
 from utils.pytorch import ToTensorOrPass
 from utils.string import group_by_prefix

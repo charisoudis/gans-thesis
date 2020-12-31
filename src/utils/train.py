@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
 # noinspection PyProtectedMember
 from torch.utils.data import Sampler, random_split, Dataset, DataLoader
 
-from dataset.resumable_dataloader import ResumableDataLoader
+from utils.data import ResumableDataLoader
 from utils.gdrive import GDriveModelCheckpoints
 
 
