@@ -107,6 +107,7 @@ class FID(nn.Module):
             # Compute real embeddings
             target_output = real_samples[target_index] if target_index is not None else real_samples
             target_output = target_output.to(self.device)
+            target_output = gen_transforms_inv(gen_transforms(target_output))
             real_embeddings = self.inception(FID.InceptionV3Transforms(target_output))
             real_embeddings_list.append(real_embeddings.detach().cpu())
 
