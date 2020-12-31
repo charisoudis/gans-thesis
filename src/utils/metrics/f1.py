@@ -165,14 +165,14 @@ class F1(FID):
                                                                target_index=target_index,
                                                                condition_indices=condition_indices, z_dim=z_dim)
 
-        # Initialize manifold estimators
+        # Initialize manifolds
         real_manifold = ManifoldEstimator(real_embeddings, row_batch_size, col_batch_size, k=k)
         fake_manifold = ManifoldEstimator(fake_embeddings, row_batch_size, col_batch_size, k=k)
 
-        # Compute precision (i.e. how many points from fake_embeddings are in real_embeddings manifold)
+        # Compute precision (i.e. how many points from fake_embeddings fall into the real_embeddings manifold)
         precision = real_manifold.evaluate(fake_embeddings).mean()
 
-        # Compute recall (i.e. how many points from real_embeddings are in fake_embeddings manifold)
+        # Compute recall (i.e. how many points from real_embeddings fall into the fake_embeddings manifold)
         recall = fake_manifold.evaluate(real_embeddings).mean()
 
         # Compute F1 score
