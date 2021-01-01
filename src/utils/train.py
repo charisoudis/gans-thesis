@@ -1,12 +1,10 @@
 import os
 import sys
 from threading import Thread
-from typing import Union, Optional, Sized, Tuple, Dict, Type
+from typing import Union, Optional, Sized, Tuple, Dict
 
 import numpy as np
 import torch
-import tqdm
-import tqdm.notebook as tqdm_nb
 from IPython import get_ipython
 from torch import nn
 from torch.optim import Optimizer, Adam
@@ -47,21 +45,6 @@ def get_optimizer_lr_scheduler(optimizer: Optimizer, schedule_type: str, **kwarg
         'cyclic': CyclicLR,
     }
     return switcher[schedule_type](optimizer=optimizer, **kwargs)
-
-
-# noinspection PyUnresolvedReferences
-def get_tqdm() -> Type[Union[tqdm, tqdm_nb]]:
-    """
-    Get the correct Tqdm instance for showing progress. This is due to the fact that `tqdm.tqdm` is not working
-    correctly in IPython notebook.
-    :return: either an `tqdm.tqdm` or an `tqdm.notebook.tqdm` instance depending on execution context
-    """
-    try:
-        _ = __IPYTHON__
-        return tqdm_nb
-    except NameError:
-        return tqdm
-    pass
 
 
 def load_model_chkpt(model: nn.Module, model_name: str, step: Union[str, int] = 'latest',

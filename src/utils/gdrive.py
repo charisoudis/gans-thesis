@@ -8,6 +8,8 @@ from typing import Optional, List, Tuple, Union
 
 import httplib2
 import humanize
+import tqdm
+import tqdm.notebook as tqdm_nb
 # noinspection PyPackageRequirements
 from IPython import get_ipython
 from googleapiclient.discovery import build
@@ -21,7 +23,6 @@ from requests import post as post_request
 
 from utils.command_line_logger import CommandLineLogger
 from utils.string import group_by_prefix
-from utils.train import get_tqdm
 
 
 def get_client_dict(client_filepath: str) -> dict:
@@ -124,6 +125,21 @@ def get_root_folders_ids(gdrive: GoogleDrive) -> dict:
         _folder_title = _folder_data['title']
         _return_ids[_folder_title.lower().replace(' ', '_')] = _folder_id
     return _return_ids
+
+
+# noinspection PyUnresolvedReferences
+def get_tqdm() -> Type[Union[tqdm, tqdm_nb]]:
+    """
+    Get the correct Tqdm instance for showing progress. This is due to the fact that `tqdm.tqdm` is not working
+    correctly in IPython notebook.
+    :return: either an `tqdm.tqdm` or an `tqdm.notebook.tqdm` instance depending on execution context
+    """
+    try:
+        _ = __IPYTHON__
+        return tqdm_nb
+    except NameError:
+        return tqdm
+    pass
 
 
 class GDriveModelCheckpoints(object):
