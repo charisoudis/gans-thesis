@@ -10,7 +10,7 @@ from torch import nn
 from torch.optim import Optimizer, Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
 # noinspection PyProtectedMember
-from torch.utils.data import Sampler, random_split, Dataset, DataLoader
+from torch.utils.data import random_split, Dataset, DataLoader
 
 from utils.data import ResumableDataLoader
 from utils.gdrive import GDriveModelCheckpoints
@@ -47,22 +47,30 @@ def get_optimizer_lr_scheduler(optimizer: Optimizer, schedule_type: str, **kwarg
     return switcher[schedule_type](optimizer=optimizer, **kwargs)
 
 
-def load_model_chkpt(model: nn.Module, model_name: str, dict_key: Optional[str] = None,
-                     model_opt: Optional[Optimizer] = None, chkpts_root: Optional[str] = None,
-                     state_dict: Optional[dict] = None) -> Tuple[Optional[int], dict]:
+def load_model_chkpt(model: nn.Module, model_name: str, step: Union[str, int] = 'latest',
+                     model_opt: Optional[Optimizer] = None, dict_key: Optional[str] = None,
+                     chkpts_root: Optional[str] = None, state_dict: Optional[dict] = None,
+                     gdmc: Optional[GDriveModelCheckpoints] = None) -> Tuple[dict, Optional[int], Optional[int]]:
     """
     Load model (and model's optimizer) checkpoint. The checkpoint is searched in given checkpoints root (absolute path)
     and if one found it is loaded. The function also returns the checkpoint step as well as
     :param (nn.Module) model: the model as a torch.nn.Module instance
     :param (str) model_name: name of model which is also model checkpoint's file name prefix
-    :param (optional) dict_key: name of the key state dictionary regarding the model's state
+    :param (str or int) step: step of checkpoint to load or 'latest' to load latest model checkpoint
+    :param (optional) dict_key: name of the key of state dict regarding the model's state, or None if only one model'
+                                state is saved in the state dict
     :param (optional) model_opt: model's optimizer instance
     :param (optional) chkpts_root: absolute path to model checkpoints directory
     :param (optional) state_dict: state dict (used to avoid duplicate calls)
-    :return: a tuple containing the total number of images and the loaded state dict
+    :param (optional) gdmc: utils.gdrive.GDriveModelCheckpoints object to interact with GoogleDrive API in order to
+                            fetch model checkpoint
+    :return: a tuple of the form (<state_dict>, <checkpoint_step>, <checkpoint_batch_size>)
     """
     # Check if running inside Colab or Kaggle (auto prefixing)
-    if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
+    chkpt_path = None
+    if 'gdrive' == chkpts_root and gdmc:
+        result, chkpt_path = gdmc.download_model_checkpoint(model_name=model_name, step=step, use_threads=False)
+    elif 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
         chkpts_root = f'/content/drive/MyDrive/Model Checkpoints'
     elif 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:
         chkpts_root = f'/kaggle/working/Model Checkpoints'
@@ -71,19 +79,19 @@ def load_model_chkpt(model: nn.Module, model_name: str, dict_key: Optional[str] 
     assert os.path.exists(chkpts_root) and os.path.isdir(chkpts_root), 'Checkpoints dir not existent or not readable'
     assert model_opt is None or dict_key is not None, 'model_opt and dict_key cannot be None simultaneously'
 
+    chkpt_info_parts = ['None']
     if not state_dict:
-        # Find correct checkpoint path
-        _, _, chkpt_files = next(os.walk(chkpts_root))
-        chkpt_files = sorted([_f for _f in chkpt_files if _f.lower().startswith(model_name.lower())], reverse=True)
-        assert len(chkpt_files) > 0, 'No model checkpoints found in given checkpoints dir'
-        chkpt_file = chkpt_files[0]
-        chkpt_info_parts = chkpt_file.replace(model_name, '').lstrip('_').replace('.pth', '').split('_')
-        chkpt_path = os.path.join(chkpts_root, chkpt_file)
+        if not chkpt_path:
+            # Find correct checkpoint path
+            _, _, chkpt_files = next(os.walk(chkpts_root))
+            chkpt_files = sorted([_f for _f in chkpt_files if _f.lower().startswith(model_name.lower())], reverse=True)
+            assert len(chkpt_files) > 0, 'No model checkpoints found in given checkpoints dir'
+            chkpt_file = chkpt_files[0]
+            chkpt_info_parts = chkpt_file.replace(model_name, '').lstrip('_').replace('.pth', '').split('_')
+            chkpt_path = os.path.join(chkpts_root, chkpt_file)
 
         # Load checkpoint
         state_dict = torch.load(chkpt_path, map_location='cpu')
-    else:
-        chkpt_info_parts = ['None']
 
     assert dict_key is None or dict_key in state_dict.keys(), f'dict_key={str(dict_key)} not found in state_dict.keys()'
     model.load_state_dict(state_dict[dict_key] if dict_key else state_dict)
@@ -92,92 +100,43 @@ def load_model_chkpt(model: nn.Module, model_name: str, dict_key: Optional[str] 
         model_opt.load_state_dict(state_dict[f'{dict_key}_opt'])
 
     # Find epoch/current step
-    chkpt_images = None
+    chkpt_step = None
+    chkpt_batch_size = None
     if len(chkpt_info_parts) == 2:
-        chkpt_cur_step = int(chkpt_info_parts[0])
+        chkpt_step = int(chkpt_info_parts[0])
         chkpt_batch_size = int(chkpt_info_parts[1])
-        chkpt_images = chkpt_cur_step * chkpt_batch_size
-    elif len(chkpt_info_parts) == 0 and chkpt_info_parts[0].isnumeric():
-        chkpt_images = int(chkpt_info_parts[0])
-    return chkpt_images, state_dict
-
-
-class ResumableRandomSampler(Sampler):
-    """
-    ResumableRandomSampler Class:
-    Samples elements randomly. If without replacement, then sample from a shuffled dataset.
-    Original source: https://gist.github.com/usamec/1b3b4dcbafad2d58faa71a9633eea6a5
-    """
-
-    def __init__(self, data_source: Sized, shuffle: bool = True, seed: int = 42):
-        """
-        ResumableRandomSampler class constructor.
-        generator (Generator): Generator used in sampling.
-        :param data_source: torch.utils.data.Dataset or generally typings.Sized object of the dataset to sample from
-        :param seed: generator manual seed parameter
-        """
-        super(ResumableRandomSampler, self).__init__(data_source=data_source)
-
-        self.n_samples = len(data_source)
-        self.generator = torch.Generator()
-        self.generator.manual_seed(seed)
-
-        self.shuffle = shuffle
-        if self.shuffle:
-            self.perm_index = None
-            self.perm = None
-            self.reshuffle()
-        else:
-            self.perm_index = 0
-            self.perm = range(0, self.n_samples)
-
-    def reshuffle(self) -> None:
-        self.perm_index = 0
-        self.perm = list(torch.randperm(self.n_samples, generator=self.generator).numpy())
-
-    def __iter__(self):
-        # If reached the end of dataset, reshuffle
-        if self.perm_index >= len(self.perm):
-            if self.shuffle:
-                self.reshuffle()
-            else:
-                self.perm_index = 0
-
-        while self.perm_index < len(self.perm):
-            self.perm_index += 1
-            yield self.perm[self.perm_index - 1]
-
-    def __len__(self):
-        return self.n_samples
-
-    def get_state(self) -> dict:
-        return {"perm": self.perm, "perm_index": self.perm_index, "generator_state": self.generator.get_state()}
-
-    def set_state(self, state: dict) -> None:
-        self.perm = state["perm"]
-        self.perm_index = state["perm_index"]
-        self.generator.set_state(state["generator_state"])
+    return state_dict, chkpt_step, chkpt_batch_size
 
 
 def save_model_chkpt_thread(*args, **kwargs) -> bool:
     return save_model_chkpt(*args, **kwargs)
 
 
-def save_model_chkpt(*models: Dict[str, nn.Module], model_chkpts_root: str, cur_step: int, batch_size: int,
+def save_model_chkpt(*models: Dict[str, nn.Module], step: int, batch_size: int, model_chkpts_root: Optional[str] = None,
                      chkpt_file_prefix: Optional[str] = None, use_threads: bool = False,
-                     metrics_dict: Optional[dict] = None, dataloader: Optional[DataLoader],
-                     gdmc: Optional[GDriveModelCheckpoints] = None) -> Thread or bool:
+                     metrics_dict: Optional[dict] = None, dataloader: Optional[DataLoader] = None,
+                     gdmc: Optional[GDriveModelCheckpoints] = None, delete_after: bool = False) -> Thread or bool:
     """
-
-    :param models:
-    :param model_chkpts_root:
-    :param cur_step:
-    :param batch_size:
-    :param chkpt_file_prefix:
-    :param use_threads:
-    :param metrics_dict:
-    :param dataloader:
-    :param gdmc:
+    Saves state_dict of given model(s) and upload the local checkpoint to GoogleDrive if gdmc provided and
+    :attr:`use_threads` is set to True.
+    :param (list) models: (variable length argument list) a dict {"<model_name>": <model>}
+    :param (int) step: current step (is included in checkpoint file name)
+    :param (int) batch_size: current batch size (is included in checkpoint file name)
+    :param (optional) model_chkpts_root: local checkpoints root or None to try auto-detecting that path
+    :param (optional) chkpt_file_prefix: if None is set to the first model in :attr:`models` argument list, otherwise
+                                         this is the checkpoint file prefix
+    :param (bool) use_threads: set to True to have the checkpoint saving (and Google Drive uploading if :attr:`gdmc` is
+                               set) be carried out in a separate thread, thus returning immediately to the caller with
+                               `threading.Thread` object of the created thread
+    :param (optional) metrics_dict: if not None the metrics_dict will also be saved to the checkpoint file at the
+                                    `metrics` dict key
+    :param (optional) dataloader: if not None the loader current state will also be saved to the checkpoint file at the
+                                  `dataloader` dict key (assuming the :attr:`dataloader` inherits that
+                                  `utils.data.ResumableDataloader` class)
+    :param (optional) gdmc: utils.gdrive.GDriveModelCheckpoints object to interact with GoogleDrive API in order to
+                            fetch model checkpoint
+    :param (bool) delete_after: set to True when :attr:`gdmc` is not None to have the local checkpoint file be deleted
+                                after successful upload to Google Drive
     :return:
     """
     # Check arguments
@@ -187,7 +146,7 @@ def save_model_chkpt(*models: Dict[str, nn.Module], model_chkpts_root: str, cur_
     if use_threads:
         thread = Thread(target=save_model_chkpt_thread, args=[*models], kwargs={'use_threads': False,
                                                                                 'model_chkpts_root': model_chkpts_root,
-                                                                                'cur_step': cur_step,
+                                                                                'step': step,
                                                                                 'batch_size': batch_size,
                                                                                 'chkpt_file_prefix': chkpt_file_prefix,
                                                                                 'metrics_dict': metrics_dict,
@@ -208,14 +167,14 @@ def save_model_chkpt(*models: Dict[str, nn.Module], model_chkpts_root: str, cur_
     if dataloader:
         state_dict['dataloader'] = dataloader.get_state()
     # Remove .pth file if exists
-    chkpt_filepath = f'{model_chkpts_root}/{chkpt_file_prefix}_{str(cur_step).zfill(10)}_{batch_size}.pth'
+    chkpt_filepath = f'{model_chkpts_root}/{chkpt_file_prefix}_{str(step).zfill(10)}_{batch_size}.pth'
     if os.path.exists(chkpt_filepath):
         os.remove(chkpt_filepath)
     # Save local file
     torch.save(state_dict, chkpt_filepath)
     # Return result (if requested, upload to google drive first)
     return True if gdmc is None else \
-        gdmc.upload_model_checkpoint(chkpt_filepath=chkpt_filepath, use_threads=False, delete_after=False)
+        gdmc.upload_model_checkpoint(chkpt_filepath=chkpt_filepath, use_threads=False, delete_after=delete_after)
 
 
 def set_optimizer_lr(optimizer: Optimizer, new_lr: float) -> None:

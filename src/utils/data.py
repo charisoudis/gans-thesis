@@ -2,12 +2,13 @@ import abc
 import json
 import os
 import os.path
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Sized
 
 import prettytable
+import torch
 from PIL import Image
 # noinspection PyProtectedMember
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 
 from utils.string import to_human_readable
 
@@ -81,6 +82,63 @@ class ResumableDataLoader(DataLoader):
     @abc.abstractmethod
     def set_state(self, state: dict) -> None:
         raise NotImplementedError
+
+
+class ResumableRandomSampler(Sampler):
+    """
+    ResumableRandomSampler Class:
+    Samples elements randomly. If without replacement, then sample from a shuffled dataset.
+    Original source: https://gist.github.com/usamec/1b3b4dcbafad2d58faa71a9633eea6a5
+    """
+
+    def __init__(self, data_source: Sized, shuffle: bool = True, seed: int = 42):
+        """
+        ResumableRandomSampler class constructor.
+        generator (Generator): Generator used in sampling.
+        :param data_source: torch.utils.data.Dataset or generally typings.Sized object of the dataset to sample from
+        :param seed: generator manual seed parameter
+        """
+        super(ResumableRandomSampler, self).__init__(data_source=data_source)
+
+        self.n_samples = len(data_source)
+        self.generator = torch.Generator()
+        self.generator.manual_seed(seed)
+
+        self.shuffle = shuffle
+        if self.shuffle:
+            self.perm_index = None
+            self.perm = None
+            self.reshuffle()
+        else:
+            self.perm_index = 0
+            self.perm = range(0, self.n_samples)
+
+    def reshuffle(self) -> None:
+        self.perm_index = 0
+        self.perm = list(torch.randperm(self.n_samples, generator=self.generator).numpy())
+
+    def __iter__(self):
+        # If reached the end of dataset, reshuffle
+        if self.perm_index >= len(self.perm):
+            if self.shuffle:
+                self.reshuffle()
+            else:
+                self.perm_index = 0
+
+        while self.perm_index < len(self.perm):
+            self.perm_index += 1
+            yield self.perm[self.perm_index - 1]
+
+    def __len__(self):
+        return self.n_samples
+
+    def get_state(self) -> dict:
+        return {"perm": self.perm, "perm_index": self.perm_index, "generator_state": self.generator.get_state()}
+
+    def set_state(self, state: dict) -> None:
+        self.perm = state["perm"]
+        self.perm_index = state["perm_index"]
+        self.generator.set_state(state["generator_state"])
 
 
 def squarify_img(img: Union[str, Image.Image], target_shape: Optional[int] = None,

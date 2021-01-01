@@ -16,12 +16,12 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from utils.command_line_logger import CommandLineLogger
-from utils.data import ResumableDataLoader
+from utils.data import ResumableDataLoader, ResumableRandomSampler
 from utils.list import get_pairs, list_diff, join_lists
 from utils.pytorch import ToTensorOrPass
 from utils.string import group_by_prefix
 from utils.string import to_human_readable
-from utils.train import ResumableRandomSampler, train_test_split
+from utils.train import train_test_split
 
 
 class ICRBDataset(Dataset):

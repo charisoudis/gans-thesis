@@ -2,6 +2,7 @@ import json
 import os
 import sys
 from datetime import datetime as dt, timedelta
+# TODO: re-implement GoogleDrive threading support with a higher-level API, such as `concurrent.futures`
 from threading import Thread
 from typing import Optional, List, Tuple, Union
 
@@ -87,6 +88,10 @@ def get_gdrive_service(client_filepath: str, cache_root: Optional[str] = None) -
         'id_token', 'token_response', 'scopes', 'token_info_uri', 'id_token_jwt'
     ]})
 
+    # Create cache dir if not exists
+    if not os.path.exists(cache_root):
+        assert 0 == os.system(f'mkdir -p {cache_root}'), f'Command "mkdir -p {cache_root}": FAILed'
+
     try:
         _http = ocredentials.authorize(httplib2.Http(cache=cache_root))
         _service = build('drive', 'v2', http=_http)
@@ -158,8 +163,8 @@ class GDriveModelCheckpoints(object):
     def get_latest_model_chkpt_data(self, model_name: str) -> dict:
         """
         Get the latest checkpoint file data from the list of file checkpoints for the given :attr:`model_name`.
-        :param model_name: the model_name (should appear in :attr:`self.chkpt_groups` keys)
-        :return: a dict containing the latest checkpoint file data (e.g. fileId and title)
+        :param model_name: the model_name (should appear in :attr:`self.latest_chkpts` keys)
+        :return: a dict containing the latest checkpoint file data (e.g. {"id": <fileId>, "title": <fileTitle>, ...})
         """
         if model_name in self.latest_chkpts.keys():
             return self.latest_chkpts[model_name]
@@ -171,13 +176,24 @@ class GDriveModelCheckpoints(object):
         model_chkpts = self.chkpt_groups[model_name]
         return sorted(model_chkpts, key=lambda _f: _f['title'], reverse=True)[0]
 
-    @staticmethod
-    def download_model_checkpoint_thread(gdmc: 'GDriveModelCheckpoints', chkpt_data: dict) -> None:
-        result, _ = gdmc.download_model_checkpoint(chkpt_data=chkpt_data, use_threads=False)
-        if not result:
-            raise ValueError('gdmc.download_model_checkpoint() returned False')
+    def get_model_chkpt_data(self, model_name: str, step: Union[str, int] = 'latest') -> dict:
+        """
+        :param model_name: the model_name (should appear in :attr:`self.chkpt_groups` keys)
+        :param step: either an int of the step the model checkpoint created at or the string 'latest' to get GoogleDrive
+                     info of the latest model checkpoint ("x-steps"=="x batches passed through model")
+        :return: a dict containing the checkpoint file data (e.g. {"id": <fileId>, "title": <fileTitle>, ...}) for the
+                 specified step
+        """
+        if type(step) == str and 'latest' == 'step':
+            return self.get_latest_model_chkpt_data(model_name=model_name)
 
-    def download_model_checkpoint(self, chkpt_data: dict, use_threads: bool = False) \
+    @staticmethod
+    def download_checkpoint_thread(gdmc: 'GDriveModelCheckpoints', chkpt_data: dict) -> None:
+        result, _ = gdmc.download_checkpoint(chkpt_data=chkpt_data, use_threads=False)
+        if not result:
+            raise ValueError('gdmc.download_checkpoint() returned False')
+
+    def download_checkpoint(self, chkpt_data: dict, use_threads: bool = False) \
             -> Tuple[Union[Thread, bool], Optional[str]]:
         """
         Download model checkpoint described in :attr:`chkpt_data` from Google Drive to local filesystem at
@@ -194,7 +210,7 @@ class GDriveModelCheckpoints(object):
         # If use threads, start a new thread to curry out the download and return the thread object to be joined by the
         # caller if wanted
         if use_threads:
-            thread = Thread(target=GDriveModelCheckpoints.download_model_checkpoint_thread, args=(self, chkpt_data))
+            thread = Thread(target=GDriveModelCheckpoints.download_checkpoint_thread, args=(self, chkpt_data))
             thread.start()
             return thread, local_chkpt_filepath
 
@@ -207,21 +223,23 @@ class GDriveModelCheckpoints(object):
             file.GetContentFile(filename=local_chkpt_filepath)
             return True, local_chkpt_filepath
         except ApiRequestError or FileNotUploadedError or FileNotDownloadableError as e:
-            self.logger.critical(f'download_model_checkpoint() FAILed: {str(e)}')
+            self.logger.critical(f'download_checkpoint() FAILed: {str(e)}')
             return False, None
 
-    def download_latest_model_checkpoint(self, model_name: str, use_threads: bool = False) \
+    def download_model_checkpoint(self, model_name: str, step: Union[str, int] = 'latest', use_threads: bool = False) \
             -> Tuple[Union[Thread, bool], Optional[str]]:
         """
         Download latest model checkpoint from Google Drive to local filesystem at :attr:`self.local_chkpts_root`.
         :param model_name: model' name (it is also the checkpoint file name prefix)
+        :param step: either an int of the step the model checkpoint created at or the string 'latest' to get GoogleDrive
+                     info of the latest model checkpoint ("x-steps"=="x batches passed through model")
         :param use_threads: set to True to have download carried out be a new Thread, thus returning to caller
                             immediately with the Thread instance
         :return: a tuple containing either a threading.Thread instance (if :attr:`use_threads`=True) or a boolean set to
                  True if no error occurred or False in different case and the local filepath as a str object
         """
-        model_chkpt_data = self.get_latest_model_chkpt_data(model_name=model_name)
-        return self.download_model_checkpoint(chkpt_data=model_chkpt_data, use_threads=use_threads)
+        model_chkpt_data = self.get_model_chkpt_data(model_name=model_name, step=step)
+        return self.download_checkpoint(chkpt_data=model_chkpt_data, use_threads=use_threads)
 
     @staticmethod
     def upload_model_checkpoint_thread(gdmc: 'GDriveModelCheckpoints', filepath: str, delete_after: bool) -> None:

@@ -15,9 +15,9 @@ from tqdm import tqdm
 
 from dataset.deep_fashion import ICRBDataset
 from utils.command_line_logger import CommandLineLogger
-from utils.data import squarify_img, ResumableDataLoader
+from utils.data import squarify_img, ResumableDataLoader, ResumableRandomSampler
 from utils.string import to_human_readable
-from utils.train import train_test_split, ResumableRandomSampler
+from utils.train import train_test_split
 
 
 class PixelDTDataset(Dataset):

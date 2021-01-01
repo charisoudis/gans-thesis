@@ -77,7 +77,7 @@ class TestGDriveUtils(unittest.TestCase):
         os.rename(chkpt_filepath, new_chkpt_filepath)
 
         # Download the checkpoint file & compare file contents
-        result, dl_chkpt_filepath = self.gdmc.download_latest_model_checkpoint(model_name='test', use_threads=False)
+        result, dl_chkpt_filepath = self.gdmc.download_model_checkpoint(model_name='test', use_threads=False)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(dl_chkpt_filepath))
         self.assertTrue(filecmp.cmp(new_chkpt_filepath, dl_chkpt_filepath))

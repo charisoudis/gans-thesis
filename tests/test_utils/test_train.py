@@ -11,7 +11,7 @@ from dataset.deep_fashion import ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 from utils.gdrive import GDriveModelCheckpoints
 from utils.pytorch import get_total_params
-from utils.train import get_adam_optimizer, load_model_chkpt, ResumableRandomSampler, train_test_split, \
+from utils.train import get_adam_optimizer, load_model_chkpt, train_test_split, \
     get_optimizer_lr_scheduler, save_model_chkpt
 
 
@@ -109,7 +109,8 @@ class TestTrainUtils(unittest.TestCase):
         self.assertRaises(AssertionError, load_model_chkpt, gen, 'pgpg1', 'gen', gen_opt)
         self.assertRaises(AssertionError, load_model_chkpt, gen, 'pgpg', 'gen1', gen_opt)
         try:
-            total_images_in_checkpoint, _ = load_model_chkpt(gen, 'pgpg', 'gen', gen_opt)
+            _, chkpt_step, chkpt_batch_size = load_model_chkpt(gen, 'pgpg', 'gen', gen_opt)
+            total_images_in_checkpoint = chkpt_step * chkpt_batch_size
         except AssertionError:
             self.fail("load_model_chkpt() raised AssertionError")
         self.assertEqual(self.cur_step * self.batch_size, total_images_in_checkpoint)
@@ -131,27 +132,6 @@ class TestTrainUtils(unittest.TestCase):
         except AssertionError:
             self.fail("load_model_chkpt(inception, 'inception_v3') raised AssertionError")
 
-    def test_ResumableRandomSampler(self) -> None:
-        sized_source = range(0, 1000)
-        sampler = ResumableRandomSampler(data_source=sized_source, shuffle=False)
-        self.assertListEqual([i for i in sized_source], [s_i for s_i in sampler])
-
-        sized_source = range(0, 10)
-        test_indices_with_seed_42 = [2, 6, 1, 8, 4, 5, 0, 9, 3, 7]
-        sampler2 = ResumableRandomSampler(data_source=sized_source, shuffle=True, seed=42)
-        self.assertListEqual(test_indices_with_seed_42, [s_i for s_i in sampler2])
-
-        test_indices = [i for i in range(0, 10)] + [i for i in range(0, 10)]
-        sampler3 = ResumableRandomSampler(data_source=range(0, 10), shuffle=False)
-        self.assertListEqual(test_indices, [next(iter(sampler3)) for _ in range(20)])
-
-        sized_source = range(0, 10)
-        test_indices_with_seed_42 = [2, 6, 1, 8, 4, 5, 0, 9, 3, 7, 2, 6, 1, 8, 4, 5, 0, 9, 3, 7]
-        sampler4 = ResumableRandomSampler(data_source=sized_source, shuffle=True, seed=42)
-        sampler_indices = [next(iter(sampler4)) for _ in range(20)]
-        self.assertEqual(len(test_indices_with_seed_42), len(sampler_indices))
-        self.assertListEqual(test_indices_with_seed_42[:10], sampler_indices[:10])
-
     def test_save_model_chkpt(self) -> None:
         gdmc = GDriveModelCheckpoints.instance()
         self.assertIsNotNone(gdmc)
@@ -169,7 +149,7 @@ class TestTrainUtils(unittest.TestCase):
 
                 thread_or_result = save_model_chkpt({'conv1': conv1}, {'conv2': conv2},
                                                     model_chkpts_root=self.chkpts_root, chkpt_file_prefix='test',
-                                                    cur_step=self.cur_step + i + j, batch_size=self.batch_size,
+                                                    step=self.cur_step + i + j, batch_size=self.batch_size,
                                                     metrics_dict=None, dataloader=None,
                                                     use_threads=use_threads, gdmc=gdmc if use_gdmc else None)
                 # Test return type
