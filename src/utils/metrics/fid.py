@@ -8,13 +8,11 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision.models import inception_v3
 from torchvision.transforms import transforms
-from tqdm import tqdm
-from tqdm.notebook import tqdm as tqdm_nb
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 from utils.pytorch import matrix_sqrt, cov, ToTensorOrPass, invert_transforms
-from utils.train import load_model_chkpt
+from utils.train import load_model_chkpt, get_tqdm
 
 
 def _frechet_distance(x_mean: Tensor, y_mean: Tensor, x_cov: Tensor, y_cov: Tensor) -> Tensor:
@@ -56,14 +54,7 @@ class FID(nn.Module):
         :param crop_fc: set to True to crop FC layer from Inception v3 network
         """
         super(FID, self).__init__()
-        try:
-            self.runs_interactively = __IPYTHON__
-        except NameError:
-            self.runs_interactively = False
-        if self.runs_interactively:
-            self.tqdm = tqdm_nb
-        else:
-            self.tqdm = tqdm
+        self.tqdm = get_tqdm()
 
         # Instantiate Inception v3 model
         self.inception = inception_v3(pretrained=False, init_weights=False)

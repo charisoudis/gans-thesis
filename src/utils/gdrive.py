@@ -11,6 +11,7 @@ import humanize
 # noinspection PyPackageRequirements
 from IPython import get_ipython
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 from oauth2client.client import OAuth2Credentials
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
@@ -20,6 +21,7 @@ from requests import post as post_request
 
 from utils.command_line_logger import CommandLineLogger
 from utils.string import group_by_prefix
+from utils.train import get_tqdm
 
 
 def get_client_dict(client_filepath: str) -> dict:
@@ -137,6 +139,7 @@ class GDriveModelCheckpoints(object):
 
         assert gdrive is not None, "gdrive attribute is None"
         self.gdrive = gdrive
+        self.gservice = gdrive.auth.service
 
         # Local Checkpoints root
         # Check if running inside Colab or Kaggle (auto prefixing)
@@ -193,7 +196,7 @@ class GDriveModelCheckpoints(object):
         if not result:
             raise ValueError('gdmc.download_checkpoint() returned False')
 
-    def download_checkpoint(self, chkpt_data: dict, use_threads: bool = False) \
+    def download_checkpoint(self, chkpt_data: dict, use_threads: bool = False, show_progress: bool = False) \
             -> Tuple[Union[Thread, bool], Optional[str]]:
         """
         Download model checkpoint described in :attr:`chkpt_data` from Google Drive to local filesystem at
@@ -202,6 +205,7 @@ class GDriveModelCheckpoints(object):
                            {'id': <Google Drive FileID>, 'title': <Google Drive FileTitle>, ...}
         :param use_threads: set to True to have download carried out be a new Thread, thus returning to caller
                             immediately with the Thread instance
+        :param show_progress: set to True to have an auto-updating Tqdm progress bar to indicate download progress
         :return: a tuple containing either a threading.Thread instance (if :attr:`use_threads`=True) or a boolean set to
                  True if no error occurred or False in different case and the local filepath as a str object
         """
@@ -219,8 +223,17 @@ class GDriveModelCheckpoints(object):
             return True, local_chkpt_filepath
         # Download file from Google Drive to local checkpoints root
         try:
-            file = self.gdrive.CreateFile({'id': chkpt_data['id']})
-            file.GetContentFile(filename=local_chkpt_filepath)
+            # file = self.gdrive.CreateFile({'id': chkpt_data['id']})
+            file_request = self.gservice.files().get_media(fileId=chkpt_data['id'])
+            # local_file_handler = io.BytesIO()
+            with open(local_chkpt_filepath, 'wb') as fp:
+                file_downloader = MediaIoBaseDownload(fp, file_request)
+                with get_tqdm()(disable=not show_progress, total=100) as progress_bar:
+                    done = False
+                    while not done:
+                        status, done = file_downloader.next_chunk()
+                        progress_bar.moveto(int(status.progress()*100))
+            # file.GetContentFile(filename=local_chkpt_filepath, callback=progress_bar.update)
             return True, local_chkpt_filepath
         except ApiRequestError or FileNotUploadedError or FileNotDownloadableError as e:
             self.logger.critical(f'download_checkpoint() FAILed: {str(e)}')

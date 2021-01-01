@@ -9,11 +9,10 @@ from torch import Tensor
 from torch.autograd import Variable
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
-from tqdm.notebook import tqdm as tqdm_nb
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
+from utils.train import get_tqdm
 
 
 def _ssim_map(img1: Tensor, img2: Tensor, window, window_size: int, c_img: int) -> Tensor:
@@ -81,15 +80,7 @@ class SSIM(nn.Module):
         :param size_average: SSIM size average flag (set to True to output a scalar value of SSIM index)
         """
         super(SSIM, self).__init__()
-        try:
-            self.runs_interactively = __IPYTHON__
-        except NameError:
-            self.runs_interactively = False
-        if self.runs_interactively:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            self.tqdm = tqdm_nb
-        else:
-            self.tqdm = tqdm
+        self.tqdm = get_tqdm()
 
         # Create convolution kernel (a multivariate gaussian)
         self.window = SSIM._create_window(window_size, c_img)
