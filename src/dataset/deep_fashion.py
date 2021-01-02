@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from utils.command_line_logger import CommandLineLogger
 from utils.data import ResumableDataLoader, ResumableRandomSampler
+from utils.dep_free import get_tqdm
 from utils.list import get_pairs, list_diff, join_lists
 from utils.pytorch import ToTensorOrPass
 from utils.string import group_by_prefix
@@ -212,6 +213,7 @@ class ICRBCrossPoseDataset(Dataset):
                      an image pair without target pose for the second image in pair
         """
         super(ICRBCrossPoseDataset, self).__init__()
+        self.tqdm = get_tqdm()
         # Format root
         self.root = f'{ICRBDataset.get_root_prefix(root_prefix)}/{root}'
         self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
@@ -400,6 +402,7 @@ class ICRBScraper:
         :param root: DeepFashion benchmark's root directory path
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         """
+        self.tqdm = get_tqdm()
         # Test if running inside Colab
         if root.startswith('/data') and os.path.exists('/content'):
             root = f'/content/{root}'
@@ -474,7 +477,7 @@ class ICRBScraper:
         :param forward_pass: set to True to delete files also in item directories (i.e. directories whose names are
                              "id_<8-digit zero-padded item ID>")
         """
-        with tqdm(total=26 + (8082 if forward_pass else 0), colour='yellow') as progress_bar:
+        with self.tqdm(total=26 + (8082 if forward_pass else 0), colour='yellow') as progress_bar:
             for _root, _dirs, _files in os.walk(self.img_dir_path):
                 if not forward_pass and os.path.basename(_root).startswith('id_'):
                     continue
@@ -525,7 +528,7 @@ class ICRBScraper:
         self.logger.info(f'Found {duplicates_count} duplicate items. Starting resolution...')
 
         # Resolve duplicates
-        with tqdm(total=duplicates_count, colour='yellow') as progress_bar:
+        with self.tqdm(total=duplicates_count, colour='yellow') as progress_bar:
             for _id, _dirs in duplicates_list.items():
                 _count_list = [len(_i['images']) for _i in _dirs]
                 _target_images_count = max(_count_list)
@@ -563,7 +566,7 @@ class ICRBScraper:
         them by adding a ".skip" file in item's directory.
         """
         non_posable_items = []
-        with tqdm(total=self.items_count + 100, colour='yellow') as progress_bar:
+        with self.tqdm(total=self.items_count + 100, colour='yellow') as progress_bar:
             for _root, _dirs, _files in os.walk(self.img_dir_path):
                 if '.duplicate' in _files:
                     progress_bar.update()
@@ -675,7 +678,7 @@ class ICRBScraper:
         """
         processed_ids = []
         processed_count = 0
-        with tqdm(total=self.items_count, colour='yellow') as progress_bar:
+        with self.tqdm(total=self.items_count, colour='yellow') as progress_bar:
             for _root, _dirs, _files in os.walk(self.img_dir_path):
                 _json_files = [_f for _f in _files if _f.endswith('.json')]
                 assert len(_dirs) * (len(_files) - len(_json_files)) == 0, \
@@ -851,7 +854,7 @@ class ICRBScraper:
             3: 0,  # at item level there should be no dirs, just image files
         }
         while depth >= 0:
-            with tqdm(total=root_dirs_count_at_depth[depth], colour='yellow') as progress_bar:
+            with self.tqdm(total=root_dirs_count_at_depth[depth], colour='yellow') as progress_bar:
                 for _root, _dirs, _files in os.walk(self.img_dir_path):
                     _relative_root = _root.replace(self.img_dir_path, '')
                     _depth = _relative_root.count('/')

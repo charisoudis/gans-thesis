@@ -12,7 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
-from utils.train import get_tqdm
+from utils.dep_free import get_tqdm
 
 
 def _ssim_map(img1: Tensor, img2: Tensor, window, window_size: int, c_img: int) -> Tensor:

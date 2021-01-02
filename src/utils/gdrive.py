@@ -8,8 +8,6 @@ from typing import Optional, List, Tuple, Union
 
 import httplib2
 import humanize
-import tqdm
-import tqdm.notebook as tqdm_nb
 # noinspection PyPackageRequirements
 from IPython import get_ipython
 from googleapiclient.discovery import build
@@ -22,6 +20,7 @@ from pydrive.settings import InvalidConfigError
 from requests import post as post_request
 
 from utils.command_line_logger import CommandLineLogger
+from utils.dep_free import get_tqdm
 from utils.string import group_by_prefix
 
 
@@ -127,21 +126,6 @@ def get_root_folders_ids(gdrive: GoogleDrive) -> dict:
     return _return_ids
 
 
-# noinspection PyUnresolvedReferences
-def get_tqdm() -> Type[Union[tqdm, tqdm_nb]]:
-    """
-    Get the correct Tqdm instance for showing progress. This is due to the fact that `tqdm.tqdm` is not working
-    correctly in IPython notebook.
-    :return: either an `tqdm.tqdm` or an `tqdm.notebook.tqdm` instance depending on execution context
-    """
-    try:
-        _ = __IPYTHON__
-        return tqdm_nb
-    except NameError:
-        return tqdm
-    pass
-
-
 class GDriveModelCheckpoints(object):
 
     def __init__(self, gdrive: GoogleDrive, local_chkpts_root: Optional[str] = None, model_name_sep: str = '_'):
@@ -151,6 +135,7 @@ class GDriveModelCheckpoints(object):
         :param (optional) local_chkpts_root: absolute path to model checkpoints directory
         :param model_name_sep: separator of checkpoint file names (to retrieve model name and group accordingly)
         """
+        self.tqdm = get_tqdm()
         self.logger = CommandLineLogger(log_level='info')
 
         assert gdrive is not None, "gdrive attribute is None"
@@ -240,15 +225,31 @@ class GDriveModelCheckpoints(object):
         # Download file from Google Drive to local checkpoints root
         try:
             # file = self.gdrive.CreateFile({'id': chkpt_data['id']})
-            file_request = self.gservice.files().get_media(fileId=chkpt_data['id'])
             # local_file_handler = io.BytesIO()
-            with open(local_chkpt_filepath, 'wb') as fp:
+            file_request = self.gservice.files().get_media(fileId=chkpt_data['id'])
+            # Check if previous partial download exists, and read current progress
+            dl_file_path = f'{local_chkpt_filepath}.download'
+            if os.path.exists(dl_file_path) and os.path.exists(local_chkpt_filepath):
+                with open(dl_file_path, 'wb') as dl_fp:
+                    _progress = dl_fp.read().splitlines()[0]
+                    if _progress and str == type(_progress) and _progress.isdigit():
+                        _progress = int(_progress)
+                    else:
+                        _progress = 0
+            else:
+                _progress = 0
+            # Open file pointer and begin downloading/writing bytes from Google Drive
+            with open(local_chkpt_filepath, 'ab' if os.path.exists(local_chkpt_filepath) else 'wb') as fp:
                 file_downloader = MediaIoBaseDownload(fp, file_request)
-                with get_tqdm()(disable=not show_progress, total=100) as progress_bar:
+                file_downloader._progress = _progress
+                with self.tqdm(disable=not show_progress, total=100) as progress_bar:
                     done = False
                     while not done:
-                        status, done = file_downloader.next_chunk()
-                        progress_bar.moveto(int(status.progress()*100))
+                        mdp, done = file_downloader.next_chunk()
+                        # Write next (first) byte in a .download file to be able to resume file download
+                        with open(dl_file_path, 'w') as dl_fp:
+                            dl_fp.write(mdp.resumable_progress)
+                        progress_bar.moveto(int(mdp.progress()*100))
             # file.GetContentFile(filename=local_chkpt_filepath, callback=progress_bar.update)
             return True, local_chkpt_filepath
         except ApiRequestError or FileNotUploadedError or FileNotDownloadableError as e:

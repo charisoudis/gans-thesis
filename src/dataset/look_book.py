@@ -11,11 +11,11 @@ from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
-from tqdm import tqdm
 
 from dataset.deep_fashion import ICRBDataset
 from utils.command_line_logger import CommandLineLogger
 from utils.data import squarify_img, ResumableDataLoader, ResumableRandomSampler
+from utils.dep_free import get_tqdm
 from utils.string import to_human_readable
 from utils.train import train_test_split
 
@@ -188,6 +188,7 @@ class PixelDTScraper:
         LookBookScraper class constructor.
         :param root: LookBook dataset's root directory path
         """
+        self.tqdm = get_tqdm()
         self.logger = CommandLineLogger(log_level='debug')
         self.initial_img_dir_path = f'{root}/ImgHQ'
         self.img_dir_path = f'{root}/Img'
@@ -304,7 +305,7 @@ class PixelDTScraper:
 
         self.logger.debug(f'[initial_scraping_deep_fashion] Found {dt_groups_count} out of {len(image_groups)}' +
                           f' items with a flat.jpg image.')
-        with tqdm(total=dt_groups_count, colour='yellow') as progress_bar:
+        with self.tqdm(total=dt_groups_count, colour='yellow') as progress_bar:
             # Copy images in LookBook under Img root
             pid = self.items_count
             for i, dt_group in enumerate(dt_groups):
@@ -345,7 +346,7 @@ class PixelDTScraper:
         `item_dt_info.json`.
         """
         id_dirs = next(os.walk(self.img_dir_path))[1]
-        with tqdm(total=len(id_dirs), colour='yellow') as progress_bar:
+        with self.tqdm(total=len(id_dirs), colour='yellow') as progress_bar:
             for id_dir in id_dirs:
                 id_dir_path = f'{self.img_dir_path}/{id_dir}'
                 images = os.listdir(id_dir_path)
@@ -390,7 +391,7 @@ class PixelDTScraper:
             'dt_image_pairs_count': 0,
         }
         # Start merging
-        with tqdm(total=len(id_dirs), colour='yellow') as progress_bar:
+        with self.tqdm(total=len(id_dirs), colour='yellow') as progress_bar:
             for id_dir in id_dirs:
                 id_dir_path = f'{self.img_dir_path}/{id_dir}'
                 item_dt_info_path = f'{id_dir_path}/item_dt_info.json'

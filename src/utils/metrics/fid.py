@@ -11,8 +11,9 @@ from torchvision.transforms import transforms
 
 from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
+from utils.dep_free import get_tqdm
 from utils.pytorch import matrix_sqrt, cov, ToTensorOrPass, invert_transforms
-from utils.train import load_model_chkpt, get_tqdm
+from utils.train import load_model_chkpt
 
 
 def _frechet_distance(x_mean: Tensor, y_mean: Tensor, x_cov: Tensor, y_cov: Tensor) -> Tensor:
