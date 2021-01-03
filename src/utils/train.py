@@ -12,8 +12,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
 # noinspection PyProtectedMember
 from torch.utils.data import random_split, Dataset, DataLoader
 
-from utils.data import ResumableDataLoader
 from utils.gdrive import GDriveModelCheckpoints
+from utils.ifaces import ResumableDataLoader
 
 
 def get_adam_optimizer(*models, lr: float = 1e-4, betas: tuple = (0.9, 0.999), delta: float = 1e-8) -> Optimizer:
@@ -132,7 +132,7 @@ def save_model_chkpt(*models: Dict[str, nn.Module], step: int, batch_size: int, 
                                     `metrics` dict key
     :param (optional) dataloader: if not None the loader current state will also be saved to the checkpoint file at the
                                   `dataloader` dict key (assuming the :attr:`dataloader` inherits that
-                                  `utils.data.ResumableDataloader` class)
+                                  `utils.ifaces.ResumableDataloader` class)
     :param (optional) gdmc: utils.gdrive.GDriveModelCheckpoints object to interact with GoogleDrive API in order to
                             fetch model checkpoint
     :param (bool) delete_after: set to True when :attr:`gdmc` is not None to have the local checkpoint file be deleted

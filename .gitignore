@@ -2,8 +2,7 @@
 *.json
 *.bak
 venv
-.checkpoints
-.checkpoints/*
+.gdrive/*
 .ipynb_checkpoints
 .ipynb_checkpoints/*
 .http_cache

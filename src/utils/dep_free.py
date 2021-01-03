@@ -1,9 +1,11 @@
-import tqdm
-import tqdm.notebook as tqdm_nb
+from typing import Type, Union
+
+from tqdm import tqdm
+from tqdm.notebook import tqdm as tqdm_nb
 
 
 # noinspection PyUnresolvedReferences
-def get_tqdm() -> Type[Union[tqdm, tqdm_nb]]:
+def get_tqdm() -> Type[Union[tqdm_nb, tqdm]]:
     """
     Get the correct Tqdm instance for showing progress. This is due to the fact that `tqdm.tqdm` is not working
     correctly in IPython notebook.

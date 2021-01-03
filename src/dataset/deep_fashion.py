@@ -11,13 +11,14 @@ from IPython import get_ipython
 from PIL import Image, UnidentifiedImageError
 from torch import Tensor
 # noinspection PyProtectedMember
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
 from utils.command_line_logger import CommandLineLogger
-from utils.data import ResumableDataLoader, ResumableRandomSampler
+from utils.data import ResumableRandomSampler
 from utils.dep_free import get_tqdm
+from utils.ifaces import ResumableDataLoader
 from utils.list import get_pairs, list_diff, join_lists
 from utils.pytorch import ToTensorOrPass
 from utils.string import group_by_prefix
@@ -138,7 +139,7 @@ class ICRBDataset(Dataset):
         return default_prefix.rstrip('/') if default_prefix else ''
 
 
-class ICRBDataloader(ResumableDataLoader):
+class ICRBDataloader(DataLoader, ResumableDataLoader):
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
                  root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
@@ -310,7 +311,7 @@ class ICRBCrossPoseDataset(Dataset):
         return self.total_pairs_count
 
 
-class ICRBCrossPoseDataloader(ResumableDataLoader):
+class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
 
     def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
                  root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,

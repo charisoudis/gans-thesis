@@ -1,4 +1,4 @@
-import abc
+import json
 import json
 import os
 import os.path
@@ -8,7 +8,7 @@ import prettytable
 import torch
 from PIL import Image
 # noinspection PyProtectedMember
-from torch.utils.data import DataLoader, Sampler
+from torch.utils.data import Sampler
 
 from utils.string import to_human_readable
 
@@ -68,20 +68,6 @@ def deep_fashion_icrb_info(root: str = '/data/Datasets/DeepFashion/In-shop Cloth
     if print_table:
         print(table)
     return json.loads(table.get_json_string()) if return_dict else None
-
-
-class ResumableDataLoader(DataLoader):
-
-    def __init__(self, **kwargs):
-        super(ResumableDataLoader, self).__init__(**kwargs)
-
-    @abc.abstractmethod
-    def get_state(self) -> dict:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def set_state(self, state: dict) -> None:
-        raise NotImplementedError
 
 
 class ResumableRandomSampler(Sampler):

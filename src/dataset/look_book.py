@@ -9,13 +9,14 @@ import click
 from PIL import Image, UnidentifiedImageError
 from torch import Tensor
 # noinspection PyProtectedMember
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
 
 from dataset.deep_fashion import ICRBDataset
 from utils.command_line_logger import CommandLineLogger
-from utils.data import squarify_img, ResumableDataLoader, ResumableRandomSampler
+from utils.data import squarify_img, ResumableRandomSampler
 from utils.dep_free import get_tqdm
+from utils.ifaces import ResumableDataLoader
 from utils.string import to_human_readable
 from utils.train import train_test_split
 
@@ -120,7 +121,7 @@ class PixelDTDataset(Dataset):
                                                 norm_std=norm_std if norm_std else PixelDTDataset.NormalizeStd)
 
 
-class PixelDTDataloader(ResumableDataLoader):
+class PixelDTDataloader(DataLoader, ResumableDataLoader):
     """
     PixelDTDataloader Class:
     This class implement torch.utils.data.DataLoader and is used to access the underlying LookBook dataset with all the

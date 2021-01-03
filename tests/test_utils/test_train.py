@@ -165,7 +165,7 @@ class TestTrainUtils(unittest.TestCase):
                 gdmc_file = None
                 if use_gdmc:
                     # Test file name
-                    test_chkpt_gdrive = gdmc.get_latest_model_chkpt_data('test')
+                    test_chkpt_gdrive = gdmc.get_model_chkpt_data(model_name='test', step='latest')
                     self.assertEqual(dict, type(test_chkpt_gdrive))
                     self.assertEqual(os.path.basename(target_chkpt_filepath), test_chkpt_gdrive['title'])
                     # Download file locally to read its contents
