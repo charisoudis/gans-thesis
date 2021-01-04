@@ -12,40 +12,57 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
 
-from dataset.deep_fashion import ICRBDataset
+from datasets.deep_fashion import ICRBDataset
 from utils.command_line_logger import CommandLineLogger
 from utils.data import squarify_img, ResumableRandomSampler
 from utils.dep_free import get_tqdm
+from utils.gdrive import GDriveDataset, GDriveFolder
 from utils.ifaces import ResumableDataLoader
 from utils.string import to_human_readable
 from utils.train import train_test_split
 
 
-class PixelDTDataset(Dataset):
+class PixelDTDataset(Dataset, GDriveDataset):
     """
     PixelDTDataset Class:
     This class is used to define the way LookBook dataset is accessed for the purpose of pixel-wise domain transfer
     (PixelDT).
     """
 
+    # Dataset name is the name of the folder in Google Drive under which dataset's Img.zip lives
+    DatasetName = 'LookBook'
+
     # Default normalization parameters for ICRB (converts tensors' ranges to [-1,1]
     NormalizeMean = 0.5
     NormalizeStd = 0.5
 
-    def __init__(self, root: str = '/data/Datasets/LookBook', root_prefix: Optional[str] = None,
-                 image_transforms: Optional[transforms.Compose] = None):
+    def __init__(self, dataset_gfolder_or_groot: GDriveFolder, image_transforms: Optional[transforms.Compose] = None):
         """
         PixelDTDataset class constructor.
-        :param root: the root directory where all image files exist
-        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
-        :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param (GDriveFolder) dataset_gfolder_or_groot: a `utils.gdrive.GDriveFolder` object to download/use dataset
+                                                        from Google Drive
+        :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :raises FileNotFoundError: either when the dataset is not present in local filesystem or when the
+                                   `items_dt_info.json` is not present inside dataset's (local) root
         """
-        super(PixelDTDataset, self).__init__()
-        self.root = f'{ICRBDataset.get_root_prefix(root_prefix)}/{root}'
+        # Instantiate `torch.utils.data.Dataset` class
+        Dataset.__init__(self)
+        # Instantiate `utils.gdrive.GDriveDataset` class
+        dataset_gfolder = dataset_gfolder_or_groot if dataset_gfolder_or_groot.name == self.DatasetName else \
+            dataset_gfolder_or_groot.subfolder_by_name(folder_name=self.DatasetName, recursive=True)
+        GDriveDataset.__init__(self, dataset_gfolder=dataset_gfolder, zip_filename='Img.zip')
+        self.root = dataset_gfolder.local_root
+        # Initialize instance properties
         self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
         self.img_dir_path = f'{self.root}/Img'
-        self.items_dt_info_path = f'{self.img_dir_path}/items_dt_info.json'
+        # Check that the dataset is present at the local filesystem
+        if not self.is_fetched_and_unzipped():
+            if click.confirm(f'Dataset is not fetched and unzipped. Would you like to fetch now?', default=True):
+                self.fetch_and_unzip(in_parallel=False, show_progress=True)
+            else:
+                raise FileNotFoundError(f'Dataset not found in local filesystem (tried {self.root})')
         # Load item info
+        self.items_dt_info_path = f'{self.img_dir_path}/items_dt_info.json'
         if not os.path.exists(self.items_dt_info_path):
             self.logger.error(f'items info file not found in image directory (tried: {self.items_dt_info_path})')
             sleep(0.5)
@@ -65,7 +82,7 @@ class PixelDTDataset(Dataset):
     def index_to_paths(self, index: int) -> Tuple[str, str]:
         """
         Given an image-pair index it returns the file paths of the pair's images.
-        :param index: image-pair's index
+        :param (int) index: image-pair's index
         :return: a tuple containing (image_1_path, image_2_path), where lll file paths are absolute
         """
         image_1_path, image_2_path = self.dt_image_pairs[index]
@@ -74,7 +91,7 @@ class PixelDTDataset(Dataset):
     def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
         """
         Implements abstract Dataset::__getitem__() method.
-        :param index: integer with the current image index that we want to read from disk
+        :param (int) index: integer with the current image index that we want to read from disk
         :return: a tuple containing the images from domain A (human) and B (product), each as a torch.Tensor object
         """
         paths_tuple = self.index_to_paths(index)
@@ -128,15 +145,14 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
     automation that PyTorch provides.
     """
 
-    def __init__(self, root: str = '/data/Datasets/LookBook', root_prefix: Optional[str] = None,
-                 image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
-                 target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
-                 norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True,
-                 seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
+    def __init__(self, dataset_gfolder: GDriveFolder, image_transforms: Optional[transforms.Compose] = None,
+                 target_shape: Optional[int] = None, target_channels: Optional[int] = None,
+                 norm_mean: Optional[float] = None, norm_std: Optional[float] = None, batch_size: int = 8,
+                 shuffle: bool = True, seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
         """
         PixelDTDataloader class constructor.
-        :param root: the root directory where all image files exist
-        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
+        :param (GDriveFolder) dataset_gfolder: a `utils.gdrive.GDriveFolder` object to download/use dataset from
+                                               Google Drive
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
@@ -161,7 +177,7 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
             image_transforms = PixelDTDataset.get_image_transforms(target_shape, target_channels,
                                                                    norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = PixelDTDataset(root=root, root_prefix=root_prefix, image_transforms=image_transforms)
+        _dataset = PixelDTDataset(dataset_gfolder=dataset_gfolder, image_transforms=image_transforms)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set

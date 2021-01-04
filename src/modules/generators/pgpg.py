@@ -4,7 +4,7 @@ import torch
 from torch import nn, Tensor
 from torchvision.transforms import transforms
 
-from dataset.deep_fashion import ICRBCrossPoseDataloader
+from datasets.deep_fashion import ICRBCrossPoseDataloader
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.unet import UNETWithSkipConnections
 from utils.tensor import save_tensor_to_image_file

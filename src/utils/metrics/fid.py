@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.models import inception_v3
 from torchvision.transforms import transforms
 
-from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
+from datasets.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 from utils.dep_free import get_tqdm
 from utils.pytorch import matrix_sqrt, cov, ToTensorOrPass, invert_transforms
@@ -20,11 +20,11 @@ def _frechet_distance(x_mean: Tensor, y_mean: Tensor, x_cov: Tensor, y_cov: Tens
     """
     Method for returning the Fréchet distance between multivariate Gaussians, parameterized by their means and
     covariance matrices.
-    :param x_mean: the mean of the first Gaussian, (n_vars)
-    :param y_mean: the mean of the second Gaussian, (n_vars)
-    :param x_cov: the covariance matrix of the first Gaussian, (n_vars, n_vars)
-    :param y_cov: the covariance matrix of the second Gaussian, (n_vars, n_vars)
-    :return: a torch.Tensor object containing the Frechet distance of the two multivariate Gaussian distributions
+    :param (Tensor) x_mean: the mean of the first Gaussian, (n_vars)
+    :param (Tensor) y_mean: the mean of the second Gaussian, (n_vars)
+    :param (Tensor) x_cov: the covariance matrix of the first Gaussian, (n_vars, n_vars)
+    :param (Tensor) y_cov: the covariance matrix of the second Gaussian, (n_vars, n_vars)
+    :return: a `torch.Tensor` object containing the Frechet distance of the two multivariate Gaussian distributions
     """
     return torch.norm(x_mean - y_mean) ** 2 + torch.trace(x_cov + y_cov - 2 * matrix_sqrt(x_cov @ y_cov))
 
@@ -47,12 +47,12 @@ class FID(nn.Module):
                  device: str = 'cpu', n_samples: int = 512, batch_size: int = 8, crop_fc: bool = True):
         """
         FID class constructor.
-        :param chkpts_root: absolute path to model checkpoints directory
-        :param device: the device type on which to run the Inception model (defaults to 'cpu')
-        :param n_samples: the total number of samples used to compute the metric (defaults to 512; the higher this
-                          number gets, the more accurate the metric is)
-        :param batch_size: the number of samples to precess at each loop
-        :param crop_fc: set to True to crop FC layer from Inception v3 network
+        :param (str) chkpts_root: absolute path to model checkpoints directory
+        :param (str) device: the device type on which to run the Inception model (defaults to 'cpu')
+        :param (int) n_samples: the total number of samples used to compute the metric (defaults to 512; the higher this
+                                number gets, the more accurate the metric is)
+        :param (int) batch_size: the number of samples to precess at each loop
+        :param (bool) crop_fc: set to True to crop FC layer from Inception v3 network
         """
         super(FID, self).__init__()
         self.tqdm = get_tqdm()

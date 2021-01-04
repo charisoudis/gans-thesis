@@ -10,7 +10,7 @@ from torch.autograd import Variable
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
 
-from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
+from datasets.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 from utils.dep_free import get_tqdm
 

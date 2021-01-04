@@ -1,5 +1,4 @@
 import json
-import json
 import os
 import os.path
 from typing import Optional, List, Union, Sized
@@ -157,3 +156,14 @@ def squarify_img(img: Union[str, Image.Image], target_shape: Optional[int] = Non
     if target_shape:
         result = result.resize(size=(target_shape, target_shape), resample=Image.BICUBIC)
     return result
+
+
+def unzip_file(zip_filepath: str) -> bool:
+    """
+    Unzips a zip file at given :attr:`zip_filepath` using `unzip` lib & shell command.
+    :param zip_filepath: the absolute path to the .zip file
+    :return: a `bool` object set to True if shell command return 0, False otherwise
+    """
+    return True if 0 == os.system(f'unzip -q "{zip_filepath}" -d ' +
+                                  f'"{zip_filepath.replace("/" + os.path.basename(zip_filepath), "")}"') \
+        else False

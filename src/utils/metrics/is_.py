@@ -9,7 +9,7 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
 
-from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
+from datasets.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 from utils.metrics.fid import FID
 from utils.pytorch import invert_transforms

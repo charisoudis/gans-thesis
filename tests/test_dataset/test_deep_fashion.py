@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torchvision.transforms import transforms
 
-from dataset.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
+from datasets.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 
 
 class TestICRBDataset(unittest.TestCase):

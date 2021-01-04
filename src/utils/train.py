@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
 # noinspection PyProtectedMember
 from torch.utils.data import random_split, Dataset, DataLoader
 
-from utils.gdrive import GDriveModelCheckpoints
+from utils.gdrive_bak import GDriveModelCheckpoints
 from utils.ifaces import ResumableDataLoader
 
 
@@ -69,7 +69,7 @@ def load_model_chkpt(model: nn.Module, model_name: str, step: Union[str, int] = 
     # Check if running inside Colab or Kaggle (auto prefixing)
     chkpt_path = None
     if 'gdrive' == chkpts_root and gdmc:
-        result, chkpt_path = gdmc.download_model_checkpoint(model_name=model_name, step=step, use_threads=False)
+        result, chkpt_path = gdmc.download_model_checkpoint(model_name=model_name, step=step, in_parallel=False)
     elif 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
         chkpts_root = f'/content/drive/MyDrive/Model Checkpoints'
     elif 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:
@@ -174,7 +174,8 @@ def save_model_chkpt(*models: Dict[str, nn.Module], step: int, batch_size: int, 
     torch.save(state_dict, chkpt_filepath)
     # Return result (if requested, upload to google drive first)
     return True if gdmc is None else \
-        gdmc.upload_model_checkpoint(chkpt_filepath=chkpt_filepath, use_threads=False, delete_after=delete_after)
+        gdmc.upload_model_checkpoint(chkpt_filename=os.path.basename(chkpt_filepath), in_parallel=False,
+                                     delete_after=delete_after)
 
 
 def set_optimizer_lr(optimizer: Optimizer, new_lr: float) -> None:

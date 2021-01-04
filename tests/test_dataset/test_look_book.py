@@ -4,8 +4,8 @@ import unittest
 
 import numpy as np
 
-from dataset.deep_fashion import ICRBDataset
-from dataset.look_book import PixelDTDataset
+from datasets.deep_fashion import ICRBDataset
+from datasets.look_book import PixelDTDataset
 
 
 # noinspection DuplicatedCode

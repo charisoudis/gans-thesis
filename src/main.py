@@ -6,7 +6,7 @@ import torch.nn as nn
 # noinspection PyProtectedMember
 from torchvision.transforms import transforms
 
-from dataset.deep_fashion import ICRBCrossPoseDataset
+from datasets.deep_fashion import ICRBCrossPoseDataset
 from modules.discriminators.cycle_gan import CycleGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
 from utils.command_line_logger import CommandLineLogger

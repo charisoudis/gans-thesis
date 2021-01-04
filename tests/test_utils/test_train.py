@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.models import inception_v3
 
-from dataset.deep_fashion import ICRBDataset
+from datasets.deep_fashion import ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
 from utils.gdrive import GDriveModelCheckpoints
 from utils.pytorch import get_total_params
