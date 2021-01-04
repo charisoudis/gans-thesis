@@ -94,17 +94,20 @@ class CloudFile(dict, metaclass=abc.ABCMeta):
 
 class CloudFolder(dict, metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def create_subfolder(self, folder_name: str) -> 'CloudFolder':
+    def create_subfolder(self, folder_name: str, force_create_local: bool = False) -> 'CloudFolder':
         """
         Create a subfolder with the given :attr:`folder_name` in cloud storage.
-        :param folder_name: the name of the subfolder to be created
+        :param (str) folder_name: the name of the subfolder to be created
+        :param (bool) force_create_local: set to True to create local folder immediately after creating folder in cloud
+                                          storage; the local folder is created if not exists before any file upload and
+                                          download
         :return: a `utils.ifaces.CloudFolder` instance to interact with the newly created subfolder
         """
         raise NotImplementedError
 
     @abc.abstractmethod
     def download(self, recursive: bool = False, in_parallel: bool = False, show_progress: bool = False,
-                 unzip_after: bool = False) -> Union[ApplyResult, bool]:
+                 unzip_after: bool = False) -> List[Union[ApplyResult, bool]]:
         """
         Downloads all the files inside the folder from cloud storage to local filesystem.
         :param (bool) recursive: set to True to download files inside subfolders in a recursive manner
@@ -112,8 +115,9 @@ class CloudFolder(dict, metaclass=abc.ABCMeta):
                                    immediately to the caller with a thread-related object
         :param (bool) show_progress: set to True to have the downloading progress printed using the `tqdm` lib
         :param (bool) unzip_after: set to True to unzip all the zip downloaded files using the `unzip` lib
-        :return: a `multiprocessing.pool.ApplyResult` object if :attr:`in_parallel` was set, else a bool object set to
-                 True if download completed successfully for all files, False with corresponding messages otherwise
+        :return: a list of `multiprocessing.pool.ApplyResult` objects if :attr:`in_parallel` was set, else a list of
+                 `bool` objects with each set to True if the corresponding file download completed successfully,
+                 `False`, with error messages displayed, otherwise
         """
         raise NotImplementedError
 
@@ -215,7 +219,7 @@ class CloudFolder(dict, metaclass=abc.ABCMeta):
                                    to the caller with a thread-related object
         :param (bool) show_progress: set to True to have the uploading progress printed using the `tqdm` lib
         :return: a `multiprocessing.pool.ApplyResult` object if `in_parallel` was set else a
-                 `utils.ifaces.CloudFile` object with the uploaded cloud file info or None in case of failure
+                 `utils.ifaces.CloudFile` object with the uploaded cloud file info or `None` in case of failure
         """
         raise NotImplementedError
 
@@ -229,12 +233,16 @@ class CloudFilesystem(metaclass=abc.ABCMeta):
         """
         return '1.0'
 
-    def create_folder(self, cloud_folder: CloudFolder, folder_name: str) -> Optional[CloudFolder]:
+    def create_folder(self, cloud_folder: CloudFolder, folder_name: str, force_create_local: bool = False) \
+            -> Optional[CloudFolder]:
         """
         Create a new folder under given :attr:`cloud_folder` named after the given :attr:`folder_name`.
-        :param cloud_folder: a `utils.ifaces.CloudFolder` instance with the folder inside which the new folder will be
-                             created in cloud storage
-        :param folder_name: the name of the folder to be created as an `str` object
+        :param (CloudFolder) cloud_folder: a `utils.ifaces.CloudFolder` instance with the folder inside which the new
+                                           folder will be created in cloud storage
+        :param (str) folder_name: the name of the folder to be created as an `str` object
+        :param (bool) force_create_local: set to True to create local folder immediately after creating folder in cloud
+                                          storage; the local folder is created if not exists before any file upload and
+                                          download
         :return: a `utils.ifaces.CloudFolder` instance to interact with the newly created folder in cloud storage or
                  None with corresponding messages if errors occurred
         """
@@ -242,9 +250,9 @@ class CloudFilesystem(metaclass=abc.ABCMeta):
 
     @staticmethod
     def download_file_thread(_self: 'CloudFilesystem', cloud_file: CloudFile, local_filepath: str,
-                             unzip_after: bool) -> bool:
-        return _self.download_file(cloud_file=cloud_file, local_filepath=local_filepath,
-                                   in_parallel=False, show_progress=False, unzip_after=unzip_after)
+                             show_progress: bool = False, unzip_after: bool = False) -> bool:
+        return _self.download_file(cloud_file, local_filepath=local_filepath, in_parallel=False,
+                                   show_progress=show_progress, unzip_after=unzip_after)
 
     @abc.abstractmethod
     def download_file(self, cloud_file: CloudFile, local_filepath: str, in_parallel: bool = False,
@@ -284,15 +292,15 @@ class CloudFilesystem(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @staticmethod
-    def upload_local_file_thread(_self: 'CloudFilesystem', cloud_folder: CloudFolder, local_filepath: str,
-                                 delete_after: bool = False) -> Optional[CloudFile]:
+    def upload_local_file_thread(_self: 'CloudFilesystem', local_filepath: str, cloud_folder: CloudFolder,
+                                 delete_after: bool = False) -> CloudFile or None:
         return _self.upload_local_file(local_filepath=local_filepath, cloud_folder=cloud_folder,
                                        delete_after=delete_after, in_parallel=False, show_progress=False)
 
     @abc.abstractmethod
     def upload_local_file(self, local_filepath: str, cloud_folder: dict, delete_after: bool = False,
                           in_parallel: bool = False, show_progress: bool = False) \
-            -> Union[ApplyResult, Optional[CloudFile]]:
+            -> Union[ApplyResult, CloudFile or None]:
         """
         Upload locally-saved file from :attr:`local_filepath` to cloud drive folder described by
         :attr:`cloud_folder`.
@@ -304,7 +312,7 @@ class CloudFilesystem(metaclass=abc.ABCMeta):
                                    to the caller with a thread-related object
         :param (bool) show_progress: set to True to have the uploading progress printed using the `tqdm` lib
         :return: a `multiprocessing.pool.ApplyResult` object if `in_parallel` was set, else a
-                 `utils.ifaces.CloudFile` object with the uploaded cloud file info or None in case of failure
+                 `utils.ifaces.CloudFile` object with the uploaded cloud file info or `None` in case of failure
         """
         raise NotImplementedError
 
@@ -419,8 +427,8 @@ class CloudModel(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     def save_and_upload_checkpoint(self, state_dict: dict, step: Union[int, str], batch_size: Optional[int] = None,
-                                   delete_after: bool = False, in_parallel: bool = False,
-                                   show_progress: bool = False) -> Union[ApplyResult, bool]:
+                                   delete_after: bool = False, in_parallel: bool = False, show_progress: bool = False) \
+            -> Union[ApplyResult, CloudFile or None]:
         """
         Save the given :attr:`state_dict` locally and then upload the saved checkpoint to cloud for permanent storage.
         :param (dict) state_dict: the model state dict (e.g. the result of calling `model.state_dict()`)
@@ -430,25 +438,29 @@ class CloudModel(metaclass=abc.ABCMeta):
         :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
                                    to caller
         :param (bool) show_progress: set to True to have the uploading progress displayed using the `tqdm` lib
-        :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else a `bool` object set
-                 to `True` if upload completed successfully, `False` with corresponding messages otherwise
+        :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
+                 `utils.ifaces.CloudFile` object if upload completed successfully, `None` with corresponding messages
+                 otherwise
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def upload_checkpoint(self, chkpt_filename: str, delete_after: bool = False, in_parallel: bool = False,
-                          show_progress: bool = False) -> Union[ApplyResult, bool]:
+    def upload_checkpoint(self, chkpt_filename: str, batch_size: Optional[int] = None, delete_after: bool = False,
+                          in_parallel: bool = False, show_progress: bool = False) \
+            -> Union[ApplyResult, CloudFile or None]:
         """
         Upload locally-saved model checkpoint to cloud storage for permanent storage.
         :param (str) chkpt_filename: file name (NOT absolute path) of the locally-saved checkpoint file.
                                      The filename MUST follow the following naming convention:
                                      "<model_name: str>_<step: int or str>_<batch_size: Optional[int]>"
+        :param (optional) batch_size: see `utils.ifaces.CloudModel::download_checkpoint`
         :param (bool) delete_after: set to True to have the local file deleted after successful upload
         :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
                                    to caller
         :param (bool) show_progress: set to True to have the uploading progress displayed using the `tqdm` lib
-        :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else a `bool` object set
-                 to `True` if upload completed successfully, `False` with corresponding messages otherwise
+        :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
+                 `utils.ifaces.CloudFile` object if upload completed successfully, `None` with corresponding messages
+                 otherwise
         """
         raise NotImplementedError
 

@@ -1,4 +1,3 @@
-# noinspection DuplicatedCode
 from multiprocessing.pool import ApplyResult
 from typing import Optional, Tuple, Union
 

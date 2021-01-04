@@ -145,14 +145,14 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
     automation that PyTorch provides.
     """
 
-    def __init__(self, dataset_gfolder: GDriveFolder, image_transforms: Optional[transforms.Compose] = None,
+    def __init__(self, dataset_gfolder_or_groot: GDriveFolder, image_transforms: Optional[transforms.Compose] = None,
                  target_shape: Optional[int] = None, target_channels: Optional[int] = None,
                  norm_mean: Optional[float] = None, norm_std: Optional[float] = None, batch_size: int = 8,
                  shuffle: bool = True, seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
         """
         PixelDTDataloader class constructor.
-        :param (GDriveFolder) dataset_gfolder: a `utils.gdrive.GDriveFolder` object to download/use dataset from
-                                               Google Drive
+        :param (GDriveFolder) dataset_gfolder_or_groot: a `utils.gdrive.GDriveFolder` object to download/use dataset
+                                                        from Google Drive
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
@@ -177,7 +177,7 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
             image_transforms = PixelDTDataset.get_image_transforms(target_shape, target_channels,
                                                                    norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = PixelDTDataset(dataset_gfolder=dataset_gfolder, image_transforms=image_transforms)
+        _dataset = PixelDTDataset(dataset_gfolder_or_groot=dataset_gfolder_or_groot, image_transforms=image_transforms)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set
