@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 
 import torch
 from torch import nn, Tensor
@@ -42,7 +42,7 @@ class PGPGGenerator2(UNETWithSkipConnections):
     This class implements the G2 generator network from the PGPG paper ("Pose Guided Person Image Generation").
     """
 
-    def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, n_contracting_blocks: int = 4,
+    def __init__(self, c_in: int, c_out: int, c_hidden: int = 32, n_contracting_blocks: int = 5,
                  use_dropout: bool = True, use_out_tanh: bool = True):
         """
         PGPGGenerator2 class constructor.
@@ -66,27 +66,59 @@ class PGPGGenerator(nn.Module):
     Guided Person Image Generation").
     """
 
-    def __init__(self, c_in: int, c_out: int, g1_c_bottleneck_down: int = 256, w_in: int = 256, h_in: int = 256,
-                 use_dropout_in_g2: bool = False):
+    DefaultConfiguration = {
+        'g1': {
+            'c_hidden': 32,
+            'n_contracting_blocks': 6,
+            'c_bottleneck_down': 256,
+            'use_out_tanh': True,
+        },
+        'g2': {
+            'c_hidden': 32,
+            'n_contracting_blocks': 5,
+            'use_out_tanh': True,
+            'use_dropout': True,
+        },
+        'recon_criterion': 'L1',
+        'adv_criterion': 'MSE',
+    }
+
+    def __init__(self, c_in: int, c_out: int, w_in: int, h_in: int, configuration: Optional[dict] = None):
         """
         PGPGGenerator class constructor:
         :param c_in: the number of channels to expect from a given input (image's channels + pose maps' channels)
         :param c_out: the number of channels to expect for a given output
-        :param g1_c_bottleneck_down: number of channels to down-project to on G1's bottleneck before applying FC layer.
-                                  Down-projecting to P channels is necessary to reduce number of params from 1024*Hp*Wp
-                                  to P*Hp*Wp+1024. Default is 10.
         :param w_in: input image's width
         :param h_in: input image's height
-        :param use_dropout_in_g2: set to True to apply Dropout in G2's encoder's first half
+        :param (optional) configuration: the configuration parameters of the networks. Among other parameters the
+                                         following are necessary to instantiate the model:
+                                            - g1_c_bottleneck_down: number of channels to down-project to on G1's
+                                            bottleneck before applying FC layer. Down-projecting to P channels is
+                                            necessary to reduce number of params from 1024*Hp*Wp to P*Hp*Wp+1024.
+                                            Default is 256.
+                                            - use_dropout_in_g2: set to True to apply Dropout in G2's encoder's first
+                                            half
         """
         super(PGPGGenerator, self).__init__()
 
-        self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=32, n_contracting_blocks=6,
-                                 c_bottleneck_down=g1_c_bottleneck_down, w_in=w_in, h_in=h_in,
-                                 use_out_tanh=True)
-        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=32, n_contracting_blocks=6,
-                                 use_dropout=use_dropout_in_g2, use_out_tanh=False)
+        # Check if configuration is given
+        if not configuration:
+            configuration = self.DefaultConfiguration
+
+        g1_conf = configuration['g1']
+        self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=g1_conf['c_hidden'],
+                                 n_contracting_blocks=g1_conf['n_contracting_blocks'],
+                                 c_bottleneck_down=g1_conf['c_bottleneck_down'], w_in=w_in, h_in=h_in,
+                                 use_out_tanh=g1_conf['use_out_tanh'])
+        g2_conf = configuration['g2']
+        self.g2 = PGPGGenerator2(c_in=2 * c_out, c_out=c_out, c_hidden=g2_conf['c_hidden'],
+                                 n_contracting_blocks=g2_conf['n_contracting_blocks'],
+                                 use_dropout=g2_conf['use_dropout'],
+                                 use_out_tanh=g2_conf['use_out_tanh'])
         self.output_activation = nn.Tanh()
+
+        # Save configuration in instance
+        self.configuration = configuration
 
     def forward(self, x: Tensor, y_pose: Tensor) -> Tuple[Tensor, Tensor]:
         """
@@ -100,19 +132,20 @@ class PGPGGenerator(nn.Module):
         return g1_out, self.output_activation(g2_out + g1_out)
 
     def get_loss(self, x: Tensor, y_pose: Tensor, y: Tensor, disc: nn.Module,
-                 adv_criterion: nn.modules.Module = nn.MSELoss(),
-                 recon_criterion: nn.Module = nn.L1Loss()) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+                 adv_criterion: Optional[nn.modules.Module] = None,
+                 recon_criterion: Optional[nn.Module] = None) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
-        Get the loss of the generator given inputs.
+        Get the loss of the generator given inputs. If the criterions are not provided they will be set using the
+        instance's given (or default) configuration.
         :param x: input images
         :param y_pose: target images' pose images
         :param y: target images
         :param disc: the Discriminator network
-        :param adv_criterion: the adversarial loss function; takes the discriminator predictions and the target labels
-                              and returns a adversarial loss (which we aim to minimize)
-        :param recon_criterion: the reconstruction loss function; takes the real images from Y and those images put
-                                through a (X,Yp)->Y generator and returns the image reconstruction loss (which we aim
-                                to minimize)
+        :param (optional) adv_criterion: the adversarial loss function; takes the discriminator predictions and the
+                                         target labels and returns a adversarial loss (which we aim to minimize)
+        :param (optional) recon_criterion: the reconstruction loss function; takes the real images from Y and those
+                                           images put through a (X,Yp)->Y generator and returns the image reconstruction
+                                           loss (which we aim to minimize)
         :return: a tuple containing the G1's loss (a scalar) and G2's loss (a scalar) and the outputs (for visualization
                  purposes)
         """
@@ -121,11 +154,15 @@ class PGPGGenerator(nn.Module):
         save_tensor_to_image_file(y_pose)
         y_pose += 1  # how much we want to weight on non-background area (original paper weight is 1)
         # 1) L1 loss for G1
+        recon_criterion = getattr(nn, f'{self.configuration["recon_criterion"]}Loss')() if not recon_criterion else \
+            recon_criterion
         g1_loss = recon_criterion(g1_out * y_pose, y * y_pose)
         # 2) L1 loss for G2
         g2_loss_recon = recon_criterion(g_out * y_pose, y * y_pose)
         # 3) Adversarial loss for G2
         gen_out_predictions = disc(g_out, x)
+        adv_criterion = getattr(nn, f'{self.configuration["adv_criterion"]}Loss')() if not adv_criterion else \
+            adv_criterion
         g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
         # Aggregate
         g2_loss = g2_loss_recon + g2_loss_adv

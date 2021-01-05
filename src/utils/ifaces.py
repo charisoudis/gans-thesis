@@ -209,8 +209,21 @@ class CloudFolder(dict, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
+    def subfolder_by_name_or_create(self, folder_name: str, recursive: bool = False) -> Optional['CloudFolder']:
+        """
+        Get the `utils.ifaces.CloudFolder` instance that corresponds to a subfolder of this instance matching the given
+        :attr:`folder_name`. If no subfolder matching the folder name found, `self.create_subfolder` is called to crate
+        a new subfolder in cloud as well as in local filesystem.
+        :param (str) folder_name: the name of the subfolder to retrieve
+        :param (bool) recursive: set to True to search inside subfolders of subfolders in a recursive manner to find the
+                                 folder with the given :attr:`folder_name`
+        :return: a `utils.ifaces.CloudFolder` object or None with corresponding messages if error(s) occurred
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
     def upload_file(self, local_filename: str, delete_after: bool = False, in_parallel: bool = False,
-                    show_progress: bool = False) -> Union[ApplyResult, Optional[CloudFile]]:
+                    show_progress: bool = False, is_update: bool = False) -> Union[ApplyResult, Optional[CloudFile]]:
         """
         Upload a locally-saved file to cloud drive at pre-specified cloud folder described by :attr:`self.cloud_root`.
         :param (str) local_filename: the basename of the local file (should exist inside :attr:`self.local_root`)
@@ -218,6 +231,7 @@ class CloudFolder(dict, metaclass=abc.ABCMeta):
         :param (bool) in_parallel: set to True to run the upload method in a separate thread, thus returning immediately
                                    to the caller with a thread-related object
         :param (bool) show_progress: set to True to have the uploading progress printed using the `tqdm` lib
+        :param (bool) is_update: set to True to update file in cloud storage instead of inserting a new one (if exists)
         :return: a `multiprocessing.pool.ApplyResult` object if `in_parallel` was set else a
                  `utils.ifaces.CloudFile` object with the uploaded cloud file info or `None` in case of failure
         """
@@ -358,6 +372,14 @@ class CloudModel(metaclass=abc.ABCMeta):
         """
         return '1.0'
 
+    #
+    # ------------------------------------
+    #  Model Checkpoints
+    # ---------------------------------
+    #
+    # Below, are the methods to capture, save, upload and download model checkpoints to cloud storage.
+    #
+
     @abc.abstractmethod
     def download_checkpoint(self, step: Union[int, str], batch_size: Optional[int] = None,
                             in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
@@ -446,7 +468,7 @@ class CloudModel(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def upload_checkpoint(self, chkpt_filename: str, batch_size: Optional[int] = None, delete_after: bool = False,
-                          in_parallel: bool = False, show_progress: bool = False) \
+                          in_parallel: bool = False, show_progress: bool = False, is_update: bool = False) \
             -> Union[ApplyResult, CloudFile or None]:
         """
         Upload locally-saved model checkpoint to cloud storage for permanent storage.
@@ -458,11 +480,86 @@ class CloudModel(metaclass=abc.ABCMeta):
         :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
                                    to caller
         :param (bool) show_progress: set to True to have the uploading progress displayed using the `tqdm` lib
+        :param (bool) is_update: set to True to update file in cloud storage, else a new file will be inserted
         :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
                  `utils.ifaces.CloudFile` object if upload completed successfully, `None` with corresponding messages
                  otherwise
         """
         raise NotImplementedError
+
+    #
+    # ------------------------------------
+    #  Model Configurations
+    # ---------------------------------
+    #
+    # Below, are the methods to capture, save, upload and download model configurations to/from cloud storage.
+    #
+
+    @abc.abstractmethod
+    def download_configuration(self, config_id: Union[int, str], in_parallel: bool = False,
+                               show_progress: bool = False) -> Union[ApplyResult, bool]:
+        """TODO fill documentation"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def fetch_configuration(self, config_id: Union[int, str]) -> str or False:
+        """TODO fill documentation"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def is_configuration_fetched(self, config_id: Union[int, str]) -> str or False:
+        """TODO fill documentation"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def list_all_configurations(self, only_keys: Optional[Sequence] = None) -> List[CloudFile or dict]:
+        """TODO fill documentation"""
+        raise NotImplementedError
+
+    def save_and_upload_configuration(self, config: dict, config_id: Optional[str or int] = None,
+                                      delete_after: bool = False, in_parallel: bool = False,
+                                      show_progress: bool = False) -> Union[ApplyResult, CloudFile or None]:
+        """TODO fill documentation"""
+        raise NotImplementedError
+
+    def upload_configuration(self, config_filename: str, delete_after: bool = False, in_parallel: bool = False,
+                             show_progress: bool = False) -> Union[ApplyResult, CloudFile or None]:
+        """TODO fill documentation"""
+        raise NotImplementedError
+
+
+class Configurable(metaclass=abc.ABCMeta):
+    @classmethod
+    def version(cls) -> str:
+        """
+        Get interface version
+        :return: a string with the current interface version (e.g. 1.0)
+        """
+        return '1.0'
+
+    @abc.abstractmethod
+    def load_configuration(self, configuration: dict) -> None:
+        """
+        Load configuration given :attr:`configuration` from a .yaml file to model.
+        :param (dict) configuration: the model configuration to be loaded
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def configuration(self) -> dict:
+        """
+        Get current model configuration as a `dict` object.
+        :return: a `dict` object with the current model configuration
+        """
+        raise NotImplementedError
+
+    # @abc.abstractmethod
+    # def save_configuration(self) -> str or int:
+    #     """
+    #     Save current model configuration in a .yaml file and return configuration identifier.
+    #     :return: the configuration id
+    #     """
+    #     raise NotImplementedError
 
 
 class ResumableDataLoader(metaclass=abc.ABCMeta):

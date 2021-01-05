@@ -17,3 +17,4 @@ oauth2client
 google-api-python-client
 pydrive
 tensorboard
+pyyaml
