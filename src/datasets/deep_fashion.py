@@ -13,12 +13,14 @@ from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from torchvision.transforms import Compose
 from tqdm import tqdm
 
 from utils.command_line_logger import CommandLineLogger
 from utils.data import ResumableRandomSampler
 from utils.dep_free import get_tqdm
-from utils.ifaces import ResumableDataLoader
+from utils.filesystems.gdrive import GDriveDataset
+from utils.ifaces import ResumableDataLoader, FilesystemFolder
 from utils.list import get_pairs, list_diff, join_lists
 from utils.pytorch import ToTensorOrPass
 from utils.string import group_by_prefix
@@ -26,28 +28,36 @@ from utils.string import to_human_readable
 from utils.train import train_test_split
 
 
-class ICRBDataset(Dataset):
+class ICRBDataset(Dataset, GDriveDataset):
     """
     ICRBDataset Class:
     This class is used to define the way DeepFashion's In-shop Clothes Retrieval Benchmark (ICRB) dataset is accessed.
     """
 
+    # Dataset name is the name of the folder in Google Drive under which dataset's Img.zip lives
+    DatasetName = 'In-shop Clothes Retrieval Benchmark'
+
     # Default normalization parameters for ICRB (converts tensors' ranges to [-1,1]
     NormalizeMean = 0.5
     NormalizeStd = 0.5
 
-    def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
                  hq: bool = False):
         """
         ICRBDataset class constructor.
-        :param root: the root directory where all image files exist
-        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
+        :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
+                                                             dataset from local or remote (Google Drive) filesystem
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         """
-        super(ICRBDataset, self).__init__()
-        self.root = f'{ICRBDataset.get_root_prefix(root_prefix)}/{root}'
+        # Instantiate `torch.utils.data.Dataset` class
+        Dataset.__init__(self)
+        # Instantiate `utils.filesystems.gdrive.GDriveDataset` class
+        dataset_fs_folder = dataset_fs_folder_or_root if dataset_fs_folder_or_root.name == self.DatasetName else \
+            dataset_fs_folder_or_root.subfolder_by_name(folder_name=self.DatasetName, recursive=True)
+        GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.zip')
+        self.root = dataset_fs_folder.local_root
+        # Initialize instance properties
         self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
         self.img_dir_path = f'{self.root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_info.json'
@@ -59,13 +69,22 @@ class ICRBDataset(Dataset):
                 ICRBScraper.run(hq=hq)
         if not os.path.exists(self.items_info_path):
             raise FileNotFoundError(f'{self.items_info_path} not found in image directory')
-        with open(self.items_info_path, 'r') as fp:
+        with open(self.items_info_path) as fp:
             self.items_info = json.load(fp)
         # Save benchmark info
         self.total_images_count = self.items_info['images_count']
         self.logger.debug(f'Found {to_human_readable(self.total_images_count)} total images in benchmark')
         # Save transforms
-        self.transforms = image_transforms if image_transforms else transforms.ToTensor()
+        self._transforms = None
+        self.transforms = image_transforms
+
+    @property
+    def transforms(self):
+        return self._transforms
+
+    @transforms.setter
+    def transforms(self, t: Optional[Compose] = None) -> None:
+        self._transforms = t if t else transforms.ToTensor()
 
     def __getitem__(self, index: int) -> Tensor:
         """
@@ -91,7 +110,7 @@ class ICRBDataset(Dataset):
 
     @staticmethod
     def get_image_transforms(target_shape: int, target_channels: int, norm_mean: Optional[float] = None,
-                             norm_std: Optional[float] = None) -> transforms.Compose:
+                             norm_std: Optional[float] = None) -> Compose:
         """
         Get the torchvision transforms to apply to the dataset based on default normalization parameters
         :param target_shape: the H and W in the tensor coming out of image transforms
@@ -141,16 +160,15 @@ class ICRBDataset(Dataset):
 
 class ICRBDataloader(DataLoader, ResumableDataLoader):
 
-    def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
-                 target_shape: Optional[int] = None, target_channels: Optional[int] = None,
-                 norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
-                 batch_size: int = 8, hq: bool = False, shuffle: bool = True, seed: int = 42, pin_memory: bool = True,
-                 splits: Optional[list] = None):
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder,
+                 image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
+                 target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
+                 norm_std: Optional[float] = None, batch_size: int = 8, hq: bool = False, shuffle: bool = True,
+                 seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
         """
         ICRBDataloader class constructor.
-        :param root: the root directory where all image files exist
-        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
+        :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
+                                                             dataset from local or remote (Google Drive) filesystem
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
@@ -176,7 +194,8 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
             image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
                                                                 norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = ICRBDataset(root=root, root_prefix=root_prefix, image_transforms=image_transforms, hq=hq)
+        _dataset = ICRBDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, image_transforms=image_transforms,
+                               hq=hq)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set
@@ -193,33 +212,37 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
         return self._sampler.set_state(state)
 
 
-class ICRBCrossPoseDataset(Dataset):
+class ICRBCrossPoseDataset(Dataset, GDriveDataset):
     """
     ICRBCrossPoseDataset Class:
     This class is used to define the way DeepFashion's In-shop Clothes Retrieval Benchmark (ICRB) dataset is accessed so
     as to retrieve cross-pose/scale image pairs.
     """
 
-    def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
-                 skip_pose_norm: bool = True, pose: bool = False, hq: bool = False):
+    def __init__(self, dataset_fs_folder_or_root, image_transforms: Optional[transforms.Compose] = None,
+                 skip_pose_norm: bool = True, pose: bool = True, hq: bool = False):
         """
         ICRBCrossPoseDataset class constructor.
-        :param root: the root directory where all image files exist
-        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
+        :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
+                                                             dataset from local or remote (Google Drive) filesystem
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param skip_pose_norm: set to True to remove Normalize() transform from pose images' transforms
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         :param pose: set to True to have __getitem__ return target pose image as well, otherwise __getitem__ will return
                      an image pair without target pose for the second image in pair
         """
-        super(ICRBCrossPoseDataset, self).__init__()
-        self.tqdm = get_tqdm()
-        # Format root
-        self.root = f'{ICRBDataset.get_root_prefix(root_prefix)}/{root}'
+        # Instantiate `torch.utils.data.Dataset` class
+        Dataset.__init__(self)
+        # Instantiate `utils.filesystems.gdrive.GDriveDataset` class
+        dataset_fs_folder = dataset_fs_folder_or_root if dataset_fs_folder_or_root.name == ICRBDataset.DatasetName \
+            else dataset_fs_folder_or_root.subfolder_by_name(folder_name=ICRBDataset.DatasetName, recursive=True)
+        GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.zip')
+        self.root = dataset_fs_folder.local_root
+        # Initialize instance properties
         self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
         self.img_dir_path = f'{self.root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_posable_info.json'
+        self.tqdm = get_tqdm()
         # Load item info
         if not os.path.exists(self.items_info_path):
             self.logger.error(f'items info file not found in image directory (tried: {self.items_info_path})')
@@ -234,18 +257,28 @@ class ICRBCrossPoseDataset(Dataset):
         self.total_images_count = self.items_info['posable_images_count']
         self.real_pairs_count = self.items_info["posable_image_pairs_count"]
         self.total_pairs_count = self.real_pairs_count * 2  # 2nd pair by exchanging images at input/output
-        self.logger.debug(f'Found {to_human_readable(self.total_pairs_count)} posable image pairs from a total of' +
-                          f' {to_human_readable(self.total_images_count)} posable images in benchmark')
+        self.logger.debug(f'Found {to_human_readable(self.total_pairs_count)} posable image pairs from a total of ' +
+                          f'{to_human_readable(self.total_images_count)} posable images in benchmark')
         # Save transforms
+        self._transforms = None
+        self.skip_pose_norm = skip_pose_norm
         self.transforms = image_transforms
-        if image_transforms:
-            self.pose_transforms = image_transforms if not skip_pose_norm else transforms.Compose(
-                [_t for _t in image_transforms.transforms if type(_t) != transforms.Normalize]
-            )
-        else:
-            self.pose_transforms = None
         # Save pose switch
         self.pose = pose
+
+    @property
+    def transforms(self):
+        return self._transforms
+
+    @transforms.setter
+    def transforms(self, t: Optional[Compose] = None) -> None:
+        if t:
+            self._transforms = t
+            self.pose_transforms = t if not self.skip_pose_norm else \
+                Compose([_t for _t in t.transforms if type(_t) != transforms.Normalize])
+        else:
+            self._transforms = transforms.ToTensor()
+            self.pose_transforms = transforms.ToTensor()
 
     def index_to_paths(self, index: int) -> Union[Tuple[str, str], Tuple[str, str, str, str]]:
         """
@@ -291,15 +324,9 @@ class ICRBCrossPoseDataset(Dataset):
             self.logger.critical(f'Pose image opening failed (path: {paths_tuple[3]}')
             return self.__getitem__(index + 1)
         # Apply transforms
-        if self.transforms:
-            image_1 = self.transforms(image_1)
-            image_2 = self.transforms(image_2)
-            target_pose_2 = None if not self.pose else self.pose_transforms(target_pose_2)
-        else:
-            to_tensor = transforms.ToTensor()
-            image_1 = to_tensor(image_1)
-            image_2 = to_tensor(image_2)
-            target_pose_2 = None if not self.pose else to_tensor(target_pose_2)
+        image_1 = self.transforms(image_1)
+        image_2 = self.transforms(image_2)
+        target_pose_2 = None if not self.pose else self.pose_transforms(target_pose_2)
         return (image_1, image_2) if not self.pose else (image_1, image_2, target_pose_2)
 
     def __len__(self) -> int:
@@ -313,16 +340,15 @@ class ICRBCrossPoseDataset(Dataset):
 
 class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
 
-    def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark',
-                 root_prefix: Optional[str] = None, image_transforms: Optional[transforms.Compose] = None,
-                 target_shape: Optional[int] = None, target_channels: Optional[int] = None,
-                 norm_mean: Optional[float] = None, norm_std: Optional[float] = None,
-                 skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False, shuffle: bool = True,
-                 pin_memory: bool = True, splits: Optional[list] = None):
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder,
+                 image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
+                 target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
+                 norm_std: Optional[float] = None, skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False,
+                 shuffle: bool = True, pin_memory: bool = True, splits: Optional[list] = None):
         """
         ICRBCrossPoseDataloader class constructor.
-        :param root: the root directory where all image files exist
-        :param root_prefix: set if not running locally (also supported 'colab', 'kaggle' keywords)
+        :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
+                                                             dataset from local or remote (Google Drive) filesystem
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
@@ -348,8 +374,8 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
             image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
                                                                 norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = ICRBCrossPoseDataset(root=root, root_prefix=root_prefix, image_transforms=image_transforms,
-                                        skip_pose_norm=skip_pose_norm, pose=True, hq=hq)
+        _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, hq=hq,
+                                        image_transforms=image_transforms, skip_pose_norm=skip_pose_norm, pose=True)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set
@@ -449,7 +475,6 @@ class ICRBScraper:
         #     Check for a slice of 2px around this border (this is the border of the real image) and compare this slice
         #     with the corresponding slices from 2 images from group that we know for sure that there exists human model
         #     in (e.g from *_front.jpg & *_side.jpg, or from *_front.jpg & *_back.jpg)
-
         return False
 
     @staticmethod
@@ -478,7 +503,7 @@ class ICRBScraper:
         :param forward_pass: set to True to delete files also in item directories (i.e. directories whose names are
                              "id_<8-digit zero-padded item ID>")
         """
-        with self.tqdm(total=26 + (8082 if forward_pass else 0), colour='yellow') as progress_bar:
+        with self.tqdm(total=26 + (8082 if forward_pass else 0), file=sys.stdout) as progress_bar:
             for _root, _dirs, _files in os.walk(self.img_dir_path):
                 if not forward_pass and os.path.basename(_root).startswith('id_'):
                     continue
@@ -524,12 +549,11 @@ class ICRBScraper:
                 _i += 1
 
         # print(json.dumps(duplicates_list, indent=4))
-
         duplicates_count = len(duplicates_list.keys())
         self.logger.info(f'Found {duplicates_count} duplicate items. Starting resolution...')
 
         # Resolve duplicates
-        with self.tqdm(total=duplicates_count, colour='yellow') as progress_bar:
+        with self.tqdm(total=duplicates_count, file=sys.stdout) as progress_bar:
             for _id, _dirs in duplicates_list.items():
                 _count_list = [len(_i['images']) for _i in _dirs]
                 _target_images_count = max(_count_list)
@@ -567,7 +591,7 @@ class ICRBScraper:
         them by adding a ".skip" file in item's directory.
         """
         non_posable_items = []
-        with self.tqdm(total=self.items_count + 100, colour='yellow') as progress_bar:
+        with self.tqdm(total=self.items_count + 100, file=sys.stdout) as progress_bar:
             for _root, _dirs, _files in os.walk(self.img_dir_path):
                 if '.duplicate' in _files:
                     progress_bar.update()
@@ -679,7 +703,7 @@ class ICRBScraper:
         """
         processed_ids = []
         processed_count = 0
-        with self.tqdm(total=self.items_count, colour='yellow') as progress_bar:
+        with self.tqdm(total=self.items_count, file=sys.stdout) as progress_bar:
             for _root, _dirs, _files in os.walk(self.img_dir_path):
                 _json_files = [_f for _f in _files if _f.endswith('.json')]
                 assert len(_dirs) * (len(_files) - len(_json_files)) == 0, \
@@ -855,7 +879,7 @@ class ICRBScraper:
             3: 0,  # at item level there should be no dirs, just image files
         }
         while depth >= 0:
-            with self.tqdm(total=root_dirs_count_at_depth[depth], colour='yellow') as progress_bar:
+            with self.tqdm(total=root_dirs_count_at_depth[depth], file=sys.stdout) as progress_bar:
                 for _root, _dirs, _files in os.walk(self.img_dir_path):
                     _relative_root = _root.replace(self.img_dir_path, '')
                     _depth = _relative_root.count('/')

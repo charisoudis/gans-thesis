@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 from shutil import copyfile
 from time import sleep
 from typing import Optional, Tuple
@@ -10,14 +11,15 @@ from PIL import Image, UnidentifiedImageError
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import transforms
+from torchvision.transforms import transforms, Compose
 
 from datasets.deep_fashion import ICRBDataset
 from utils.command_line_logger import CommandLineLogger
 from utils.data import squarify_img, ResumableRandomSampler
 from utils.dep_free import get_tqdm
-from utils.gdrive import GDriveDataset, GDriveFolder
-from utils.ifaces import ResumableDataLoader
+from utils.filesystems.gdrive import GDriveDataset
+from utils.filesystems.local import LocalCapsule, LocalFilesystem, LocalFolder
+from utils.ifaces import ResumableDataLoader, FilesystemFolder
 from utils.string import to_human_readable
 from utils.train import train_test_split
 
@@ -36,22 +38,22 @@ class PixelDTDataset(Dataset, GDriveDataset):
     NormalizeMean = 0.5
     NormalizeStd = 0.5
 
-    def __init__(self, dataset_gfolder_or_groot: GDriveFolder, image_transforms: Optional[transforms.Compose] = None):
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None):
         """
         PixelDTDataset class constructor.
-        :param (GDriveFolder) dataset_gfolder_or_groot: a `utils.gdrive.GDriveFolder` object to download/use dataset
-                                                        from Google Drive
+        :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
+                                                             dataset from local or remote (Google Drive) filesystem
         :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
         :raises FileNotFoundError: either when the dataset is not present in local filesystem or when the
                                    `items_dt_info.json` is not present inside dataset's (local) root
         """
         # Instantiate `torch.utils.data.Dataset` class
         Dataset.__init__(self)
-        # Instantiate `utils.gdrive.GDriveDataset` class
-        dataset_gfolder = dataset_gfolder_or_groot if dataset_gfolder_or_groot.name == self.DatasetName else \
-            dataset_gfolder_or_groot.subfolder_by_name(folder_name=self.DatasetName, recursive=True)
-        GDriveDataset.__init__(self, dataset_gfolder=dataset_gfolder, zip_filename='Img.zip')
-        self.root = dataset_gfolder.local_root
+        # Instantiate `utils.filesystems.gdrive.GDriveDataset` class
+        dataset_fs_folder = dataset_fs_folder_or_root if dataset_fs_folder_or_root.name == self.DatasetName else \
+            dataset_fs_folder_or_root.subfolder_by_name(folder_name=self.DatasetName, recursive=True)
+        GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.zip')
+        self.root = dataset_fs_folder.local_root
         # Initialize instance properties
         self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
         self.img_dir_path = f'{self.root}/Img'
@@ -77,7 +79,16 @@ class PixelDTDataset(Dataset, GDriveDataset):
         self.dt_image_pairs_count = self.items_dt_info['dt_image_pairs_count']
         self.logger.debug(f'Found {to_human_readable(self.dt_image_pairs_count)} image pairs in dataset')
         # Save transforms
-        self.transforms = image_transforms if image_transforms else transforms.ToTensor()
+        self._transforms = None
+        self.transforms = image_transforms
+
+    @property
+    def transforms(self):
+        return self._transforms
+
+    @transforms.setter
+    def transforms(self, t: Optional[Compose] = None) -> None:
+        self._transforms = t if t else transforms.ToTensor()
 
     def index_to_paths(self, index: int) -> Tuple[str, str]:
         """
@@ -145,14 +156,14 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
     automation that PyTorch provides.
     """
 
-    def __init__(self, dataset_gfolder_or_groot: GDriveFolder, image_transforms: Optional[transforms.Compose] = None,
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
                  target_shape: Optional[int] = None, target_channels: Optional[int] = None,
                  norm_mean: Optional[float] = None, norm_std: Optional[float] = None, batch_size: int = 8,
                  shuffle: bool = True, seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
         """
         PixelDTDataloader class constructor.
-        :param (GDriveFolder) dataset_gfolder_or_groot: a `utils.gdrive.GDriveFolder` object to download/use dataset
-                                                        from Google Drive
+        :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
+                                                             dataset from local or remote (Google Drive) filesystem
         :param image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
@@ -177,7 +188,7 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
             image_transforms = PixelDTDataset.get_image_transforms(target_shape, target_channels,
                                                                    norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = PixelDTDataset(dataset_gfolder_or_groot=dataset_gfolder_or_groot, image_transforms=image_transforms)
+        _dataset = PixelDTDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, image_transforms=image_transforms)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set
@@ -322,7 +333,7 @@ class PixelDTScraper:
 
         self.logger.debug(f'[initial_scraping_deep_fashion] Found {dt_groups_count} out of {len(image_groups)}' +
                           f' items with a flat.jpg image.')
-        with self.tqdm(total=dt_groups_count, colour='yellow') as progress_bar:
+        with self.tqdm(total=dt_groups_count, file=sys.stdout) as progress_bar:
             # Copy images in LookBook under Img root
             pid = self.items_count
             for i, dt_group in enumerate(dt_groups):
@@ -363,7 +374,7 @@ class PixelDTScraper:
         `item_dt_info.json`.
         """
         id_dirs = next(os.walk(self.img_dir_path))[1]
-        with self.tqdm(total=len(id_dirs), colour='yellow') as progress_bar:
+        with self.tqdm(total=len(id_dirs), file=sys.stdout) as progress_bar:
             for id_dir in id_dirs:
                 id_dir_path = f'{self.img_dir_path}/{id_dir}'
                 images = os.listdir(id_dir_path)
@@ -408,7 +419,7 @@ class PixelDTScraper:
             'dt_image_pairs_count': 0,
         }
         # Start merging
-        with self.tqdm(total=len(id_dirs), colour='yellow') as progress_bar:
+        with self.tqdm(total=len(id_dirs), file=sys.stdout) as progress_bar:
             for id_dir in id_dirs:
                 id_dir_path = f'{self.img_dir_path}/{id_dir}'
                 item_dt_info_path = f'{id_dir_path}/item_dt_info.json'
@@ -464,5 +475,14 @@ class PixelDTScraper:
 
 
 if __name__ == '__main__':
-    if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
-        PixelDTScraper.run(forward_pass=True, backward_pass=True)
+    # if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
+    #     PixelDTScraper.run(forward_pass=True, backward_pass=True)
+
+    # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
+    _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
+    _capsule = LocalCapsule(_local_gdrive_root)
+    _fs = LocalFilesystem(ccapsule=_capsule)
+    _groot = LocalFolder.root(capsule_or_fs=_fs).subfolder_by_name('Datasets')
+
+    _pixel_dt = PixelDTDataset(dataset_fs_folder_or_root=_groot)
+    print(_pixel_dt.fetch_and_unzip())

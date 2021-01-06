@@ -2,6 +2,8 @@ import abc
 from multiprocessing.pool import ApplyResult
 from typing import Any, Union, List, Optional, Dict, Sequence
 
+from torch import Tensor
+
 
 class _IFaceTemplate(metaclass=abc.ABCMeta):
     @classmethod
@@ -22,10 +24,10 @@ class _IFaceTemplate(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-class CloudCapsule(metaclass=abc.ABCMeta):
+class FilesystemCapsule(metaclass=abc.ABCMeta):
     """
-    CloudCapsule Interface:
-    The classes that implement `CloudCapsule` should be used as an open channel to "talk" to cloud storage services.
+    FilesystemCapsule Interface:
+    The classes that implement `FilesystemCapsule` should be used as an open channel to "talk" to cloud storage services.
     """
 
     @classmethod
@@ -37,7 +39,7 @@ class CloudCapsule(metaclass=abc.ABCMeta):
         return '1.0'
 
 
-class CloudFile(dict, metaclass=abc.ABCMeta):
+class FilesystemFile(dict, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def download(self, in_parallel: bool = False, show_progress: bool = False, unzip_after: bool = False) \
             -> Union[ApplyResult, bool]:
@@ -74,34 +76,39 @@ class CloudFile(dict, metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
-    def folder(self) -> 'CloudFolder':
+    def folder(self) -> 'FilesystemFolder':
         """
-        Get the parent `utils.ifaces.CloudFolder` instance of this cloud file instance. This is the folder inside of
+        Get the parent `utils.ifaces.FilesystemFolder` instance of this cloud file instance. This is the folder inside of
         which lives the file in cloud as well as in local storage.
-        :return: an `utils.ifaces.CloudFolder` instance or `None` with corresponding messages if errors occurred
+        :return: an `utils.ifaces.FilesystemFolder` instance or `None` with corresponding messages if errors occurred
         """
         raise NotImplementedError
 
     @folder.setter
     @abc.abstractmethod
-    def folder(self, f: 'CloudFolder') -> None:
+    def folder(self, f: 'FilesystemFolder') -> None:
         """
         Set the (parent) folder instance of this cloud file instance.
-        :param f: an `utils.ifaces.CloudFolder` instance
+        :param f: an `utils.ifaces.FilesystemFolder` instance
         """
         raise NotImplementedError
 
 
-class CloudFolder(dict, metaclass=abc.ABCMeta):
+class FilesystemFolder(dict, metaclass=abc.ABCMeta):
+    @property
     @abc.abstractmethod
-    def create_subfolder(self, folder_name: str, force_create_local: bool = False) -> 'CloudFolder':
+    def local_root(self) -> str:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def create_subfolder(self, folder_name: str, force_create_local: bool = False) -> 'FilesystemFolder':
         """
         Create a subfolder with the given :attr:`folder_name` in cloud storage.
         :param (str) folder_name: the name of the subfolder to be created
         :param (bool) force_create_local: set to True to create local folder immediately after creating folder in cloud
                                           storage; the local folder is created if not exists before any file upload and
                                           download
-        :return: a `utils.ifaces.CloudFolder` instance to interact with the newly created subfolder
+        :return: a `utils.ifaces.FilesystemFolder` instance to interact with the newly created subfolder
         """
         raise NotImplementedError
 
@@ -122,13 +129,13 @@ class CloudFolder(dict, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def download_file(self, filename_or_cloud_file: Union[str, CloudFile], in_parallel: bool = False,
+    def download_file(self, filename_or_cloud_file: Union[str, FilesystemFile], in_parallel: bool = False,
                       show_progress: bool = False, unzip_after: bool = False) -> Union[ApplyResult, bool]:
         """
         Downloads the file named after :attr:`filename` inside this folder instance, from cloud storage to local
         filesystem.
-        :param (str or CloudFile) filename_or_cloud_file: the basename of the file to be downloaded as a string or an
-                                                          `utils.ifaces.CloudFile` instance
+        :param (str or FilesystemFile) filename_or_cloud_file: the basename of the file to be downloaded as a string or an
+                                                          `utils.ifaces.FilesystemFile` instance
         :param (bool) in_parallel: set to True to run the download method in a separate thread, thus returning
                                    immediately to the caller with a thread-related object
         :param (bool) show_progress: set to True to have the downloading progress printed using the `tqdm` lib
@@ -136,6 +143,13 @@ class CloudFolder(dict, metaclass=abc.ABCMeta):
         :return: a `multiprocessing.pool.ApplyResult` object if :attr:`in_parallel` was set, else a bool object set to
                  True if download file completed successfully, False with corresponding messages otherwise
         :raises FileNotFoundError: if no file with given :attr:`filename` was found inside cloud folder root
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def ensure_local_root_exists(self):
+        """
+        Checks if local directory exists and if not creates it using the shell command `mkdir -p {self.local_root}`
         """
         raise NotImplementedError
 
@@ -151,79 +165,79 @@ class CloudFolder(dict, metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
-    def files(self) -> List[CloudFile]:
+    def files(self) -> List[FilesystemFile]:
         """
         List all cloud files under the pre-specified folder described in :attr:`self.cloud_root`.
-        :return: a `list` of `utils.ifaces.CloudFile` objects, each containing cloud file info of files found
+        :return: a `list` of `utils.ifaces.FilesystemFile` objects, each containing cloud file info of files found
                  inside the pre-specified cloud folder
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def file_by_name(self, filename: str) -> Optional[CloudFile]:
+    def file_by_name(self, filename: str) -> Optional[FilesystemFile]:
         """
         Get the cloud file instance that corresponds to a file inside this folder instance and whose file name
         matches the given :attr:`filename`.
         :param filename: the basename of the file to be searched for as a string
-        :return: a `utils.ifaces.CloudFile` instance or None if no file found with given name or errors occurred
+        :return: a `utils.ifaces.FilesystemFile` instance or None if no file found with given name or errors occurred
         """
         raise NotImplementedError
 
     @property
     @abc.abstractmethod
-    def parent(self) -> Optional['CloudFolder']:
+    def parent(self) -> Optional['FilesystemFolder']:
         """
-        Get the parent `utils.ifaces.CloudFolder` instance of this cloud folder instance.
-        :return: an `utils.ifaces.CloudFolder` instance or `None` if cloud folder is under root or errors occurred
+        Get the parent `utils.ifaces.FilesystemFolder` instance of this cloud folder instance.
+        :return: an `utils.ifaces.FilesystemFolder` instance or `None` if cloud folder is under root or errors occurred
         """
         raise NotImplementedError
 
     @parent.setter
     @abc.abstractmethod
-    def parent(self, p: Optional['CloudFolder']) -> None:
+    def parent(self, p: Optional['FilesystemFolder']) -> None:
         """
         Set the parent instance of this cloud folder instance or `None` if folder is under root.
-        :param (optional) p: an `utils.ifaces.CloudFolder` instance or `None` if cloud folder is under root
+        :param (optional) p: an `utils.ifaces.FilesystemFolder` instance or `None` if cloud folder is under root
         """
         raise NotImplementedError
 
     @property
     @abc.abstractmethod
-    def subfolders(self) -> List['CloudFolder']:
+    def subfolders(self) -> List['FilesystemFolder']:
         """
         Get all cloud folders under the pre-specified folder described in :attr:`self.cloud_root`.
-        :return: a `list` of `utils.ifaces.CloudFolder` objects
+        :return: a `list` of `utils.ifaces.FilesystemFolder` objects
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def subfolder_by_name(self, folder_name: str, recursive: bool = False) -> Optional['CloudFolder']:
+    def subfolder_by_name(self, folder_name: str, recursive: bool = False) -> Optional['FilesystemFolder']:
         """
-        Get the `utils.ifaces.CloudFolder` instance that corresponds to a subfolder of this instance matching the given
+        Get the `utils.ifaces.FilesystemFolder` instance that corresponds to a subfolder of this instance matching the given
         :attr:`folder_name`.
         :param (str) folder_name: the name of the subfolder to retrieve
         :param (bool) recursive: set to True to search inside subfolders of subfolders in a recursive manner to find the
                                  folder with the given :attr:`folder_name`
-        :return: a `utils.ifaces.CloudFolder` object or None with corresponding messages if error(s) occurred
+        :return: a `utils.ifaces.FilesystemFolder` object or None with corresponding messages if error(s) occurred
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def subfolder_by_name_or_create(self, folder_name: str, recursive: bool = False) -> Optional['CloudFolder']:
+    def subfolder_by_name_or_create(self, folder_name: str, recursive: bool = False) -> Optional['FilesystemFolder']:
         """
-        Get the `utils.ifaces.CloudFolder` instance that corresponds to a subfolder of this instance matching the given
+        Get the `utils.ifaces.FilesystemFolder` instance that corresponds to a subfolder of this instance matching the given
         :attr:`folder_name`. If no subfolder matching the folder name found, `self.create_subfolder` is called to crate
         a new subfolder in cloud as well as in local filesystem.
         :param (str) folder_name: the name of the subfolder to retrieve
         :param (bool) recursive: set to True to search inside subfolders of subfolders in a recursive manner to find the
                                  folder with the given :attr:`folder_name`
-        :return: a `utils.ifaces.CloudFolder` object or None with corresponding messages if error(s) occurred
+        :return: a `utils.ifaces.FilesystemFolder` object or None with corresponding messages if error(s) occurred
         """
         raise NotImplementedError
 
     @abc.abstractmethod
     def upload_file(self, local_filename: str, delete_after: bool = False, in_parallel: bool = False,
-                    show_progress: bool = False, is_update: bool = False) -> Union[ApplyResult, Optional[CloudFile]]:
+                    show_progress: bool = False, is_update: bool = False) -> Union[ApplyResult, Optional[FilesystemFile]]:
         """
         Upload a locally-saved file to cloud drive at pre-specified cloud folder described by :attr:`self.cloud_root`.
         :param (str) local_filename: the basename of the local file (should exist inside :attr:`self.local_root`)
@@ -233,12 +247,12 @@ class CloudFolder(dict, metaclass=abc.ABCMeta):
         :param (bool) show_progress: set to True to have the uploading progress printed using the `tqdm` lib
         :param (bool) is_update: set to True to update file in cloud storage instead of inserting a new one (if exists)
         :return: a `multiprocessing.pool.ApplyResult` object if `in_parallel` was set else a
-                 `utils.ifaces.CloudFile` object with the uploaded cloud file info or `None` in case of failure
+                 `utils.ifaces.FilesystemFile` object with the uploaded cloud file info or `None` in case of failure
         """
         raise NotImplementedError
 
 
-class CloudFilesystem(metaclass=abc.ABCMeta):
+class Filesystem(metaclass=abc.ABCMeta):
     @classmethod
     def version(cls) -> str:
         """
@@ -247,34 +261,34 @@ class CloudFilesystem(metaclass=abc.ABCMeta):
         """
         return '1.0'
 
-    def create_folder(self, cloud_folder: CloudFolder, folder_name: str, force_create_local: bool = False) \
-            -> Optional[CloudFolder]:
+    def create_folder(self, cloud_folder: FilesystemFolder, folder_name: str, force_create_local: bool = False) \
+            -> Optional[FilesystemFolder]:
         """
         Create a new folder under given :attr:`cloud_folder` named after the given :attr:`folder_name`.
-        :param (CloudFolder) cloud_folder: a `utils.ifaces.CloudFolder` instance with the folder inside which the new
+        :param (FilesystemFolder) cloud_folder: a `utils.ifaces.FilesystemFolder` instance with the folder inside which the new
                                            folder will be created in cloud storage
         :param (str) folder_name: the name of the folder to be created as an `str` object
         :param (bool) force_create_local: set to True to create local folder immediately after creating folder in cloud
                                           storage; the local folder is created if not exists before any file upload and
                                           download
-        :return: a `utils.ifaces.CloudFolder` instance to interact with the newly created folder in cloud storage or
+        :return: a `utils.ifaces.FilesystemFolder` instance to interact with the newly created folder in cloud storage or
                  None with corresponding messages if errors occurred
         """
         raise NotImplementedError
 
     @staticmethod
-    def download_file_thread(_self: 'CloudFilesystem', cloud_file: CloudFile, local_filepath: str,
+    def download_file_thread(_self: 'Filesystem', cloud_file: FilesystemFile, local_filepath: str,
                              show_progress: bool = False, unzip_after: bool = False) -> bool:
         return _self.download_file(cloud_file, local_filepath=local_filepath, in_parallel=False,
                                    show_progress=show_progress, unzip_after=unzip_after)
 
     @abc.abstractmethod
-    def download_file(self, cloud_file: CloudFile, local_filepath: str, in_parallel: bool = False,
+    def download_file(self, cloud_file: FilesystemFile, local_filepath: str, in_parallel: bool = False,
                       show_progress: bool = False, unzip_after: bool = False) -> Union[ApplyResult, bool]:
         """
         Download cloud file described in :attr:`chkpt_data` from cloud drive to local filesystem at the given
         :attr:`local_filepath`.
-        :param (CloudFile) cloud_file: a `utils.ifaces.CloudFile` object with cloud file details
+        :param (FilesystemFile) cloud_file: a `utils.ifaces.FilesystemFile` object with cloud file details
                                        (e.g. cloud file id, title, etc.)
         :param (str) local_filepath: the absolute path of the local file that the cloud file will be downloaded to
         :param (bool) in_parallel: set to True to run the download method in a separate thread, thus returning
@@ -288,33 +302,33 @@ class CloudFilesystem(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list_files(self, cloud_folder: dict) -> List[CloudFile]:
+    def list_files(self, cloud_folder: dict) -> List[FilesystemFile]:
         """
         List all cloud files under the folder described in :attr:`cloud_folder`.
         :param (dict) cloud_folder: a `dict`-like object containing cloud folder info (e.g. folder id, title, etc.)
-        :return: a `list` of `utils.ifaces.CloudFile` objects, each containing cloud file info
+        :return: a `list` of `utils.ifaces.FilesystemFile` objects, each containing cloud file info
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list_folders(self, cloud_folder: dict) -> List[CloudFolder]:
+    def list_folders(self, cloud_folder: dict) -> List[FilesystemFolder]:
         """
         List all cloud folders under the folder described in :attr:`cloud_folder`.
         :param (dict) cloud_folder: a `dict`-like object containing cloud folder info (e.g. folder id, title, etc.)
-        :return: a `list` of `utils.ifaces.CloudFolder` objects, each containing cloud folder info
+        :return: a `list` of `utils.ifaces.FilesystemFolder` objects, each containing cloud folder info
         """
         raise NotImplementedError
 
     @staticmethod
-    def upload_local_file_thread(_self: 'CloudFilesystem', local_filepath: str, cloud_folder: CloudFolder,
-                                 delete_after: bool = False) -> CloudFile or None:
+    def upload_local_file_thread(_self: 'Filesystem', local_filepath: str, cloud_folder: FilesystemFolder,
+                                 delete_after: bool = False, show_progress: bool = False) -> FilesystemFile or None:
         return _self.upload_local_file(local_filepath=local_filepath, cloud_folder=cloud_folder,
-                                       delete_after=delete_after, in_parallel=False, show_progress=False)
+                                       delete_after=delete_after, in_parallel=False, show_progress=show_progress)
 
     @abc.abstractmethod
     def upload_local_file(self, local_filepath: str, cloud_folder: dict, delete_after: bool = False,
                           in_parallel: bool = False, show_progress: bool = False) \
-            -> Union[ApplyResult, CloudFile or None]:
+            -> Union[ApplyResult, FilesystemFile or None]:
         """
         Upload locally-saved file from :attr:`local_filepath` to cloud drive folder described by
         :attr:`cloud_folder`.
@@ -326,12 +340,12 @@ class CloudFilesystem(metaclass=abc.ABCMeta):
                                    to the caller with a thread-related object
         :param (bool) show_progress: set to True to have the uploading progress printed using the `tqdm` lib
         :return: a `multiprocessing.pool.ApplyResult` object if `in_parallel` was set, else a
-                 `utils.ifaces.CloudFile` object with the uploaded cloud file info or `None` in case of failure
+                 `utils.ifaces.FilesystemFile` object with the uploaded cloud file info or `None` in case of failure
         """
         raise NotImplementedError
 
 
-class CloudDataset(metaclass=abc.ABCMeta):
+class FilesystemDataset(metaclass=abc.ABCMeta):
     @classmethod
     def version(cls) -> str:
         """
@@ -363,7 +377,7 @@ class CloudDataset(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-class CloudModel(metaclass=abc.ABCMeta):
+class FilesystemModel(metaclass=abc.ABCMeta):
     @classmethod
     def version(cls) -> str:
         """
@@ -429,7 +443,7 @@ class CloudModel(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def list_checkpoints(self, batch_size: Optional[Sequence[str]] = None, only_keys: Optional[list] = None) \
-            -> List[CloudFile or dict]:
+            -> List[FilesystemFile or dict]:
         """
         TODO fill documentation
         :param batch_size:
@@ -440,7 +454,7 @@ class CloudModel(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) -> Dict[int, List[CloudFile or dict]]:
+    def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) -> Dict[int, List[FilesystemFile or dict]]:
         """
         TODO fill documentation
         :param only_keys:
@@ -450,18 +464,18 @@ class CloudModel(metaclass=abc.ABCMeta):
 
     def save_and_upload_checkpoint(self, state_dict: dict, step: Union[int, str], batch_size: Optional[int] = None,
                                    delete_after: bool = False, in_parallel: bool = False, show_progress: bool = False) \
-            -> Union[ApplyResult, CloudFile or None]:
+            -> Union[ApplyResult, FilesystemFile or None]:
         """
         Save the given :attr:`state_dict` locally and then upload the saved checkpoint to cloud for permanent storage.
         :param (dict) state_dict: the model state dict (e.g. the result of calling `model.state_dict()`)
-        :param (int or str) step: see `utils.ifaces.CloudModel::download_checkpoint`
-        :param (optional) batch_size: see `utils.ifaces.CloudModel::download_checkpoint`
+        :param (int or str) step: see `utils.ifaces.FilesystemModel::download_checkpoint`
+        :param (optional) batch_size: see `utils.ifaces.FilesystemModel::download_checkpoint`
         :param (bool) delete_after: set to True to have the local file deleted after successful upload
         :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
                                    to caller
         :param (bool) show_progress: set to True to have the uploading progress displayed using the `tqdm` lib
         :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
-                 `utils.ifaces.CloudFile` object if upload completed successfully, `None` with corresponding messages
+                 `utils.ifaces.FilesystemFile` object if upload completed successfully, `None` with corresponding messages
                  otherwise
         """
         raise NotImplementedError
@@ -469,20 +483,20 @@ class CloudModel(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def upload_checkpoint(self, chkpt_filename: str, batch_size: Optional[int] = None, delete_after: bool = False,
                           in_parallel: bool = False, show_progress: bool = False, is_update: bool = False) \
-            -> Union[ApplyResult, CloudFile or None]:
+            -> Union[ApplyResult, FilesystemFile or None]:
         """
         Upload locally-saved model checkpoint to cloud storage for permanent storage.
         :param (str) chkpt_filename: file name (NOT absolute path) of the locally-saved checkpoint file.
                                      The filename MUST follow the following naming convention:
                                      "<model_name: str>_<step: int or str>_<batch_size: Optional[int]>"
-        :param (optional) batch_size: see `utils.ifaces.CloudModel::download_checkpoint`
+        :param (optional) batch_size: see `utils.ifaces.FilesystemModel::download_checkpoint`
         :param (bool) delete_after: set to True to have the local file deleted after successful upload
         :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
                                    to caller
         :param (bool) show_progress: set to True to have the uploading progress displayed using the `tqdm` lib
         :param (bool) is_update: set to True to update file in cloud storage, else a new file will be inserted
         :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
-                 `utils.ifaces.CloudFile` object if upload completed successfully, `None` with corresponding messages
+                 `utils.ifaces.FilesystemFile` object if upload completed successfully, `None` with corresponding messages
                  otherwise
         """
         raise NotImplementedError
@@ -512,18 +526,18 @@ class CloudModel(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list_all_configurations(self, only_keys: Optional[Sequence] = None) -> List[CloudFile or dict]:
+    def list_all_configurations(self, only_keys: Optional[Sequence] = None) -> List[FilesystemFile or dict]:
         """TODO fill documentation"""
         raise NotImplementedError
 
     def save_and_upload_configuration(self, config: dict, config_id: Optional[str or int] = None,
                                       delete_after: bool = False, in_parallel: bool = False,
-                                      show_progress: bool = False) -> Union[ApplyResult, CloudFile or None]:
+                                      show_progress: bool = False) -> Union[ApplyResult, FilesystemFile or None]:
         """TODO fill documentation"""
         raise NotImplementedError
 
     def upload_configuration(self, config_filename: str, delete_after: bool = False, in_parallel: bool = False,
-                             show_progress: bool = False) -> Union[ApplyResult, CloudFile or None]:
+                             show_progress: bool = False) -> Union[ApplyResult, FilesystemFile or None]:
         """TODO fill documentation"""
         raise NotImplementedError
 
@@ -540,7 +554,7 @@ class Configurable(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def load_configuration(self, configuration: dict) -> None:
         """
-        Load configuration given :attr:`configuration` from a .yaml file to model.
+        Load given :attr:`configuration` (that resulted from yaml.load()) to the model instance.
         :param (dict) configuration: the model configuration to be loaded
         """
         raise NotImplementedError
@@ -553,13 +567,27 @@ class Configurable(metaclass=abc.ABCMeta):
         """
         raise NotImplementedError
 
-    # @abc.abstractmethod
-    # def save_configuration(self) -> str or int:
-    #     """
-    #     Save current model configuration in a .yaml file and return configuration identifier.
-    #     :return: the configuration id
-    #     """
-    #     raise NotImplementedError
+
+class Evaluable(metaclass=abc.ABCMeta):
+    @classmethod
+    def version(cls) -> str:
+        """
+        Get interface version
+        :return: a string with the current interface version (e.g. 1.0)
+        """
+        return '1.0'
+
+    @abc.abstractmethod
+    def evaluate(self, metric_name: Optional[str] = None, show_progress: bool = True) \
+            -> Union[Dict[str, Tensor or float], Tensor or float]:
+        """
+        Evaluate current model's state and return a `dict` with metric names as keys and evaluation results as values.
+        :param (optional) metric_name: the name of the evaluation metric to be applied
+        :param (bool) show_progress: set to True to have the downloading progress printed using the `tqdm` lib
+        :return: if :attr:`metric` is `None` then a `dict` of all available metrics is returned, only the given metric
+                 is returned otherwise
+        """
+        raise NotImplementedError
 
 
 class ResumableDataLoader(metaclass=abc.ABCMeta):

@@ -1,17 +1,14 @@
 import atexit
-import datetime
 import json
 import os
 import sys
 from datetime import datetime as dt, timedelta
 from io import BufferedWriter, BufferedRandom
 from multiprocessing.pool import ApplyResult, ThreadPool
-from typing import Optional, List, Tuple, Union, Dict, Sequence
+from typing import Optional, List, Tuple, Union
 
 import httplib2
-import torch
 # noinspection PyProtectedMember
-import yaml
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
 # noinspection PyProtectedMember
@@ -27,10 +24,10 @@ from typing.io import TextIO
 from utils.command_line_logger import CommandLineLogger
 from utils.data import unzip_file
 from utils.dep_free import get_tqdm
-from utils.ifaces import CloudCapsule, CloudFilesystem, CloudFile, CloudFolder, CloudDataset, CloudModel
+from utils.ifaces import FilesystemCapsule, Filesystem, FilesystemFile, FilesystemFolder
 
 
-class GDriveCapsule(CloudCapsule):
+class GDriveCapsule(FilesystemCapsule):
     """
     GDriveCapsule Class:
     This is class is used to initiate the connection to GoogleDrive API and eventually open a TCP socket via which we
@@ -145,10 +142,10 @@ class GDriveCapsule(CloudCapsule):
             return None, None, None
 
 
-class GDriveFile(CloudFile):
+class GDriveFile(FilesystemFile):
     """
     GDriveFile Class:
-    This class, implementing `CloudFile` interface, is used to download/list info of files stored in Google Drive.
+    This class, implementing `FilesystemFile` interface, is used to download/list info of files stored in Google Drive.
     """
 
     def __init__(self, pydrive_file: GoogleDriveFile, gfolder: 'GDriveFolder'):
@@ -187,7 +184,7 @@ class GDriveFile(CloudFile):
         return int(self.pydrive_file['fileSize'])
 
     @property
-    def folder(self) -> 'CloudFolder':
+    def folder(self) -> 'FilesystemFolder':
         return self.gfolder
 
     @folder.setter
@@ -195,10 +192,10 @@ class GDriveFile(CloudFile):
         self.gfolder = f
 
 
-class GDriveFolder(CloudFolder):
+class GDriveFolder(FilesystemFolder):
     """
     GDriveFolder Class:
-    This class, implementing `CloudFolder` interface, is used to transfer files from/to respective Google Drive folder.
+    This class, implementing `FilesystemFolder` interface, is used to transfer files from/to respective Google Drive folder.
     """
 
     ExcludedGDriveRootFolders = ['Colab Notebooks']
@@ -224,7 +221,7 @@ class GDriveFolder(CloudFolder):
         # Save args
         self.fs = fs
         self.cloud_root = cloud_root if cloud_root else {'id': 'root', 'title': ''}
-        self.local_root = local_root
+        self._local_root = local_root
         self.cloud_parent = cloud_parent
         # Init dict (enable json serializing of class instances)
         dict.__init__(self, id=self.cloud_root['id'], local_root=self.local_root, cloud_parent=self.cloud_parent,
@@ -236,6 +233,14 @@ class GDriveFolder(CloudFolder):
         # Create local subfolder if requested
         if force_create_local:
             self.ensure_local_root_exists()
+
+    @property
+    def local_root(self) -> str:
+        return self._local_root
+
+    @local_root.setter
+    def local_root(self, lr: str) -> None:
+        self._local_root = lr
 
     def refresh_files_cache(self) -> None:
         """
@@ -426,10 +431,10 @@ class GDriveFolder(CloudFolder):
                  cloud_root: Optional[GoogleDriveFile] = None, cloud_parent: Optional['GDriveFolder'] = None,
                  update_cache: bool = False) -> Optional['GDriveFolder']:
         """
-        Instantiate a `CloudFolder` instance to sync data between cloud and local folders.
-        :param (CloudCapsule or CloudFilesystem) capsule_or_fs: a `CloudFilesystem` instance to interact with the cloud
+        Instantiate a `FilesystemFolder` instance to sync data between cloud and local folders.
+        :param (FilesystemCapsule or Filesystem) capsule_or_fs: a `Filesystem` instance to interact with the cloud
                                                                 filesystem or a 'GDriveCapsule' instance to create a
-                                                                new 'CloudFilesystem' instance
+                                                                new 'Filesystem' instance
         :param (str) folder_name: the name (basename) of the folder in Google Drive as well as in local filesystem
                                   (this will be appended to the :attr:`fs` local_root to form the local root of this
                                   folder instance)
@@ -450,8 +455,8 @@ class GDriveFolder(CloudFolder):
     def root(capsule_or_fs: Union[GDriveCapsule, 'GDriveFilesystem'], update_cache: bool = False) -> 'GDriveFolder':
         """
         Get the an `utils.gdrive.GDriveFolder` instance to interact with Google Drive's root folder.
-        :param capsule_or_fs: see `utils.ifaces.CloudFolder::instance` method
-        :param update_cache: see `utils.ifaces.CloudFolder::instance` method
+        :param capsule_or_fs: see `utils.ifaces.FilesystemFolder::instance` method
+        :param update_cache: see `utils.ifaces.FilesystemFolder::instance` method
         :return: an `utils.gdrive.GDriveFolder` instance
         """
         fs = capsule_or_fs if isinstance(capsule_or_fs, GDriveFilesystem) else GDriveFilesystem(gcapsule=capsule_or_fs)
@@ -536,7 +541,7 @@ class GMediaIoDownload(MediaIoBaseDownload):
         raise HttpError(resp, content, uri=self._uri)
 
 
-class GDriveFilesystem(CloudFilesystem):
+class GDriveFilesystem(Filesystem):
     """
     GDriveFilesystem Class:
     This class is used to interact with files stored in Google Drive via the `google-api-client` python lib.
@@ -574,6 +579,7 @@ class GDriveFilesystem(CloudFilesystem):
             self.logger.critical(f'Folder creation failed (folder_name={folder_name}): {str(e)}')
             return None
 
+    # noinspection DuplicatedCode
     def download_file(self, gfile: GDriveFile, local_filepath: str, in_parallel: bool = False,
                       show_progress: bool = False, unzip_after: bool = False) -> Union[ApplyResult, bool]:
         # If use threads, start a new thread to curry out the download and return the thread object to be joined by the
@@ -588,7 +594,7 @@ class GDriveFilesystem(CloudFilesystem):
         # If file exists this means the cloud file has already been downloaded and, as so, we can safely return True
         if os.path.exists(local_filepath):
             # Check if user requested unzipping of the pre-downloaded file
-            if unzip_after:
+            if unzip_after and not os.path.exists(local_filepath.replace('.zip', '')):
                 assert local_filepath.endswith('.zip'), f'unzip_after=True, but no zip file found at {local_filepath}'
                 unzip_result = unzip_file(zip_filepath=local_filepath)
                 if not unzip_result:
@@ -631,7 +637,7 @@ class GDriveFilesystem(CloudFilesystem):
             # After file download finishes, rename .download file to given filename
             os.rename(dl_filepath, local_filepath)
             # Check if user requested unzipping of the downloaded file
-            if unzip_after:
+            if unzip_after and not os.path.exists(local_filepath.replace('.zip', '')):
                 assert local_filepath.endswith('.zip'), f'unzip_after=True, but no zip file found at {local_filepath}'
                 unzip_result = unzip_file(zip_filepath=local_filepath)
                 if not unzip_result:
@@ -659,9 +665,9 @@ class GDriveFilesystem(CloudFilesystem):
         # If use threads, start a new thread to curry out the upload and return the thread object to be joined by the
         # caller if wanted
         if in_parallel:
-            return self.thread_pool.apply_async(func=GDriveFilesystem.upload_local_file_thread,
-                                                args=(self, local_filepath, cloud_folder, delete_after))
-
+            return self.thread_pool.apply_async(func=self.upload_local_file_thread, args=(self,),
+                                                kwds={'local_filepath': local_filepath, 'cloud_folder': cloud_folder,
+                                                      'delete_after': delete_after, 'show_progress': show_progress})
         # Find model name from file path
         file_basename = os.path.basename(local_filepath)
         # Create a new pydrive.files.GoogleDriveFile instance that wraps GoogleDrive API File instance
@@ -697,509 +703,3 @@ class GDriveFilesystem(CloudFilesystem):
         # Refresh gfolder files cache
         cloud_folder.refresh_files_cache()
         return uploaded_gfile
-
-
-class GDriveDataset(CloudDataset):
-    """
-    GDriveDataset Class:
-    This class is used to transfer dataset from Google Drive to local file system and unzip it to be able to use it in
-    a data loader afterwards.
-    """
-
-    def __init__(self, dataset_gfolder: GDriveFolder, zip_filename: str):
-        """
-        GDriveDataset class constructor.
-        :param (GDriveFolder) dataset_gfolder: a `utils.gdrive.GDriveFolder` instance to interact with dataset folder
-                                               in Google Drive
-        :param (str) zip_filename: the name of dataset's main .zip file (should be inside Google Drive folder root)
-        """
-        self.dataset_gfolder = dataset_gfolder
-        self.zip_filename = zip_filename
-        self.zip_gfile = self.dataset_gfolder.file_by_name(zip_filename)
-        assert self.zip_gfile is not None, f'zip_filename={zip_filename} NOT FOUND in Google Drive folder root'
-
-    def fetch_and_unzip(self, in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
-        return self.dataset_gfolder.download_file(filename_or_gfile=self.zip_gfile, in_parallel=in_parallel,
-                                                  show_progress=show_progress, unzip_after=True)
-
-    def is_fetched_and_unzipped(self) -> bool:
-        zip_local_filepath = f'{self.dataset_gfolder.local_root}/{self.zip_filename}'
-        dataset_local_path = zip_local_filepath.replace('.zip', '')
-        return os.path.exists(zip_local_filepath) and os.path.exists(dataset_local_path) and \
-               os.path.isfile(zip_local_filepath) and os.path.isdir(dataset_local_path)
-
-    @staticmethod
-    def instance(groot_or_capsule_or_fs: Union[GDriveFolder, GDriveCapsule, GDriveFilesystem],
-                 dataset_folder_name: str, zip_filename: str) -> Optional['GDriveDataset']:
-        """
-        Create ana get a new  `utils.gdrive.GDriveDataset` instance using the given Google Drive root instance, the
-        dataset folder name and the zip file name (the entire dataset is assumed to ly inside that zip file).
-        :param groot_or_capsule_or_fs: an object to instantiate the Google Drive folder of the dataset
-        :param (str) dataset_folder_name: the Google Drive folder name inside which the zipped dataset is placed
-        :param (str) zip_filename: the filename (not path) of the zip file containing the actual dataset
-        :return:
-        """
-        # Set Google Drive root folder instance
-        if isinstance(groot_or_capsule_or_fs, GDriveFolder):
-            groot = groot_or_capsule_or_fs
-        else:
-            fs = groot_or_capsule_or_fs if isinstance(groot_or_capsule_or_fs, GDriveFilesystem) else \
-                GDriveFilesystem(gcapsule=groot_or_capsule_or_fs)
-            groot = GDriveFolder.root(capsule_or_fs=fs)
-        # Find the Google Drive folder instance that corresponds to the dataset with the given folder name
-        dataset_gfolder = groot.subfolder_by_name(folder_name=dataset_folder_name, recursive=True)
-        if not dataset_gfolder:
-            return None
-        # Instantiate a GDriveDataset object with the found Google Drive folder instance
-        return GDriveDataset(dataset_gfolder=dataset_gfolder, zip_filename=zip_filename)
-
-
-class GDriveModel(CloudModel):
-    """
-    GDriveModel Class:
-    In the Google Drive the directory structure should be as follows:
-
-    [root]  Models
-            ├── model_name=<model_name: str>: checkpoints for model named after `model_name`
-            │   ├── Checkpoints
-            │   │   ├── batch_size=<batch_size: int or None>
-            │   │   │   ├── <step: int or str>.pth
-            │   │   │   ├──    ...
-            │   │   │   └── <step>.pth
-            │   │  ...
-            │   │   │
-            │   │   └── batch_size=<another_batch_size>
-            │   │       ├── <step>.pth
-            │   │       ├──    ...
-            │   │       └── <step>.pth
-            │   │
-            │   ├── Configurations
-            │   │   ├── <config_id: int or str>.yaml
-            │   │   ├──            ...
-            │   │   └── <config_id: int or str>.yaml
-            │   │
-            │   └── Metrics
-            │       ├── <batch_size>_<step_min>_<step_max>.jpg
-            │       ├── <batch_size>_<another_step_min>_<another_step_max>.jpg
-            │       ├──                    ...
-            │       ├── <another_batch_size>_<step_min>_<step_max>.jpg
-            │       └── <another_batch_size>_<another_step_min>_<another_step_max>.jpg
-            │
-           ...
-            │
-            └── model_name=<another_model_name>: checkpoints for model named after `another_model_name`
-                    ├── Checkpoints
-                    │   ├── batch_size=<batch_size>
-                    │   │   ├── <step>.pth
-                    │   │   ├──    ...
-                    │   │   └── <step>.pth
-                    │  ...
-                    │   │
-                    │   └── batch_size=<another_batch_size>
-                    │       ├── <step>.pth
-                    │       ├──    ...
-                    │       └── <step>.pth
-                   ...
-                    │
-                    └── Metrics
-                        ├── <batch_size>_<step_min>_<step_max>.jpg
-                        ├── <batch_size>_<another_step_min>_<another_step_max>.jpg
-                        ├──                    ...
-                        ├── <another_batch_size>_<step_min>_<step_max>.jpg
-                        └── <another_batch_size>_<another_step_min>_<another_step_max>.jpg
-
-    Based on this directory structure, this class is used to download/upload model checkpoints to Google Drive and check
-    if a checkpoint at a given batch size/step combination is present in the local filesystem.
-    """
-
-    def __init__(self, model_gfolder: GDriveFolder, model_name: Optional[str] = None):
-        """
-        GDriveModel class constructor.
-        :param (GDriveFolder) model_gfolder: a `utils.gdrive.GDriveFolder` instance to interact with model folder in
-                                             Google Drive filesystem
-        :param (str) model_name: the parent model name or `None` to auto-detect from folder name in Google Drive
-        """
-        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
-        # Save args
-        self.gfolder = model_gfolder
-        self.local_chkpts_root = model_gfolder.local_root
-        # Define extra properties
-        self.chkpts_gfolder = model_gfolder.subfolder_by_name(folder_name='Checkpoints')
-        self.metrics_gfolder = model_gfolder.subfolder_by_name(folder_name='Metrics')
-        self.configurations_gfolder = model_gfolder.subfolder_by_name_or_create(folder_name='Configurations')
-        self.model_name = model_name if model_name else \
-            model_gfolder.local_root.split(sep='=', maxsplit=1)[-1]
-
-        # -------------
-        # Checkpoints
-        # ------------
-        # Get all checkpoint folders (i.e. folders with names "batch_size=<batch_size>")
-        self.chkpts_batch_gfolders = {}
-        for _sf in self.chkpts_gfolder.subfolders:
-            if _sf.name.startswith('batch_size='):
-                self.chkpts_batch_gfolders[int(_sf.name.replace('batch_size=', ''))] = _sf
-        # No batch_size=* subfolders found: create a batch checkpoint folder with hypothetical batch_size=-1
-        self.chkpts_batch_gfolders[-1] = self.chkpts_gfolder
-        # Initialize internal state of step/batch size
-        self.step = None
-        self.batch_size = None
-
-        # ----------------
-        # Configurations
-        # ---------------
-        self.configurations = None
-
-    def gcapture(self, checkpoint: bool = True, metrics: bool = False, configuration: bool = False,
-                 in_parallel: bool = True, delete_after: bool = False) -> List[Union[ApplyResult, GDriveFile or None]]:
-        """
-        Capture the inherited module's current state, save locally and then upload to Google Drive.
-        :param (bool) checkpoint: set to True to capture/upload current model state dict & create a new checkpoint in
-                                  Google Drive
-        :param (bool) metrics: set to True to capture/upload current model metrics Google to Drive
-        :param (bool) configuration: set to True to capture/upload current model configuration to Google Drive
-        :param (bool) delete_after: set to True to have the local file deleted after successful upload
-        :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
-                                   to caller
-        :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
-                 `utils.gdrive.GDriveFile` object if upload completed successfully, `False` with corresponding messages
-                 otherwise
-        :raises AssertionError: if either `self.step` or `self.batch_size` is `None`
-        """
-        assert not (checkpoint is False and metrics is False and configuration is False)
-        _returns = []
-        # Save model checkpoint
-        if checkpoint:
-            # Get state dict
-            if hasattr(self, 'state_dict') and callable(getattr(self, 'state_dict')):
-                state_dict = self.state_dict()
-            else:
-                raise NotImplementedError('self.state_dict() is not defined')
-            # Save locally and upload
-            assert self.step is not None and self.batch_size is not None, 'No forward pass has been performed'
-            _returns.append(self.save_and_upload_checkpoint(state_dict=state_dict, step=self.step,
-                                                            batch_size=self.batch_size, delete_after=delete_after,
-                                                            in_parallel=in_parallel, show_progress=not in_parallel))
-        # Save model metrics
-        if metrics:
-            print('metrics capturing not implemented yet', file=sys.stderr)
-        # Save model configuration
-        if configuration:
-            # Extract current model configuration
-            if hasattr(self, 'configuration') and callable(getattr(self, 'configuration')):
-                configuration = self.configuration()
-            else:
-                raise NotImplementedError('self must implement utils.ifaces.Configurable to capture its current current'
-                                          ' configuration')
-            # Save the extracted configuration and upload to Google Drive
-            config_id = self.config_id if hasattr(self, 'config_id') else None
-            _returns.append(self.save_and_upload_configuration(configuration=configuration, config_id=config_id,
-                                                               delete_after=delete_after, in_parallel=in_parallel,
-                                                               show_progress=not in_parallel))
-        return _returns
-
-    #
-    # ------------------------------------
-    #  Model Checkpoints
-    # ---------------------------------
-    #
-    # Below, are the methods to capture, save, upload and download model checkpoints to cloud storage.
-    #
-
-    def gforward(self, batch_size: Optional[int] = None) -> None:
-        """
-        Function to be triggered on inherited model's forward pass to set step and batch_size internally.
-        :param (optional) batch_size: if `self.batch_size` is `None`, then this will be used to initialize it
-        """
-        self.step = 1 if not self.step else \
-            self.step + 1
-        if not self.batch_size:
-            self.batch_size = batch_size
-
-    def download_checkpoint(self, step: Union[int, str], batch_size: Optional[int] = None,
-                            in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
-        # Check & correct given args
-        if batch_size is None:
-            batch_size = -1
-        step_str = step if isinstance(step, str) else str(step).zfill(10)
-        # Ensure folder exists locally & in Google Drive
-        self.ensure_chkpts_gfolder_exists(batch_size=batch_size)
-        # Get the correct GoogleDrive folder to search for checkpoint files
-        chkpts_gfolder = self.chkpts_batch_gfolders[batch_size]
-
-        # Search for the checkpoint in the list with all model checkpoints inside checkpoints folder for given batch
-        chkpt_filename = f'{step_str}.pth'
-        for _f in chkpts_gfolder.files:
-            if _f.name == chkpt_filename:
-                # Checkpoint file found!
-                return _f.download(in_parallel=in_parallel, show_progress=show_progress)
-        # If reached here, no checkpoint files matching given step & batch size could be found
-        raise FileNotFoundError(f'No checkpoint file could be found inside "{chkpts_gfolder.name}" matching ' +
-                                f'step="{step_str}"' + '' if batch_size == -1 else f' and batch_size="{batch_size}"')
-
-    def ensure_chkpts_gfolder_exists(self, batch_size: Optional[int] = None) -> None:
-        """
-        Checks if folder for given batch size exists locally as well as in Google Drive
-        :param (int or None) batch_size: the folder should be named "batch_size=<batch_size>"; this is where this
-                                         parameter is used
-        """
-        # Convert "batch_size=None" folder name to batch_size = -1, since None cannot be a valid dict key
-        if batch_size is None:
-            batch_size = -1
-        # Check instance for folder of given batch_size
-        if batch_size not in self.chkpts_batch_gfolders.keys():
-            # Folder for given batch size does not exist, create a new folder now and save in instance's dict
-            # This will also create folder locally
-            self.chkpts_batch_gfolders[batch_size] = \
-                self.chkpts_gfolder.create_subfolder(folder_name=f'batch_size={str(batch_size)}',
-                                                     force_create_local=True)
-
-    def fetch_checkpoint(self, step: Union[int, str], batch_size: Optional[int] = None) -> str or False:
-        if 'latest' == step:
-            return self.fetch_latest_checkpoint(batch_size=batch_size)
-        # Check if checkpoint file exists in local filesystem
-        local_filepath = self.is_checkpoint_fetched(step=step, batch_size=batch_size)
-        if local_filepath:
-            return local_filepath
-        # Download checkpoint file from Google Drive
-        if self.download_checkpoint(step=step, batch_size=batch_size, in_parallel=False, show_progress=True):
-            return self.is_checkpoint_fetched(step=step, batch_size=batch_size)
-        # If reaches here, file could not be downloaded, probably due to an unidentified error
-        raise ValueError('self.download_checkpoint returned False')
-
-    def fetch_latest_checkpoint(self, batch_size: Optional[int] = None) -> str or False:
-        chkpts = self.list_checkpoints(batch_size=batch_size, only_keys=('title',))
-        if len(chkpts) == 0:
-            raise FileNotFoundError(f'No latest checkpoint file could be found matching batch_size="{batch_size}"')
-        chkpts = sorted(chkpts, key=lambda _d: _d['title'], reverse=True)
-        latest_step = chkpts[0]['title'].replace('.pth', '')
-        return self.fetch_checkpoint(step=int(latest_step) if latest_step.isdigit() else latest_step,
-                                     batch_size=batch_size)
-
-    def _get_checkpoint_filepath(self, step: Union[int, str], batch_size: Optional[int] = None):
-        """
-        Get the absolute path to the local checkpoint file at given :attr:`step` and :attr:`batch_size`.
-        :param step: TODO
-        :param batch_size:
-        :return:
-        """
-        # Check & correct given args
-        if batch_size is None:
-            batch_size = -1
-        step_str = step if isinstance(step, str) else str(step).zfill(10)
-        # Find containing folder
-        if batch_size not in self.chkpts_batch_gfolders.keys():
-            self.ensure_chkpts_gfolder_exists(batch_size=batch_size)
-        chkpts_gfolder = self.chkpts_batch_gfolders[batch_size]
-        chkpts_gfolder.ensure_local_root_exists()
-        # Format and return
-        return f'{chkpts_gfolder.local_root}/{step_str}.pth'
-
-    def is_checkpoint_fetched(self, step: Union[int, str], batch_size: Optional[int] = None) -> str or False:
-        local_filepath = self._get_checkpoint_filepath(step=step, batch_size=batch_size)
-        return local_filepath if os.path.exists(local_filepath) and os.path.isfile(local_filepath) \
-            else False
-
-    def list_checkpoints(self, batch_size: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
-            -> List[GDriveFile or dict]:
-        # Check & correct given args
-        if batch_size is None:
-            batch_size = -1
-        # Get the correct GoogleDrive folder to list the checkpoint files that are inside
-        if batch_size not in self.chkpts_batch_gfolders.keys():
-            raise FileNotFoundError(f'batch_size="{batch_size}" not found in self.chkpts_batch_gfolders.keys()')
-        # Get checkpoint files list and filter it if only_keys attribute is set
-        chkpt_files_list = self.chkpts_batch_gfolders[batch_size].files
-        return chkpt_files_list if not only_keys else \
-            [dict((k, _f[k]) for k in only_keys) for _f in chkpt_files_list]
-
-    def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) -> Dict[int, List[GDriveFile or dict]]:
-        _return_dict = {}
-        for batch_size in self.chkpts_batch_gfolders.keys():
-            batch_chkpts_list = self.list_checkpoints(batch_size=batch_size, only_keys=only_keys)
-            if len(batch_chkpts_list) > 0:
-                _return_dict[batch_size] = batch_chkpts_list
-        return _return_dict
-
-    def save_and_upload_checkpoint(self, state_dict: dict, step: Union[int, str], batch_size: Optional[int] = None,
-                                   delete_after: bool = False, in_parallel: bool = False,
-                                   show_progress: bool = False) -> Union[ApplyResult, GDriveFile or None]:
-        # Get new checkpoint file name
-        new_chkpt_path = self._get_checkpoint_filepath(step=step, batch_size=batch_size)
-        is_update = os.path.exists(new_chkpt_path)
-        # Save state_dict locally
-        torch.save(state_dict, new_chkpt_path)
-        # Upload new checkpoint file to Google Drive
-        return self.upload_checkpoint(chkpt_filename=new_chkpt_path, batch_size=batch_size, delete_after=delete_after,
-                                      in_parallel=in_parallel, show_progress=show_progress, is_update=is_update)
-
-    def upload_checkpoint(self, chkpt_filename: str, batch_size: Optional[int] = None, delete_after: bool = False,
-                          in_parallel: bool = False, show_progress: bool = False, is_update: bool = False) \
-            -> Union[ApplyResult, GDriveFile or None]:
-        # Check if needed to create the folder in Google Drive before uploading
-        if batch_size is None:
-            batch_size = -1
-        # Ensure folder exists locally & in Google Drive
-        self.ensure_chkpts_gfolder_exists(batch_size=batch_size)
-        # Upload local file to Google Drive
-        upload_gfolder = self.chkpts_batch_gfolders[batch_size]
-        return upload_gfolder.upload_file(local_filename=os.path.basename(chkpt_filename), delete_after=delete_after,
-                                          in_parallel=in_parallel, show_progress=show_progress, is_update=is_update)
-
-    #
-    # ------------------------------------
-    #  Model Configurations
-    # ---------------------------------
-    #
-    # Below, are the methods to capture, save, upload and download model configurations to/from cloud storage.
-    #
-
-    def download_configuration(self, config_id: Union[int, str], in_parallel: bool = False,
-                               show_progress: bool = False) -> Union[ApplyResult, bool]:
-        # Check & correct given args
-        config_id_str = config_id if isinstance(config_id, str) else str(config_id).zfill(10)
-        # Search for the checkpoint in the list with all model checkpoints inside checkpoints folder for given batch
-        config_filename = f'{config_id_str}.yaml'
-        conf_gfile = self.configurations_gfolder.file_by_name(filename=config_filename)
-        if conf_gfile:
-            return conf_gfile.download(in_parallel=in_parallel, show_progress=show_progress)
-        # If reached here, no checkpoint files matching given step & batch size could be found
-        raise FileNotFoundError(f'No configuration file could be found inside "{self.configurations_gfolder.name}" '
-                                f'matching config_id="{config_id_str}"')
-
-    def fetch_configuration(self, config_id: Union[int, str]) -> str or False:
-        # Check if checkpoint file exists in local filesystem
-        local_filepath = self.is_configuration_fetched(config_id=config_id)
-        if local_filepath:
-            return local_filepath
-        # Download checkpoint file from Google Drive
-        if self.download_configuration(config_id=config_id, in_parallel=False, show_progress=True):
-            return self.is_configuration_fetched(config_id=config_id)
-        # If reaches here, file could not be downloaded, probably due to an unidentified error
-        raise ValueError('self.download_configuration returned False')
-
-    def is_configuration_fetched(self, config_id: Union[int, str]) -> str or False:
-        # Check & correct given args
-        config_id_str = config_id if isinstance(config_id, str) else str(config_id).zfill(10)
-        # Search for the checkpoint in the list with all model checkpoints inside checkpoints folder for given batch
-        local_filepath = f'{self.configurations_gfolder.local_root}/{config_id_str}.yaml'
-        return local_filepath if os.path.exists(local_filepath) and os.path.isfile(local_filepath) \
-            else False
-
-    def list_all_configurations(self, only_keys: Optional[Sequence] = None) -> List[GDriveFile or dict]:
-        # Get checkpoint files list and filter it if only_keys attribute is set
-        config_files_list = self.configurations_gfolder.files
-        return config_files_list if not only_keys else \
-            [dict((k, _f[k]) for k in only_keys) for _f in config_files_list]
-
-    def save_and_upload_configuration(self, configuration: dict, config_id: Optional[str or int] = None,
-                                      delete_after: bool = False, in_parallel: bool = False,
-                                      show_progress: bool = False) -> Union[ApplyResult, GDriveFile or None]:
-        # Check & correct given args
-        if config_id:
-            config_id_str = config_id if isinstance(config_id, str) else str(config_id).zfill(10)
-        else:
-            config_id_str = str(int(datetime.datetime.now().timestamp()))
-        # Get new checkpoint file name
-        new_config_filepath = f'{self.configurations_gfolder.local_root}/{config_id_str}.yaml'
-        is_update = os.path.exists(new_config_filepath)
-        # Save config file locally
-        self.configurations_gfolder.ensure_local_root_exists()
-        with open(new_config_filepath, 'w') as yaml_fp:
-            yaml.dump(configuration, yaml_fp)
-        # Upload new configuration file to Google Drive
-        return self.upload_configuration(config_filename=new_config_filepath, delete_after=delete_after,
-                                         in_parallel=in_parallel, show_progress=show_progress, is_update=is_update)
-
-    def upload_configuration(self, config_filename: str, delete_after: bool = False, in_parallel: bool = False,
-                             show_progress: bool = False, is_update: bool = False) \
-            -> Union[ApplyResult, GDriveFile or None]:
-        # Upload local file to Google Drive
-        return self.configurations_gfolder.upload_file(local_filename=os.path.basename(config_filename),
-                                                       delete_after=delete_after, in_parallel=in_parallel,
-                                                       show_progress=show_progress, is_update=is_update)
-
-
-if __name__ == '__main__':
-    import time
-
-    _start_time = time.time()
-    _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
-    _gcapsule = GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True, update_credentials=True)
-    _fs = GDriveFilesystem(gcapsule=_gcapsule)
-    _groot = GDriveFolder.root(capsule_or_fs=_fs, update_cache=False)
-    # print(json.dumps(_groot.subfolders, indent=4))
-    # print('')
-    # print('----------------------')
-    # print('')
-    #
-    # print(json.dumps(_groot.subfolder_by_name('Model Checkpoints'), indent=4))
-    # print('')
-    # print('----------------------')
-    # print('')
-    #
-    # df_icrb_gfolder = _groot.subfolder_by_name('In-shop Clothes Retrieval Benchmark', recursive=True)
-    # print(json.dumps(df_icrb_gfolder, indent=4) if df_icrb_gfolder else df_icrb_gfolder)
-    # print('')
-    # print('----------------------')
-    # print('')
-    #
-    # look_book_gfolder = _groot.subfolder_by_name('LookBook', recursive=True)
-    # print(json.dumps(look_book_gfolder, indent=4) if look_book_gfolder else look_book_gfolder)
-    # print('')
-    # print('----------------------')
-    # print('')
-    # print(json.dumps(look_book_gfolder.files, indent=4) if look_book_gfolder else look_book_gfolder)
-    # print('')
-    # print('----------------------')
-    # print('')
-
-    # from datasets.look_book import PixelDTDataset
-    #
-    # _start_time = time.time()
-    # pixel_dt_dataset = PixelDTDataset(dataset_gfolder_or_groot=_groot)
-    # print("--- %s seconds ---" % (time.time() - _start_time))
-    # print(pixel_dt_dataset.is_fetched_and_unzipped())
-
-    from modules.inception import InceptionV3
-
-    inception = InceptionV3(model_gfolder_or_groot=_groot, chkpt_step='latest')
-    inception.eval()
-    _x = torch.randn(2, 3, 299, 299)
-    y_1 = inception(_x.clone())
-    y_2 = inception(_x.clone())
-    y_3 = inception(_x)
-    print(y_3.shape)
-
-    print(inception.fetch_configuration('1609806860'))
-
-    exit(0)
-
-    _async_results = inception.gcapture(checkpoint=False, configuration=True, in_parallel=True)
-    for i in range(20):
-        ready = all(_r.ready() for _r in _async_results)
-        if not ready:
-            print('Not ready: sleeping...')
-            time.sleep(1)
-        else:
-            break
-    _uploaded_gfiles = [_r.get() for _r in _async_results]
-    assert type(_uploaded_gfiles[0]) == GDriveFile
-    print(json.dumps(_uploaded_gfiles, indent=4))
-    # print(async_result.get())
-
-    # _start_time = time.time()
-    # _name = 'pgpg'
-    # gmodel = GDriveModel(model_gfolder=_groot.subfolder_by_name(folder_name=f'model_name={_name}', recursive=True))
-    # gmodel_chkpt_titles = gmodel.list_checkpoints(batch_size=48, only_keys=('title', ))
-    # print(json.dumps(list(map(lambda _c: _c['title'], gmodel_chkpt_titles)), indent=4))
-    # print(gmodel.fetch_latest_checkpoint(batch_size=48))
-    # # print(json.dumps(gmodel.list_checkpoints(batch_size=48), indent=4))
-    # # print("--- %s seconds ---" % (time.time() - _start_time))
-    # # print(json.dumps(gmodel.list_checkpoints(batch_size=48, only_keys=('id', 'title', 'mimeType')), indent=4))
-    # print("--- %s seconds ---" % (time.time() - _start_time))
-
-    # git_keys_gfolder = _groot.subfolder_by_name('GitHub Keys')
-    # _dl_results = git_keys_gfolder.download(in_parallel=True, show_progress=True)
-    # _dl_results = [_r.get() for _r in _dl_results]
-    # print(json.dumps(_dl_results, indent=4))
-    pass

@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import os.path
@@ -124,6 +125,13 @@ class ResumableRandomSampler(Sampler):
         self.perm = state["perm"]
         self.perm_index = state["perm_index"]
         self.generator.set_state(state["generator_state"])
+
+def plt_to_pil(_plt):
+    buf = io.BytesIO()
+    _plt.savefig(buf, format='jpg')
+    buf.seek(0)
+    im = Image.open(buf)
+    return im, buf
 
 
 def squarify_img(img: Union[str, Image.Image], target_shape: Optional[int] = None,

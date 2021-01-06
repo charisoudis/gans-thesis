@@ -5,8 +5,8 @@ import torch.nn as nn
 from torch import Tensor
 from torchvision.models import inception_v3
 
-from utils.gdrive import GDriveModel, GDriveFolder
-from utils.ifaces import Configurable
+from utils.filesystems.gdrive import GDriveModel
+from utils.ifaces import Configurable, FilesystemFolder
 
 
 class InceptionV3(nn.Module, GDriveModel, Configurable):
@@ -17,12 +17,12 @@ class InceptionV3(nn.Module, GDriveModel, Configurable):
     Google Drive using GoogleDrive API's python client.
     """
 
-    def __init__(self, model_gfolder_or_groot: GDriveFolder, chkpt_step: Optional[int or str] = None,
+    def __init__(self, model_gfolder_or_groot: FilesystemFolder, chkpt_step: Optional[int or str] = None,
                  crop_fc: bool = False):
         """
         InceptionV3 class constructor.
-        :param (GDriveFolder) model_gfolder_or_groot: a `utils.gdrive.GDriveFolder` object to download/upload model
-                                                      checkpoints and metrics from/to Google Drive
+        :param (FilesystemFolder) model_gfolder_or_groot: a `utils.gdrive.GDriveFolder` object to download/upload model
+                                                     checkpoints and metrics from/to Google Drive
         :param (str or None) chkpt_step: if not `None` then the model checkpoint at the given :attr:`step` will be
                                          loaded via `nn.Module().load_state_dict()`
         :param (bool) crop_fc: set to True to crop FC layer from Inception v3 network (e.g. to get image embeddings)
@@ -31,7 +31,7 @@ class InceptionV3(nn.Module, GDriveModel, Configurable):
         model_name = self.__class__.__name__.lower()
         model_gfolder = model_gfolder_or_groot if model_gfolder_or_groot.name.endswith(model_name) else \
             model_gfolder_or_groot.subfolder_by_name(folder_name=f'model_name={model_name}', recursive=True)
-        GDriveModel.__init__(self, model_gfolder=model_gfolder, model_name=model_name)
+        GDriveModel.__init__(self, model_fs_folder=model_gfolder, model_name=model_name)
         # Instantiate InceptionV3 model
         nn.Module.__init__(self)
         self.inception_v3 = inception_v3(pretrained=False, init_weights=False)
