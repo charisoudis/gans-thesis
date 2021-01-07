@@ -7,7 +7,6 @@ from typing import Optional, Tuple, Union
 
 import click
 import numpy as np
-import torch
 from IPython import get_ipython
 from PIL import Image, UnidentifiedImageError
 from torch import Tensor
@@ -197,16 +196,21 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
         if target_shape is not None:
             image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
                                                                 norm_mean=norm_mean, norm_std=norm_std)
-        # Create dataset instance based on the transforms
+        # Create dataset instance with the given transforms
         _dataset = ICRBDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, image_transforms=image_transforms,
                                hq=hq, log_level=log_level)
+        # Perform train/test split
         if splits:
-            _dataset, _test_set = train_test_split(_dataset, splits=splits)
-            self.test_set = _test_set
+            _training_set, _test_set = train_test_split(_dataset, splits=splits, seed=seed)
+            _dataset.logger.debug(f'Split dataset: len(training_set)={to_human_readable(len(_training_set))}, ' +
+                                  f'len(test_set)={to_human_readable(len(_test_set))}')
+        else:
+            _training_set = _test_set = _dataset
+        self.test_set = _test_set
         # Create sample instance
-        self._sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=seed)
+        self._sampler = ResumableRandomSampler(data_source=_training_set, shuffle=shuffle, seed=seed)
         # Finally, instantiate dataloader
-        super(ICRBDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, sampler=self._sampler,
+        super(ICRBDataloader, self).__init__(dataset=_training_set, batch_size=batch_size, sampler=self._sampler,
                                              pin_memory=pin_memory)
 
     def get_state(self) -> dict:
@@ -222,10 +226,6 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
     This class is used to define the way DeepFashion's In-shop Clothes Retrieval Benchmark (ICRB) dataset is accessed so
     as to retrieve cross-pose/scale image pairs.
     """
-
-    Image1 = torch.zeros(3, 128, 128)
-    Image2 = torch.zeros(3, 128, 128)
-    Pose2 = torch.zeros(3, 128, 128)
 
     def __init__(self, dataset_fs_folder_or_root, image_transforms: Optional[transforms.Compose] = None,
                  skip_pose_norm: bool = True, pose: bool = True, hq: bool = False, log_level: str = 'info'):
@@ -314,9 +314,7 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
         :param index: integer with the current image index that we want to read from disk
         :return: a tuple containing the images from domain A and B, each as a torch.Tensor object
         """
-
-        return ICRBCrossPoseDataset.Image1, ICRBCrossPoseDataset.Image2, ICRBCrossPoseDataset.Pose2
-
+        # Get image paths
         paths_tuple = self.index_to_paths(index)
         # Fetch images
         try:
@@ -356,7 +354,8 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
                  target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
                  norm_std: Optional[float] = None, skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False,
-                 shuffle: bool = True, pin_memory: bool = True, splits: Optional[list] = None, log_level: str = 'info'):
+                 shuffle: bool = True, pin_memory: bool = True, seed: int = 42, splits: Optional[list] = None,
+                 log_level: str = 'info'):
         """
         ICRBCrossPoseDataloader class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
@@ -373,7 +372,9 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
         :param shuffle: set to True to have sampler shuffle indices when reaches the end
         :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
                            explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
-        :param splits: if not None performs training/testing sets split based on given :attr:`split` percentages
+        :param (int) seed: manual seed parameter of torch.Generator (used in dataset sampler)
+        :param (optional) splits: if not None performs training/testing sets split based on given :attr:`split`
+                                  percentages
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         if image_transforms is None and target_shape is None and target_channels is None:
@@ -389,14 +390,19 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
         # Create dataset instance based on the transforms
         _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, hq=hq, log_level=log_level,
                                         image_transforms=image_transforms, skip_pose_norm=skip_pose_norm, pose=True)
+        # Perform train/test split
         if splits:
-            _dataset, _test_set = train_test_split(_dataset, splits=splits)
-            self.test_set = _test_set
+            _training_set, _test_set = train_test_split(_dataset, splits=splits, seed=seed)
+            _dataset.logger.debug(f'Split dataset: len(training_set)={to_human_readable(len(_training_set))}, ' +
+                                  f'len(test_set)={to_human_readable(len(_test_set))}')
+        else:
+            _training_set = _test_set = _dataset
+        self.test_set = _test_set
         # Create sample instance
-        self._sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=47)
+        self._sampler = ResumableRandomSampler(data_source=_training_set, shuffle=shuffle, seed=seed)
         # Finally, instantiate dataloader
-        super(ICRBCrossPoseDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, sampler=self._sampler,
-                                                      pin_memory=pin_memory)
+        super(ICRBCrossPoseDataloader, self).__init__(dataset=_training_set, batch_size=batch_size,
+                                                      sampler=self._sampler, pin_memory=pin_memory)
 
     def get_state(self) -> dict:
         return self._sampler.get_state()

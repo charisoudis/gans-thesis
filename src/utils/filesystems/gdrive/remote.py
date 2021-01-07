@@ -5,7 +5,7 @@ import sys
 from datetime import datetime as dt, timedelta
 from io import BufferedWriter, BufferedRandom
 from multiprocessing.pool import ApplyResult, ThreadPool
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Tuple, Union, Type
 
 import httplib2
 # noinspection PyProtectedMember
@@ -172,6 +172,15 @@ class GDriveFile(FilesystemFile):
                                              in_parallel=in_parallel, show_progress=show_progress,
                                              unzip_after=unzip_after and self.is_zip)
 
+    @property
+    def folder(self) -> 'FilesystemFolder':
+        return self.gfolder
+
+    @folder.setter
+    def folder(self, f: 'GDriveFolder') -> None:
+        self.gfolder = f
+
+    @property
     def is_downloaded(self) -> bool:
         return os.path.exists(self.local_filepath) and os.path.isfile(self.local_filepath)
 
@@ -180,16 +189,12 @@ class GDriveFile(FilesystemFile):
         return self.pydrive_file['title']
 
     @property
-    def size(self) -> int:
-        return int(self.pydrive_file['fileSize'])
+    def path(self) -> str:
+        return self.local_filepath
 
     @property
-    def folder(self) -> 'FilesystemFolder':
-        return self.gfolder
-
-    @folder.setter
-    def folder(self, f: 'GDriveFolder') -> None:
-        self.gfolder = f
+    def size(self) -> int:
+        return int(self.pydrive_file['fileSize'])
 
 
 class GDriveFolder(FilesystemFolder):
@@ -649,6 +654,10 @@ class GDriveFilesystem(Filesystem):
         except ApiRequestError or FileNotUploadedError or FileNotDownloadableError as e:
             self.logger.critical(f'[GDriveFilesystem::download_file] {str(e)}')
             return False
+
+    @staticmethod
+    def folder_cls() -> Type[GDriveFolder]:
+        return GDriveFolder
 
     def list_files(self, cloud_folder: GDriveFolder) -> List[GoogleDriveFile]:
         gdrive_query = f"'{cloud_folder['id']}' in parents and mimeType != 'application/vnd.google-apps.folder' " + \

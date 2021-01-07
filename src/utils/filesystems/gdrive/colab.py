@@ -37,20 +37,12 @@ class ColabFile(LocalFile):
 class ColabFolder(LocalFolder):
     """
     ColabFolder Class:
-    This class, implementing `FilesystemFolder` interface, is used to transfer files from/to respective Google Drive folder.
+    This class, implementing `FilesystemFolder` interface, is used to transfer files from/to respective Google Drive
+    folder.
     """
-
-    def __init__(self, *args, **kwargs):
-        """TODO documentation"""
-        super(ColabFolder, self).__init__(*args, **kwargs)
 
     @staticmethod
     def root(capsule_or_fs: Union[ColabCapsule, 'ColabFilesystem']) -> 'ColabFolder':
-        """
-        Get the an `utils.gdrive.ColabFolder` instance to interact with Google Drive's root folder.
-        :param (ColabCapsule or ColabFilesystem) capsule_or_fs: see `utils.ifaces.FilesystemFolder::instance` method
-        :return: an `utils.gdrive.ColabFolder` instance
-        """
         fs = capsule_or_fs if isinstance(capsule_or_fs, ColabFilesystem) else ColabFilesystem(ccapsule=capsule_or_fs)
         return ColabFolder(fs=fs, local_root=fs.local_root, parent=None)
 
@@ -60,10 +52,3 @@ class ColabFilesystem(LocalFilesystem):
     ColabFilesystem Class:
     This class is used to interact with files stored in the locally-mounted Google Drive via native OS calls.
     """
-
-    def __init__(self, ccapsule: ColabCapsule):
-        """
-        ColabFilesystem class constructor.
-        :param (ColabCapsule) ccapsule: a `utils.gdrive.ColabCapsule` instance to interact with Google Drive filesystem
-        """
-        super(ColabFilesystem, self).__init__(ccapsule=ccapsule)

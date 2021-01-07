@@ -1,6 +1,6 @@
 import abc
 from multiprocessing.pool import ApplyResult
-from typing import Any, Union, List, Optional, Dict, Sequence
+from typing import Any, Union, List, Optional, Dict, Sequence, Type
 
 from PIL.Image import Image
 from torch import Tensor
@@ -28,7 +28,8 @@ class _IFaceTemplate(metaclass=abc.ABCMeta):
 class FilesystemCapsule(metaclass=abc.ABCMeta):
     """
     FilesystemCapsule Interface:
-    The classes that implement `FilesystemCapsule` should be used as an open channel to "talk" to cloud storage services.
+    The classes that implement `FilesystemCapsule` should be used as an open channel to "talk" to cloud storage
+    services.
     """
 
     @classmethod
@@ -57,6 +58,26 @@ class FilesystemFile(dict, metaclass=abc.ABCMeta):
         """
         raise NotImplementedError
 
+    @property
+    @abc.abstractmethod
+    def folder(self) -> 'FilesystemFolder':
+        """
+        Get the parent `utils.ifaces.FilesystemFolder` instance of this cloud file instance. This is the folder inside
+        of which the files in cloud as well as in local storage exist.
+        :return: an `utils.ifaces.FilesystemFolder` instance or `None` with corresponding messages if errors occurred
+        """
+        raise NotImplementedError
+
+    @folder.setter
+    @abc.abstractmethod
+    def folder(self, f: 'FilesystemFolder') -> None:
+        """
+        Set the (parent) folder instance of this cloud file instance.
+        :param f: an `utils.ifaces.FilesystemFolder` instance
+        """
+        raise NotImplementedError
+
+    @property
     @abc.abstractmethod
     def is_downloaded(self) -> bool:
         """
@@ -71,27 +92,26 @@ class FilesystemFile(dict, metaclass=abc.ABCMeta):
         """
         Get the file name of this instance. This must be the basename of the local file AND the file name in
         cloud storage.
-        :return: an `str` object with the file name
+        :return: a `str` object with the file name
         """
         raise NotImplementedError
 
     @property
     @abc.abstractmethod
-    def folder(self) -> 'FilesystemFolder':
+    def path(self) -> str:
         """
-        Get the parent `utils.ifaces.FilesystemFolder` instance of this cloud file instance. This is the folder inside of
-        which lives the file in cloud as well as in local storage.
-        :return: an `utils.ifaces.FilesystemFolder` instance or `None` with corresponding messages if errors occurred
+        Get the absolute local path of this file instance whether or not this file has been downloaded locally.
+        :return: a `str` object with the absolute local filepath
         """
         raise NotImplementedError
 
-    @folder.setter
+    @property
     @abc.abstractmethod
-    def folder(self, f: 'FilesystemFolder') -> None:
+    def size(self) -> int:
         """
-        Set the (parent) folder instance of this cloud file instance.
-        :param f: an `utils.ifaces.FilesystemFolder` instance
-        """
+       Get the file size of this file instance in bytes.
+       :return: a `int` object with the file size in bytes
+       """
         raise NotImplementedError
 
 
@@ -135,8 +155,8 @@ class FilesystemFolder(dict, metaclass=abc.ABCMeta):
         """
         Downloads the file named after :attr:`filename` inside this folder instance, from cloud storage to local
         filesystem.
-        :param (str or FilesystemFile) filename_or_cloud_file: the basename of the file to be downloaded as a string or an
-                                                          `utils.ifaces.FilesystemFile` instance
+        :param (str or FilesystemFile) filename_or_cloud_file: the basename of the file to be downloaded as a string or
+                                                               a  `utils.ifaces.FilesystemFile` instance
         :param (bool) in_parallel: set to True to run the download method in a separate thread, thus returning
                                    immediately to the caller with a thread-related object
         :param (bool) show_progress: set to True to have the downloading progress printed using the `tqdm` lib
@@ -214,7 +234,8 @@ class FilesystemFolder(dict, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def subfolder_by_name(self, folder_name: str, recursive: bool = False) -> Optional['FilesystemFolder']:
         """
-        Get the `utils.ifaces.FilesystemFolder` instance that corresponds to a subfolder of this instance matching the given
+        Get the `utils.ifaces.FilesystemFolder` instance that corresponds to a subfolder of this instance matching the
+        given.
         :attr:`folder_name`.
         :param (str) folder_name: the name of the subfolder to retrieve
         :param (bool) recursive: set to True to search inside subfolders of subfolders in a recursive manner to find the
@@ -226,9 +247,9 @@ class FilesystemFolder(dict, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def subfolder_by_name_or_create(self, folder_name: str, recursive: bool = False) -> Optional['FilesystemFolder']:
         """
-        Get the `utils.ifaces.FilesystemFolder` instance that corresponds to a subfolder of this instance matching the given
-        :attr:`folder_name`. If no subfolder matching the folder name found, `self.create_subfolder` is called to crate
-        a new subfolder in cloud as well as in local filesystem.
+        Get the `utils.ifaces.FilesystemFolder` instance that corresponds to a subfolder of this instance matching the
+        given :attr:`folder_name`. If no subfolder matching the folder name found, `self.create_subfolder` is called to
+        create a new subfolder in cloud as well as in local filesystem.
         :param (str) folder_name: the name of the subfolder to retrieve
         :param (bool) recursive: set to True to search inside subfolders of subfolders in a recursive manner to find the
                                  folder with the given :attr:`folder_name`
@@ -238,8 +259,8 @@ class FilesystemFolder(dict, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def upload_file(self, local_filename: str, delete_after: bool = False, in_parallel: bool = False,
-                    show_progress: bool = False, is_update: bool = False) -> Union[
-        ApplyResult, Optional[FilesystemFile]]:
+                    show_progress: bool = False, is_update: bool = False) \
+            -> Union[ApplyResult, Optional[FilesystemFile]]:
         """
         Upload a locally-saved file to cloud drive at pre-specified cloud folder described by :attr:`self.cloud_root`.
         :param (str) local_filename: the basename of the local file (should exist inside :attr:`self.local_root`)
@@ -250,6 +271,20 @@ class FilesystemFolder(dict, metaclass=abc.ABCMeta):
         :param (bool) is_update: set to True to update file in cloud storage instead of inserting a new one (if exists)
         :return: a `multiprocessing.pool.ApplyResult` object if `in_parallel` was set else a
                  `utils.ifaces.FilesystemFile` object with the uploaded cloud file info or `None` in case of failure
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    @abc.abstractmethod
+    def root(capsule_or_fs: Union[FilesystemCapsule, 'Filesystem']) -> 'FilesystemFolder':
+        """
+        Get the a `utils.ifaces.FilesystemFolder` instance to interact with Google Drive's root folder.
+        :param (FilesystemCapsule or Filesystem) capsule_or_fs: a `utils.ifaces.Filesystem` instance or a
+                                                                `utils.ifaces.FilesystemCapsule` instance to create the
+                                                                filesystem instance and consequently crate the
+                                                                `utils.ifaces.FilesystemFolder` instance
+        :return: a new `utils.filesystems.local.FilesystemFolder` instance to interact with Google Drive's root folder
+                 or the one WE consider as root
         """
         raise NotImplementedError
 
@@ -267,14 +302,14 @@ class Filesystem(metaclass=abc.ABCMeta):
             -> Optional[FilesystemFolder]:
         """
         Create a new folder under given :attr:`cloud_folder` named after the given :attr:`folder_name`.
-        :param (FilesystemFolder) cloud_folder: a `utils.ifaces.FilesystemFolder` instance with the folder inside which the new
-                                           folder will be created in cloud storage
+        :param (FilesystemFolder) cloud_folder: a `utils.ifaces.FilesystemFolder` instance with the folder inside which
+                                                the new folder will be created in cloud storage
         :param (str) folder_name: the name of the folder to be created as an `str` object
         :param (bool) force_create_local: set to True to create local folder immediately after creating folder in cloud
                                           storage; the local folder is created if not exists before any file upload and
                                           download
-        :return: a `utils.ifaces.FilesystemFolder` instance to interact with the newly created folder in cloud storage or
-                 None with corresponding messages if errors occurred
+        :return: a `utils.ifaces.FilesystemFolder` instance to interact with the newly created folder in cloud storage
+                 or None with corresponding messages if errors occurred
         """
         raise NotImplementedError
 
@@ -343,6 +378,15 @@ class Filesystem(metaclass=abc.ABCMeta):
         :param (bool) show_progress: set to True to have the uploading progress printed using the `tqdm` lib
         :return: a `multiprocessing.pool.ApplyResult` object if `in_parallel` was set, else a
                  `utils.ifaces.FilesystemFile` object with the uploaded cloud file info or `None` in case of failure
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    @abc.abstractmethod
+    def folder_cls() -> Type[FilesystemFolder]:
+        """
+        Get the folder class that this filesystem interacts with (e.g. for using static methods of that class).
+        :return: a class name, for a class that implements the `utils.ifaces.FilesystemFolder` interface.
         """
         raise NotImplementedError
 
@@ -464,6 +508,16 @@ class FilesystemModel(metaclass=abc.ABCMeta):
         """
         raise NotImplementedError
 
+    def list_metrics(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
+            -> List[FilesystemFile or dict]:
+        """
+        Same as `utils.ifaces.FilesystemModel::list_checkpoints()` but the "Metrics" cloud folder.
+        :param epoch: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        :param only_keys: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        :return: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        """
+        raise NotImplementedError
+
     @abc.abstractmethod
     def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) \
             -> Dict[int, List[FilesystemFile or dict]]:
@@ -473,6 +527,17 @@ class FilesystemModel(metaclass=abc.ABCMeta):
                                      the provided keys
         :return: a `list` of `dict` objects if :attr:`only_keys` is set else a `list` of `utils.ifaces.FilesystemFile`
                  objects of the found model checkpoints otherwise
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def list_all_metrics(self, only_keys: Optional[Sequence[str]] = None) -> Dict[int, List[FilesystemFile or dict]]:
+        """
+        Lists all model metric files under "Metrics" folder as a {epoch: [epoch checkpoints]} dict.
+        :param (optional) only_keys: if set instead the entire file info dict for each found file, it will return just
+                                     the provided keys
+        :return: a `list` of `dict` objects if :attr:`only_keys` is set else a `list` of `utils.ifaces.FilesystemFile`
+                 objects of the found model metrics otherwise
         """
         raise NotImplementedError
 
@@ -492,8 +557,8 @@ class FilesystemModel(metaclass=abc.ABCMeta):
                                    to caller
         :param (bool) show_progress: set to True to have the uploading progress displayed using the `tqdm` lib
         :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
-                 `utils.ifaces.FilesystemFile` object if upload completed successfully, `None` with corresponding messages
-                 otherwise
+                 `utils.ifaces.FilesystemFile` object if upload completed successfully, `None` with corresponding
+                 messages otherwise
         """
         raise NotImplementedError
 
@@ -513,8 +578,8 @@ class FilesystemModel(metaclass=abc.ABCMeta):
         :param (bool) show_progress: set to True to have the uploading progress displayed using the `tqdm` lib
         :param (bool) is_update: set to True to update file in cloud storage, else a new file will be inserted
         :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
-                 `utils.ifaces.FilesystemFile` object if upload completed successfully, `None` with corresponding messages
-                 otherwise
+                 `utils.ifaces.FilesystemFile` object if upload completed successfully, `None` with corresponding
+                 messages otherwise
         """
         raise NotImplementedError
 
@@ -648,5 +713,16 @@ class Visualizable(metaclass=abc.ABCMeta):
         Visualize latest model's forward pass by creating a `PIL.Image.Image` object with the model output and possible
         its forward pass's inputs.
         :return: a `PIL.Image.Image` object
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def visualize_metrics(self, upload: bool = False, preview: bool = False) -> List[Image]:
+        """
+        Aggregate all metrics found in model's "Metrics" folder and present them in pretty plots. Class MUST also
+        implement `utils.ifaces.FilesystemModel` for this method to work.
+        :param (bool) upload: set to True to have produced plots uploaded to cloud storage
+        :param (bool) preview: set to True to have the produced plots displayed inline using `plt.show()`
+        :return: a `list` of `PIL.Image.Image` objects containing the visualizations for the respective metrics
         """
         raise NotImplementedError

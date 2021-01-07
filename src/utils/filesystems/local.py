@@ -1,7 +1,7 @@
 import atexit
 import os
 from multiprocessing.pool import ApplyResult, ThreadPool
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Type
 
 from utils.command_line_logger import CommandLineLogger
 from utils.data import unzip_file
@@ -41,7 +41,7 @@ class LocalFile(FilesystemFile):
         self.cfolder = cfolder
         # Form local file path (absolute)
         self.filepath = f'{self.cfolder.local_root}/{filename}'
-        self.filesize = os.path.getsize(self.filepath) if self.is_downloaded() else None
+        self.filesize = os.path.getsize(self.filepath) if self.is_downloaded else None
         self.is_zip = self.filepath.endswith('.zip')
         # Instantiate dict
         dict.__init__(self, title=filename, fileSize=self.filesize)
@@ -51,6 +51,15 @@ class LocalFile(FilesystemFile):
         return self.cfolder.fs.download_file(cfile=self, local_filepath=self.filepath, in_parallel=in_parallel,
                                              show_progress=show_progress, unzip_after=unzip_after and self.is_zip)
 
+    @property
+    def folder(self) -> 'LocalFolder':
+        return self.cfolder
+
+    @folder.setter
+    def folder(self, f: 'LocalFolder') -> None:
+        self.cfolder = f
+
+    @property
     def is_downloaded(self) -> bool:
         return os.path.exists(self.filepath) and os.path.isfile(self.filepath)
 
@@ -59,16 +68,12 @@ class LocalFile(FilesystemFile):
         return self.filename
 
     @property
-    def size(self) -> int:
-        return self.filesize
+    def path(self) -> str:
+        return self.filepath
 
     @property
-    def folder(self) -> 'LocalFolder':
-        return self.cfolder
-
-    @folder.setter
-    def folder(self, f: 'LocalFolder') -> None:
-        self.cfolder = f
+    def size(self) -> int:
+        return self.filesize
 
 
 class LocalFolder(FilesystemFolder):
@@ -209,12 +214,8 @@ class LocalFolder(FilesystemFolder):
 
     @staticmethod
     def root(capsule_or_fs: Union[LocalCapsule, 'LocalFilesystem']) -> 'LocalFolder':
-        """
-        Get the an `utils.filesystems.local.LocalFolder` instance to interact with Google Drive's root folder.
-        :param (LocalCapsule or LocalFilesystem) capsule_or_fs: see `utils.ifaces.FilesystemFolder::instance` method
-        :return: an `utils.filesystems.local.LocalFolder` instance
-        """
-        fs = capsule_or_fs if isinstance(capsule_or_fs, LocalFilesystem) else LocalFilesystem(ccapsule=capsule_or_fs)
+        fs = capsule_or_fs if isinstance(capsule_or_fs, LocalFilesystem) else \
+            LocalFilesystem(ccapsule=capsule_or_fs)
         return LocalFolder(fs=fs, local_root=fs.local_root, parent=None)
 
 
@@ -272,6 +273,10 @@ class LocalFilesystem(Filesystem):
             return True
         # If file not found locally, there is no such file (since this is a locally-mounted filesystem)
         return False
+
+    @staticmethod
+    def folder_cls() -> Type[LocalFolder]:
+        return LocalFolder
 
     def list_files(self, cloud_folder: LocalFolder) -> List[LocalFile]:
         return [LocalFile(filename=_f, cfolder=cloud_folder)

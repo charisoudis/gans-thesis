@@ -50,8 +50,8 @@ metrics_batch_size = 32 if not run_locally else 1
 f1_k = 3 if not run_locally else 1
 #   - visualizations / checkpoints steps
 display_step = 200
-checkpoint_step = 500
-metrics_step = 1500  # evaluate model every 3 checkpoints
+checkpoint_step = 600
+metrics_step = 1800  # evaluate model every 3 checkpoints
 #   - dataset
 target_shape = 128
 target_channels = 3
@@ -124,6 +124,11 @@ evaluator = GanEvaluator(model_fs_folder_or_root=models_groot, gen_dataset=datas
 pgpg = PGPG(model_fs_folder_or_root=models_groot, config_id=pgpg_config_id, dataset_len=len(dataset),
             chkpt_epoch='latest', evaluator=evaluator, device=exec_device, log_level=log_level)
 pgpg.logger.debug(f'Model initialized. Number of params = {pgpg.nparams_hr}')
+#   - load dataloader state (from model checkpoint)
+if 'dataloader' in pgpg.other_state_dicts.keys():
+    dataloader.set_state(pgpg.other_state_dicts['dataloader'])
+    pgpg.logger.debug(f'Loaded dataloader state! Current pem_index={dataloader.get_state()["perm_index"]}')
+
 
 ###################################
 ###       Training Loop         ###
@@ -133,6 +138,7 @@ exec_tqdm = get_tqdm()
 #   - start training loop from last checkpoint's epoch and step
 gcapture_ready = True
 async_results = None
+pgpg.logger.info(f'[training loop] STARTING (epoch={pgpg.epoch}, step={pgpg.initial_step})')
 for epoch in range(pgpg.epoch, n_epochs):
     image_1: Tensor
     image_2: Tensor
@@ -146,13 +152,8 @@ for epoch in range(pgpg.epoch, n_epochs):
         # Perform a forward + backward pass + weight update on the Generator & Discriminator models
         disc_loss, gen_loss = pgpg(image_1=image_1, image_2=image_2, pose_2=pose_2)
 
-        # Visualization code
-        if pgpg.step % display_step == 0:
-            visualization_img = pgpg.visualize()
-            visualization_img.show()
-
         # Metrics & Checkpoint Code
-        if pgpg.step % checkpoint_step == 1:
+        if pgpg.step % checkpoint_step == 0:
             # Check if another upload is pending
             if not gcapture_ready and async_results:
                 # Wait for previous upload to finish
@@ -160,8 +161,13 @@ for epoch in range(pgpg.epoch, n_epochs):
                 [r.wait() for r in async_results]
                 pgpg.logger.warning('DONE! Starting new capture now.')
             # Capture current model state, including metrics and visualizations
-            async_results = pgpg.gcapture(checkpoint=True, metrics=pgpg.step % metrics_step == 1, visualizations=True,
-                                          in_parallel=True, show_progress=run_locally, delete_after=False)
+            async_results = pgpg.gcapture(checkpoint=True, metrics=pgpg.step % metrics_step == 0, visualizations=True,
+                                          dataloader=dataloader, in_parallel=True, show_progress=run_locally,
+                                          delete_after=False)
+        # Visualization code
+        elif pgpg.step % display_step == 0:
+            visualization_img = pgpg.visualize()
+            visualization_img.show()
 
         # Check if a pending checkpoint upload has finished
         if async_results:
@@ -189,4 +195,4 @@ if async_results:
     async_results = None
 
 # Training finished!
-pgpg.logger.info('[DONE]')
+pgpg.logger.info('[training loop] DONE')

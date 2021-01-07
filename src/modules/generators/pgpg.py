@@ -7,7 +7,6 @@ from torchvision.transforms import transforms
 from datasets.deep_fashion import ICRBCrossPoseDataloader
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.unet import UNETWithSkipConnections
-from utils.tensor import save_tensor_to_image_file
 
 
 class PGPGGenerator1(UNETWithSkipConnections):
@@ -151,7 +150,7 @@ class PGPGGenerator(nn.Module):
         """
         g1_out, g_out = self(x, y_pose)
         y_pose[y_pose > 0] = 1  # pose may act as a loss mask since it is a DensePose IUV map, not just skeleton points
-        save_tensor_to_image_file(y_pose)
+        # save_tensor_to_image_file(y_pose)
         y_pose += 1  # how much we want to weight on non-background area (original paper weight is 1)
         # 1) L1 loss for G1
         recon_criterion = getattr(nn, f'{self.configuration["recon_criterion"]}Loss')() if not recon_criterion else \

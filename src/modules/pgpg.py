@@ -1,20 +1,30 @@
-from typing import Optional, Tuple, Union, Dict
+import json
+import os
+from typing import Optional, Tuple, Union, Dict, List
 
+import matplotlib
+import matplotlib.font_manager
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import yaml
 from PIL.Image import Image
-from matplotlib import pyplot as plt
+from scipy.interpolate import make_interp_spline
 from torch import nn, Tensor
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 # noinspection PyProtectedMember
+from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
+from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataset
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.pgpg import PGPGGenerator
-from utils.data import pltfig_to_pil
 from utils.filesystems.gdrive import GDriveModel
-from utils.ifaces import Configurable, Evaluable, FilesystemFolder, Visualizable
+from utils.filesystems.gdrive.remote import GDriveCapsule, GDriveFolder
+from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
+from utils.ifaces import Configurable, Evaluable, FilesystemFolder, Visualizable, FilesystemFile, FilesystemModel
 from utils.metrics import GanEvaluator
+from utils.plot import ensure_matplotlib_fonts_exist, pltfig_to_pil
 from utils.pytorch import get_total_params, invert_transforms
 from utils.string import to_human_readable
 from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler
@@ -145,6 +155,7 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         self.disc_opt = get_adam_optimizer(self.disc, lr=disc_opt_conf['lr'])
 
         # Load checkpoint from Google Drive
+        self.other_state_dicts = {}
         if chkpt_epoch:
             try:
                 chkpt_filepath = self.fetch_checkpoint(epoch_or_id=chkpt_epoch, step=chkpt_step)
@@ -244,6 +255,9 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         # Update latest metrics with checkpoint's metrics
         if 'metrics' in state_dict.keys():
             self.latest_metrics = state_dict['metrics']
+        self.logger.debug(f'State dict loaded. Keys: {tuple(state_dict.keys())}')
+        for _k in [_k for _k in state_dict.keys() if _k not in ('gen', 'gen_opt', 'disc', 'disc_opt', 'configuration')]:
+            self.other_state_dicts[_k] = state_dict[_k]
 
     def state_dict(self, *args, **kwargs) -> dict:
         """
@@ -375,7 +389,7 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         # Concat images to a 2x5 grid (each row is a separate generation, the columns contain real and generated images
         # side-by-side)
         border = 2
-        black = 0.4
+        black = 0.5
         cat_images_1 = torch.cat((
             black * torch.ones(3, image_1_first.shape[1], border).float(),
             image_1_first, pose_2_first, image_2_first, g1_out_first, g2_out_fist, g_out_first,
@@ -397,73 +411,146 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
             black * torch.ones(3, border, cat_images_1.shape[2]).float(),
         ), dim=1)
 
-        # img = tensor_to_image(cat_images)
-        # return img
-        plt.rcParams["figure.figsize"] = (5, 2)
+        # Set matplotlib params
+        matplotlib.rcParams["font.family"] = 'JetBrains Mono'
+        # Create a new figure
+        plt.figure(figsize=(5, 2), dpi=300, frameon=False, clear=True)
+        # Remove annoying axes
         plt.axis('off')
+        # Create image and return
+        plt.suptitle(f'epoch={self.epoch} | step={str(self.step).zfill(10)}', y=0.03, fontsize=4, fontweight='light',
+                     horizontalalignment='left', x=0.001)
         plt.imshow(cat_images.permute(1, 2, 0))
-        img = pltfig_to_pil(plt.gcf())
-        return img
+        return pltfig_to_pil(plt.gcf())
 
-#
-# if __name__ == '__main__':
-#     # Get GoogleDrive root folder
-#     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
-#
-#     # # Via GoogleDrive API
-#     # _capsule = GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True, update_credentials=True)
-#     # _fs = GDriveFilesystem(gcapsule=_capsule)
-#     # _groot = GDriveFolder.root(capsule_or_fs=_fs, update_cache=False)
-#
-#     # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
-#     _fs = LocalFilesystem(LocalCapsule(_local_gdrive_root))
-#     _groot = LocalFolder.root(capsule_or_fs=_fs)
-#
-#     # Define folder roots
-#     _models_groot = _groot.subfolder_by_name('Models')
-#     _datasets_groot = _groot.subfolder_by_name('Datasets')
-#
-#     # Initialize model evaluator
-#     _gen_transforms = ICRBDataset.get_image_transforms(target_shape=128, target_channels=3)
-#     _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
-#                                     pose=True)
-#     _bs = 2
-#     _dl = DataLoader(dataset=_dataset, batch_size=_bs)
-#     _evaluator = GanEvaluator(model_fs_folder_or_root=_models_groot, gen_dataset=_dataset, target_index=1,
-#                               condition_indices=(0, 2), n_samples=2, batch_size=1,
-#                               f1_k=1)
-#
-#     # Initialize model
-#     _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
-#                  dataset_len=len(_dataset),  chkpt_epoch='latest',
-#                  evaluator=_evaluator, device='cpu')
-#
-#     # for _e in range(3):
-#     #     _pgpg.logger.info(f'current epoch: {_e}')
-#     #     for _i_1, _i_2, _p_2, in iter(_dl):
-#     #         _pgpg.gforward(_i_1.shape[0])
-#     #
-#     # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
-#
-#     _device = _pgpg.device
-#     _x, _y, _y_pose = next(iter(_dl))
-#     _disc_loss, _gen_loss, _g1_out, _g_out = _pgpg(_x.to(_device), _y.to(_device), _y_pose.to(_device))
-#     # print(_disc_loss.shape, _gen_loss.shape, _g1_out.shape, _g_out.shape)
-#
-#     # _img = _pgpg.visualize()
-#     # _img.show()
-#
-#     import time
-#
-#     print('starting capturing...')
-#     _async_results = _pgpg.gcapture(checkpoint=True, metrics=True, visualizations=True, configuration=False,
-#                                     in_parallel=True, show_progress=True)
-#     for i in range(20):
-#         ready = all(_r.ready() for _r in _async_results)
-#         if not ready:
-#             print('Not ready: sleeping...')
-#             time.sleep(1)
-#         else:
-#             break
-#     _uploaded_gfiles = [_r.get() for _r in _async_results]
-#     print(json.dumps(_uploaded_gfiles, indent=4))
+    def visualize_metrics(self, upload: bool = False, preview: bool = False) -> List[Image]:
+        assert isinstance(self, FilesystemModel), 'Model must implement utils.ifaces.FilesystemFolder to visualize' + \
+                                                  'metrics and upload produced images to cloud'
+        # Init metric lists
+        x, fids, iss, f1s, ssims = ([], [], [], [], [])
+        epoch_metrics_dict = self.list_all_metrics()
+        for epoch, epoch_metrics in epoch_metrics_dict.items():
+            # Check if file is in local filesystem and is a metric file
+            _files = [_f for _f in epoch_metrics if _f.name.endswith('.json') and _f.is_downloaded]
+
+            # We do not know beforehand the number of metric files inside each epoch
+            x_step = 1 / len(_files)
+            x_init = epoch
+
+            metric_file: FilesystemFile
+            for _fi, metric_file in enumerate(_files):
+                # Fetch metrics from fle
+                with open(metric_file.path) as json_fp:
+                    metrics = json.load(json_fp)
+                # Update lists
+                fids.append(metrics['fid'])
+                iss.append(metrics['is'])
+                f1s.append(metrics['f1'] if not np.isnan(metrics['f1']) else 0)
+                ssims.append(metrics['ssim'])
+                # Set correct x value
+                x.append(x_init + _fi * x_step)
+        if len(epoch_metrics_dict.keys()) == 0:
+            self.logger.debug('No metrics found. Returning...')
+            return []
+        # Configure matplotlib for pretty plots
+        plt.rcParams["font.family"] = 'JetBrains Mono'
+        # Create a subfolder inside "Visualizations" folder to store aggregated metrics plots
+        vis_metrics_gfolder = self.visualizations_gfolder.subfolder_by_name_or_create(folder_name='Metrics Plots')
+        filename_suffix = f'epochs={tuple(epoch_metrics_dict.keys())[0]}_{tuple(epoch_metrics_dict.keys())[-1]}.jpg'
+        # Save metric plots as images & display inline
+        _returns = []
+        for metric_name, metric_data in zip(('  FID', '  IS', '  F1', '  SSIM'), (fids, iss, f1s, ssims)):
+            # Create a new figure
+            plt.figure(figsize=(10, 5), dpi=300, clear=True)
+            # Set data
+            # plt.plot(x, metric_data)
+            x_new = np.linspace(x[0], x[-1], 300)
+            plt.plot(x_new, make_interp_spline(x, metric_data, k=3)(x_new), '-.', color='#2a9ceb')
+            plt.plot(x, metric_data, 'o', color='#1f77b4')
+            # Set title
+            plt_title = f'{metric_name} Metric'
+            plt_subtitle = f'{filename_suffix.replace("_", " to ").replace("=", ": ").replace(".jpg", "")}'
+            plt.suptitle(f'{plt_title}', y=0.97, fontsize=12, fontweight='bold')
+            plt.title(f'{plt_subtitle}', pad=10., fontsize=10, )
+            # Get PIL image
+            pil_img = pltfig_to_pil(plt.gcf())
+            _returns.append(pil_img)
+            # Save visualization file
+            if upload:
+                filepath = '{}/{}_{}'.format(vis_metrics_gfolder.local_root, metric_name.strip().lower(),
+                                             filename_suffix)
+                is_update = os.path.exists(filepath)
+                pil_img.save(filepath)
+                # Upload to Google Drive
+                vis_metrics_gfolder.upload_file(local_filename=filepath, in_parallel=False, is_update=is_update)
+                self.logger.debug(f'Metric file from {filepath} uploaded successfully!')
+            if preview:
+                plt.show()
+        return _returns
+
+
+if __name__ == '__main__':
+    # Get GoogleDrive root folder
+    _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
+    _log_level = 'debug'
+
+    # # Via GoogleDrive API
+    _groot = GDriveFolder.root(capsule_or_fs=GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True,
+                                                           update_credentials=True), update_cache=False)
+    ensure_matplotlib_fonts_exist(_groot, force_rebuild=False)
+
+    # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
+    _fs = LocalFilesystem(LocalCapsule(_local_gdrive_root))
+    _groot = LocalFolder.root(capsule_or_fs=_fs)
+
+    # Define folder roots
+    _models_groot = _groot.subfolder_by_name('Models')
+    _datasets_groot = _groot.subfolder_by_name('Datasets')
+
+    # Initialize model evaluator
+    _gen_transforms = ICRBDataset.get_image_transforms(target_shape=128, target_channels=3)
+    _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
+                                    pose=True, log_level=_log_level)
+    _bs = 2
+    _dl = DataLoader(dataset=_dataset, batch_size=_bs)
+    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_groot, gen_dataset=_dataset, target_index=1,
+                              condition_indices=(0, 2), n_samples=2, batch_size=1,
+                              f1_k=1)
+
+    # Initialize model
+    _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
+                 dataset_len=len(_dataset), chkpt_epoch='latest', log_level=_log_level,
+                 evaluator=_evaluator, device='cpu')
+
+    # # for _e in range(3):
+    # #     _pgpg.logger.info(f'current epoch: {_e}')
+    # #     for _i_1, _i_2, _p_2, in iter(_dl):
+    # #         _pgpg.gforward(_i_1.shape[0])
+    # #
+    # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
+
+    _device = _pgpg.device
+    _x, _y, _y_pose = next(iter(_dl))
+    _disc_loss, _gen_loss = _pgpg(_x.to(_device), _y.to(_device), _y_pose.to(_device))
+    # print(_disc_loss.shape, _gen_loss.shape, _g1_out.shape, _g_out.shape)
+
+    _img = _pgpg.visualize()
+    _img.show()
+
+    import time
+
+    print('starting capturing...')
+    _async_results = _pgpg.gcapture(checkpoint=True, metrics=True, visualizations=True, configuration=False,
+                                    in_parallel=True, show_progress=True)
+    for i in range(20):
+        ready = all(_r.ready() for _r in _async_results)
+        if not ready:
+            print('Not ready: sleeping...')
+            time.sleep(1)
+        else:
+            break
+    _uploaded_gfiles = [_r.get() for _r in _async_results]
+    print(json.dumps(_uploaded_gfiles, indent=4))
+
+    _imgs = _pgpg.visualize_metrics(upload=False, preview=True)
+    print(_imgs)

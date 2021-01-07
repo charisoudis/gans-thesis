@@ -1,13 +1,10 @@
-import atexit
-import io
 import json
 import os
 import os.path
-from typing import Optional, List, Union, Sized
+from typing import Optional, List, Sized
 
 import prettytable
 import torch
-from PIL import Image
 # noinspection PyProtectedMember
 from torch.utils.data import Sampler
 
@@ -126,47 +123,6 @@ class ResumableRandomSampler(Sampler):
         self.perm = state["perm"]
         self.perm_index = state["perm_index"]
         self.generator.set_state(state["generator_state"])
-
-
-def pltfig_to_pil(_plt):
-    buf = io.BytesIO()
-    _plt.savefig(buf, format='jpg')
-    buf.seek(0)
-    im = Image.open(buf)
-    atexit.register(buf.close)
-    return im
-
-
-def squarify_img(img: Union[str, Image.Image], target_shape: Optional[int] = None,
-                 bg_color: Union[str, float, int] = 'white'):
-    """
-    Converts PIL image to square by expanding its smaller dimension and painting the background according to given
-    :attr:`bg_color`.
-    Source: https://github.com/nkmk/python-tools/blob/0178324f04579b8bab636136eb14776702ccf554/tool/lib/imagelib.py
-    :param img: the input image as a PIL.Image object or a filepath string
-    :param (optional) target_shape: if not None, the image will be resized to the given shape
-                                    (width=height=:attr:`target_shape`)
-    :param bg_color: background color as int (0, 255) or float (0, 1) or string (e.g. 'white')
-    :return: a PIL.Image object containing the resulting square image
-    """
-    if isinstance(img, Image.Image):
-        pil_img = img
-    else:
-        pil_img = Image.open(img)
-    width, height = pil_img.size
-    # Squarify
-    if width == height:
-        result = pil_img
-    elif width > height:
-        result = Image.new(pil_img.mode, size=(width, width), color=bg_color)
-        result.paste(pil_img, (0, (width - height) // 2))
-    else:
-        result = Image.new(pil_img.mode, (height, height), color=bg_color)
-        result.paste(pil_img, ((height - width) // 2, 0))
-    # Resize
-    if target_shape:
-        result = result.resize(size=(target_shape, target_shape), resample=Image.BICUBIC)
-    return result
 
 
 def unzip_file(zip_filepath: str) -> bool:

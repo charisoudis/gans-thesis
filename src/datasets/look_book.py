@@ -15,11 +15,12 @@ from torchvision.transforms import transforms, Compose
 
 from datasets.deep_fashion import ICRBDataset
 from utils.command_line_logger import CommandLineLogger
-from utils.data import squarify_img, ResumableRandomSampler
+from utils.data import ResumableRandomSampler
 from utils.dep_free import get_tqdm
 from utils.filesystems.gdrive import GDriveDataset
 from utils.filesystems.local import LocalCapsule, LocalFilesystem, LocalFolder
 from utils.ifaces import ResumableDataLoader, FilesystemFolder
+from utils.plot import squarify_img
 from utils.string import to_human_readable
 from utils.train import train_test_split
 
@@ -31,7 +32,7 @@ class PixelDTDataset(Dataset, GDriveDataset):
     (PixelDT).
     """
 
-    # Dataset name is the name of the folder in Google Drive under which dataset's Img.zip lives
+    # Dataset name is the name of the folder in Google Drive under which dataset's "Img.zip" file exists
     DatasetName = 'LookBook'
 
     # Default normalization parameters for ICRB (converts tensors' ranges to [-1,1]
@@ -136,7 +137,7 @@ class PixelDTDataset(Dataset, GDriveDataset):
 
     @staticmethod
     def get_image_transforms(target_shape: int, target_channels: int, norm_mean: Optional[float] = None,
-                             norm_std: Optional[float] = None) -> transforms.Compose:
+                             norm_std: Optional[float] = None) -> Compose:
         """
         Get the torchvision transforms to apply to the dataset based on default normalization parameters
         :param target_shape: the H and W in the tensor coming out of image transforms
@@ -302,7 +303,7 @@ class PixelDTScraper:
     def initial_scraping_deep_fashion(self) -> None:
         """
         Method to scrape DeepFashion ICRB dataset for items that contain image groups with flat.jpg images. These image
-        groups can be copied over to LookBook Img root as new items since the can be used in a similar manner as the
+        groups can be copied over to LookBook Img root as new items since they can be used in a similar manner as the
         LookBook dataset's images. Transferred images are renamed to match naming style of LookBook item images.
         """
         # Define DeepFashion's Img root
@@ -462,7 +463,7 @@ class PixelDTScraper:
         Entry point of class.
         :param forward_pass: set to True to run scraper's forward pass (create item_dt_info.json files in item dirs)
         :param backward_pass: set to True to run scraper's backward pass (recursively merge items JSON files)
-                              Note: if $forward_pass$ is set to True, then $backward_pass$ is also set to True.
+                              Note: if :attr:`forward_pass` is set to True, then :attr:`backward_pass` will be True.
         """
         scraper = PixelDTScraper()
         scraper.logger.info(f'SCRAPE DIR = {scraper.img_dir_path}')
@@ -481,8 +482,8 @@ class PixelDTScraper:
 
 
 if __name__ == '__main__':
-    # if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
-    #     PixelDTScraper.run(forward_pass=True, backward_pass=True)
+    if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
+        PixelDTScraper.run(forward_pass=True, backward_pass=True)
 
     # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
@@ -490,5 +491,5 @@ if __name__ == '__main__':
     _fs = LocalFilesystem(ccapsule=_capsule)
     _groot = LocalFolder.root(capsule_or_fs=_fs).subfolder_by_name('Datasets')
 
-    _pixel_dt = PixelDTDataset(dataset_fs_folder_or_root=_groot)
+    _pixel_dt = PixelDTDataset(dataset_fs_folder_or_root=_groot, log_level='debug')
     print(_pixel_dt.fetch_and_unzip())

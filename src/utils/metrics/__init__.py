@@ -83,7 +83,7 @@ class GanEvaluator(object):
         gen = gen.eval()
         metrics_dict = {}
         with torch.no_grad():
-            for metric_name in self.calculators.keys() if not metric_name else (metric_name,):
+            for metric_name in self.calculators.keys() if not metric_name or 'all' == metric_name else (metric_name,):
                 # Clear dataset transforms
                 if metric_name != 'ssim':
                     self.dataset.transforms = None

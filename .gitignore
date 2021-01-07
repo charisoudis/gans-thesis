@@ -1,7 +1,6 @@
 .idea
 *.json
 *.bak
-venv
 .gdrive/*
 .ipynb_checkpoints
 .ipynb_checkpoints/*
@@ -9,3 +8,4 @@ venv
 .http_cache/*
 .logs
 .logs/*
+.matplotlib.rc

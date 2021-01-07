@@ -14,7 +14,7 @@ from utils.command_line_logger import CommandLineLogger
 from utils.filesystems.gdrive.colab import ColabFolder, ColabCapsule, ColabFilesystem, ColabFile
 from utils.filesystems.gdrive.remote import GDriveFolder, GDriveCapsule, GDriveFilesystem, GDriveFile
 from utils.ifaces import FilesystemDataset, FilesystemModel, FilesystemFolder, Filesystem, FilesystemCapsule, \
-    FilesystemFile
+    FilesystemFile, ResumableDataLoader
 
 
 class GDriveDataset(FilesystemDataset):
@@ -50,7 +50,7 @@ class GDriveDataset(FilesystemDataset):
                os.path.isfile(zip_local_filepath) and os.path.isdir(dataset_local_path)
 
     @staticmethod
-    def instance(groot_or_capsule_or_fs: Union[FilesystemFolder, Filesystem, FilesystemCapsule],
+    def instance(groot_or_capsule_or_fs: Union[FilesystemFolder, FilesystemCapsule, Filesystem],
                  dataset_folder_name: str, zip_filename: str) -> Optional['GDriveDataset']:
         """
         Create ana get a new  `utils.gdrive.GDriveDataset` instance using the given Google Drive root instance, the
@@ -61,20 +61,14 @@ class GDriveDataset(FilesystemDataset):
         :return:
         """
         # Set Google Drive root folder instance
-        groot = None
         if isinstance(groot_or_capsule_or_fs, FilesystemFolder):
             groot = groot_or_capsule_or_fs
-        elif isinstance(groot_or_capsule_or_fs, Filesystem) or isinstance(groot_or_capsule_or_fs, FilesystemCapsule):
-            if isinstance(groot_or_capsule_or_fs, GDriveFilesystem) \
-                    or isinstance(groot_or_capsule_or_fs, GDriveCapsule):
-                groot = GDriveFolder.root(capsule_or_fs=groot_or_capsule_or_fs)
-            elif isinstance(groot_or_capsule_or_fs, ColabFilesystem) \
-                    or isinstance(groot_or_capsule_or_fs, ColabCapsule):
-                groot = ColabFolder.root(capsule_or_fs=groot_or_capsule_or_fs)
-            else:
-                raise NotImplementedError
-        if not groot:
-            raise ValueError('Could not instantiate groot')
+        elif isinstance(groot_or_capsule_or_fs, Filesystem):
+            groot = groot_or_capsule_or_fs.folder_cls().root(capsule_or_fs=groot_or_capsule_or_fs)
+        elif isinstance(groot_or_capsule_or_fs, FilesystemCapsule):
+            raise NotImplementedError('not implemented yet for capsule input')
+        else:
+            raise TypeError('Check groot_or_capsule_or_fs')
         # Find the Google Drive folder instance that corresponds to the dataset with the given folder name
         dataset_gfolder = groot.subfolder_by_name(folder_name=dataset_folder_name, recursive=True)
         if not dataset_gfolder:
@@ -157,6 +151,18 @@ class GDriveModel(FilesystemModel):
                     │       ├── <step>.json
                     │       ├──    ...
                     │       └── <step>.json
+                    │
+                    ├── Visualizations
+                    │   ├── epoch=<epoch: int>
+                    │   │   ├── <step: int or str>.jpg
+                    │   │   ├──    ...
+                    │   │   └── <step>.jpg
+                    │  ...
+                    │   │
+                    │   └── epoch=<another_epoch>
+                    │       ├── <step>.jpg
+                    │       ├──    ...
+                    │       └── <step>.jpg
                     │
                    ...
                     │
@@ -242,7 +248,8 @@ class GDriveModel(FilesystemModel):
 
     def gcapture(self, checkpoint: bool = True, metrics: bool = True, visualizations: bool = True,
                  configuration: bool = False, in_parallel: bool = True, show_progress: bool = False,
-                 delete_after: bool = False) -> Union[List[ApplyResult], List[FilesystemFile or None]]:
+                 delete_after: bool = False, dataloader: Optional[ResumableDataLoader] = None) \
+            -> Union[List[ApplyResult], List[FilesystemFile or None]]:
         """
         Capture the inherited module's current state, save locally and then upload to Google Drive.
         :param (bool) checkpoint: set to True to capture/upload current model state dict & create a new checkpoint in
@@ -256,6 +263,8 @@ class GDriveModel(FilesystemModel):
         :param (bool) delete_after: set to True to have the local file deleted after successful upload
         :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
                                    to caller
+        :param (optional) dataloader: if set and implements `utils.ifaces.ResumableDataLoader`, then the current state
+                                      of the dataloader will also be saved in the model checkpoint
         :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
                  `utils.gdrive.GDriveFile` object if upload completed successfully, `False` with corresponding messages
                  otherwise
@@ -268,7 +277,8 @@ class GDriveModel(FilesystemModel):
             # Save locally and upload
             assert self.step is not None and self.epoch is not None, 'No forward pass has been performed'
             _results += self.checkpoint_metrics_capture(checkpoint=checkpoint, metrics=metrics, in_parallel=in_parallel,
-                                                        delete_after=delete_after, show_progress=show_progress)
+                                                        delete_after=delete_after, show_progress=show_progress,
+                                                        dataloader=dataloader)
         # Save model configuration
         if configuration:
             # Extract current model configuration
@@ -335,8 +345,8 @@ class GDriveModel(FilesystemModel):
             self.epoch_inc = True
             self.initial_step = 0
         # Debug info
-        self.logger.debug(f'self.dataset_len={self.dataset_len}, self._counter={self._counter}, '
-                          f'self.step={self.step}, self.epoch={self.epoch}, self.epoch_inc={self.epoch_inc}')
+        # self.logger.debug(f'self.dataset_len={self.dataset_len}, self._counter={self._counter}, '
+        #                   f'self.step={self.step}, self.epoch={self.epoch}, self.epoch_inc={self.epoch_inc}')
 
     def load_gforward_state(self, state: dict):
         """
@@ -359,8 +369,8 @@ class GDriveModel(FilesystemModel):
     #
 
     def checkpoint_metrics_capture(self, checkpoint: bool, metrics: bool, delete_after: bool = False,
-                                   in_parallel: bool = False, show_progress: bool = False) \
-            -> List[ApplyResult or FilesystemFile or None]:
+                                   dataloader: Optional[ResumableDataLoader] = None, in_parallel: bool = False,
+                                   show_progress: bool = False) -> List[ApplyResult or FilesystemFile or None]:
         """
         Save locally and upload to Google Drive current model checkpoint and/or evaluation metrics.
         :param (bool) checkpoint: set to True to save & upload model checkpoint .pth (a.k.a. state dict)
@@ -368,7 +378,9 @@ class GDriveModel(FilesystemModel):
         :param (bool) delete_after: set to True to delete local file(s) after successful upload
         :param (bool) in_parallel: set to True to run the file(s) uploading in a separate thread
         :param (bool) show_progress: set to True to show progress while generating metrics & uploading local file(s)
-        :return:
+        :param (optional) dataloader: if set and implements `utils.ifaces.ResumableDataLoader`, then the current state
+                                      of the dataloader will also be saved in the model checkpoint
+        :return: a `list` of upload results, see `utils.ifaces.Filesystem::upload_local_file()`
         """
         # Get state dict
         state_dict = None
@@ -383,6 +395,10 @@ class GDriveModel(FilesystemModel):
                     '_counter': self._counter,
                     'epoch_inc': self.epoch_inc,
                 }
+                # Check for dataloader
+                if dataloader:
+                    assert isinstance(dataloader, ResumableDataLoader), 'dataloader must implement ResumableDataLoader'
+                    state_dict['dataloader'] = dataloader.get_state()
             else:
                 raise NotImplementedError('self.state_dict() is not defined')
         # Get evaluation metrics
@@ -418,6 +434,7 @@ class GDriveModel(FilesystemModel):
         for _f in chkpts_gfolder.files:
             if _f.name == chkpt_filename:
                 # Checkpoint file found!
+                self.logger.debug(f'Checkpoint file found. Downloading now at: {_f.path}')
                 return _f.download(in_parallel=in_parallel, show_progress=show_progress)
         # If reached here, no checkpoint files matching given step & batch size could be found
         raise FileNotFoundError(f'No checkpoint file could be found inside "{chkpts_gfolder.name}" matching ' +
@@ -590,6 +607,7 @@ class GDriveModel(FilesystemModel):
         return local_filepath if os.path.exists(local_filepath) and os.path.isfile(local_filepath) \
             else False
 
+    # noinspection DuplicatedCode
     def list_checkpoints(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
             -> List[GDriveFile or ColabFile or dict]:
         # Check & correct given args
@@ -603,6 +621,20 @@ class GDriveModel(FilesystemModel):
         return chkpt_files_list if not only_keys else \
             [dict((k, _f[k]) for k in only_keys) for _f in chkpt_files_list]
 
+    # noinspection DuplicatedCode
+    def list_metrics(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
+            -> List[GDriveFile or ColabFile or dict]:
+        # Check & correct given args
+        if epoch is None:
+            epoch = -1
+        # Get the correct GoogleDrive folder to list the metric files that are inside
+        if epoch not in self.metrics_epoch_gfolders.keys():
+            raise FileNotFoundError(f'epoch="{epoch}" not found in self.metrics_epoch_gfolders.keys()')
+        # Get metric files list and filter it if only_keys attribute is set
+        metric_files_list = self.metrics_epoch_gfolders[epoch].files
+        return metric_files_list if not only_keys else \
+            [dict((k, _f[k]) for k in only_keys) for _f in metric_files_list]
+
     def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) \
             -> Dict[int, List[GDriveFile or ColabFile or dict]]:
         _return_dict = {}
@@ -610,6 +642,15 @@ class GDriveModel(FilesystemModel):
             _epoch_chkpts_list = self.list_checkpoints(epoch=_epoch, only_keys=only_keys)
             if len(_epoch_chkpts_list) > 0:
                 _return_dict[_epoch] = _epoch_chkpts_list
+        return _return_dict
+    
+    def list_all_metrics(self, only_keys: Optional[Sequence[str]] = None) \
+            -> Dict[int, List[GDriveFile or ColabFile or dict]]:
+        _return_dict = {}
+        for _epoch in self.metrics_epoch_gfolders.keys():
+            _epoch_metrics_list = self.list_metrics(epoch=_epoch, only_keys=only_keys)
+            if len(_epoch_metrics_list) > 0:
+                _return_dict[_epoch] = _epoch_metrics_list
         return _return_dict
 
     def save_and_upload_checkpoint(self, state_dict: dict, epoch_or_id: Union[int, str], step: Optional[int] = None,
