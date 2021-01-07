@@ -2,6 +2,7 @@ import abc
 from multiprocessing.pool import ApplyResult
 from typing import Any, Union, List, Optional, Dict, Sequence
 
+from PIL.Image import Image
 from torch import Tensor
 
 
@@ -237,7 +238,8 @@ class FilesystemFolder(dict, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def upload_file(self, local_filename: str, delete_after: bool = False, in_parallel: bool = False,
-                    show_progress: bool = False, is_update: bool = False) -> Union[ApplyResult, Optional[FilesystemFile]]:
+                    show_progress: bool = False, is_update: bool = False) -> Union[
+        ApplyResult, Optional[FilesystemFile]]:
         """
         Upload a locally-saved file to cloud drive at pre-specified cloud folder described by :attr:`self.cloud_root`.
         :param (str) local_filename: the basename of the local file (should exist inside :attr:`self.local_root`)
@@ -395,14 +397,17 @@ class FilesystemModel(metaclass=abc.ABCMeta):
     #
 
     @abc.abstractmethod
-    def download_checkpoint(self, step: Union[int, str], batch_size: Optional[int] = None,
+    def download_checkpoint(self, epoch_or_id: Union[int, str], step: Optional[int] = None,
                             in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
         """
-        TODO fill documentation
-        :param step:
-        :param batch_size:
-        :param in_parallel:
-        :param show_progress:
+        Download model checkpoint at given epoch and step or with given id (e.g. for torchvision pretrained models)
+        :param (int or str) epoch_or_id: this is used to define the folder inside which the wanted checkpoint lives
+                                         or the checkpoint filename (without the extension) if is `str`
+        :param (optional) step: if no step is specified it will return the latest found checkpoint at the folder
+                                containing the model checkpoints of the given :attr:`epoch`. This is mutually exclusive
+                                with a `str` provided for :attr:`epoch_or_id`
+        :param (bool) in_parallel:
+        :param (bool) show_progress:
         :return:
         :raises FileNotFoundError: if no checkpoint file could be found matching the given :attr:`step` and
                                    :attr:`batch_size`
@@ -410,66 +415,78 @@ class FilesystemModel(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def fetch_checkpoint(self, step: Union[int, str], batch_size: Optional[int] = None) -> str or False:
+    def fetch_checkpoint(self, epoch_or_id: Union[int, str], step: Optional[int] = None) -> str or False:
         """
-        TODO
-        :param step:
-        :param batch_size:
-        :return:
-        :raises FileNotFoundError: if no checkpoint file could be found matching the given :attr:`step` and
-                                   :attr:`batch_size`
+        Checks if model checkpoint at given epoch and step or with given id has been downloaded else it downloads file
+        locally and returns the absolute filepath.
+        :param (int or str) epoch_or_id:
+        :param (optional) step:
+        :return: a `str` containing the fetched model checkpoint matching the given :attr:`epoch` and :attr:`step` or
+                 the given :attr:`id`; or `False` with corresponding messages if no match found
+        :raises FileNotFoundError: if no checkpoint file could be found matching the given :attr:`epoch_or_id` and
+                                   :attr:`step`
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def fetch_latest_checkpoint(self, batch_size: Optional[int] = None) -> str or False:
+    def fetch_latest_checkpoint(self, epoch: Optional[int] = None) -> str or False:
         """
-        TODO
-        :param batch_size:
+        Downloads the latest model checkpoint found inside the epoch folder named after "epoch=<:attr:`epoch`>".
+        :param (optional) epoch: if not set, then will fetch the latest model checkpoint from the folder with the
+                          highest epoch number (epoch folders should be named after "epoch=<epoch>" in storage)
         :return:
         :raises FileNotFoundError: if no checkpoint file could be found matching the given :attr:`batch_size`
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def is_checkpoint_fetched(self, step: Union[int, str], batch_size: Optional[int] = None) -> str or False:
+    def is_checkpoint_fetched(self, epoch_or_id: Union[int, str], step: Optional[int] = None) -> str or False:
         """
-        TODO fill documentation
-        :param step:
-        :param batch_size:
-        :return:
+        Checks if model checkpoint is fetched and, if so, it returns the absolute file path of the local file.
+        :param (int or str) epoch_or_id: see `utils.ifaces.FilesystemModel::fetch_checkpoint()`
+        :param (optional) step: see `utils.ifaces.FilesystemModel::fetch_checkpoint()`
+        :return: a `str` with the absolute local filepath if the model checkpoint has been downloaded, `False` otherwise
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list_checkpoints(self, batch_size: Optional[Sequence[str]] = None, only_keys: Optional[list] = None) \
+    def list_checkpoints(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
             -> List[FilesystemFile or dict]:
         """
-        TODO fill documentation
-        :param batch_size:
-        :param only_keys:
-        :return:
+        Lists all model checkpoints inside the epoch folder named after "epoch=<:attr:`epoch`>".
+        :param (optional) epoch: if not set, then will list the latest model checkpoint from the folder with the
+                          highest epoch number
+        :param (optional) only_keys: if set instead the entire file info dict for each found file, it will return just
+                                     the provided keys
+        :return: a `list` of `dict` objects if :attr:`only_keys` is set else a `list` of `utils.ifaces.FilesystemFile`
+                 objects of the found model checkpoints for given :attr:`epoch` otherwise
         :raises FileNotFoundError: if no checkpoint file could be found matching the given :attr:`batch_size`
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) -> Dict[int, List[FilesystemFile or dict]]:
+    def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) \
+            -> Dict[int, List[FilesystemFile or dict]]:
         """
-        TODO fill documentation
-        :param only_keys:
-        :return:
+        Lists all model checkpoints under "Checkpoints" folder as a {epoch: [epoch checkpoints]} dict.
+        :param (optional) only_keys: if set instead the entire file info dict for each found file, it will return just
+                                     the provided keys
+        :return: a `list` of `dict` objects if :attr:`only_keys` is set else a `list` of `utils.ifaces.FilesystemFile`
+                 objects of the found model checkpoints otherwise
         """
         raise NotImplementedError
 
-    def save_and_upload_checkpoint(self, state_dict: dict, step: Union[int, str], batch_size: Optional[int] = None,
-                                   delete_after: bool = False, in_parallel: bool = False, show_progress: bool = False) \
-            -> Union[ApplyResult, FilesystemFile or None]:
+    def save_and_upload_checkpoint(self, state_dict: dict, epoch_or_id: Union[int, str], step: Optional[int] = None,
+                                   metrics_dict: Optional[dict] = None, delete_after: bool = False,
+                                   in_parallel: bool = False, show_progress: bool = False) \
+            -> Union[List[ApplyResult], List[FilesystemFile or None]]:
         """
         Save the given :attr:`state_dict` locally and then upload the saved checkpoint to cloud for permanent storage.
         :param (dict) state_dict: the model state dict (e.g. the result of calling `model.state_dict()`)
-        :param (int or str) step: see `utils.ifaces.FilesystemModel::download_checkpoint`
-        :param (optional) batch_size: see `utils.ifaces.FilesystemModel::download_checkpoint`
+        :param (int or str) epoch_or_id: see `utils.ifaces.FilesystemModel::download_checkpoint()`
+        :param (int or str) step: see `utils.ifaces.FilesystemModel::download_checkpoint()`
+        :param (optional) metrics_dict: if provided will also save and upload a metrics (.json) file in the "Metrics"
+                                        folder
         :param (bool) delete_after: set to True to have the local file deleted after successful upload
         :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
                                    to caller
@@ -481,15 +498,15 @@ class FilesystemModel(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def upload_checkpoint(self, chkpt_filename: str, batch_size: Optional[int] = None, delete_after: bool = False,
+    def upload_checkpoint(self, chkpt_filename: str, epoch_or_id: Union[int, str], delete_after: bool = False,
                           in_parallel: bool = False, show_progress: bool = False, is_update: bool = False) \
-            -> Union[ApplyResult, FilesystemFile or None]:
+            -> ApplyResult or FilesystemFile or None:
         """
         Upload locally-saved model checkpoint to cloud storage for permanent storage.
         :param (str) chkpt_filename: file name (NOT absolute path) of the locally-saved checkpoint file.
                                      The filename MUST follow the following naming convention:
                                      "<model_name: str>_<step: int or str>_<batch_size: Optional[int]>"
-        :param (optional) batch_size: see `utils.ifaces.FilesystemModel::download_checkpoint`
+        :param (int or str) epoch_or_id: see `utils.ifaces.FilesystemModel::download_checkpoint()`
         :param (bool) delete_after: set to True to have the local file deleted after successful upload
         :param (bool) in_parallel: set to True to run upload function in a separate thread, thus returning immediately
                                    to caller
@@ -526,7 +543,7 @@ class FilesystemModel(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list_all_configurations(self, only_keys: Optional[Sequence] = None) -> List[FilesystemFile or dict]:
+    def list_configurations(self, only_keys: Optional[Sequence] = None) -> List[FilesystemFile or dict]:
         """TODO fill documentation"""
         raise NotImplementedError
 
@@ -612,5 +629,24 @@ class ResumableDataLoader(metaclass=abc.ABCMeta):
         """
         Set dataloader current state (e.g. current indices list and current index)
         :param (dict) state: a dict with same structure as the one returned by `ResumableDataLoader::get_state()`
+        """
+        raise NotImplementedError
+
+
+class Visualizable(metaclass=abc.ABCMeta):
+    @classmethod
+    def version(cls) -> str:
+        """
+        Get interface version
+        :return: a string with the current interface version (e.g. 1.0)
+        """
+        return '1.0'
+
+    @abc.abstractmethod
+    def visualize(self) -> Image:
+        """
+        Visualize latest model's forward pass by creating a `PIL.Image.Image` object with the model output and possible
+        its forward pass's inputs.
+        :return: a `PIL.Image.Image` object
         """
         raise NotImplementedError

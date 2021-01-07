@@ -38,7 +38,8 @@ class PixelDTDataset(Dataset, GDriveDataset):
     NormalizeMean = 0.5
     NormalizeStd = 0.5
 
-    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None):
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
+                 log_level: str = 'info'):
         """
         PixelDTDataset class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
@@ -46,6 +47,7 @@ class PixelDTDataset(Dataset, GDriveDataset):
         :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
         :raises FileNotFoundError: either when the dataset is not present in local filesystem or when the
                                    `items_dt_info.json` is not present inside dataset's (local) root
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         # Instantiate `torch.utils.data.Dataset` class
         Dataset.__init__(self)
@@ -55,7 +57,7 @@ class PixelDTDataset(Dataset, GDriveDataset):
         GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.zip')
         self.root = dataset_fs_folder.local_root
         # Initialize instance properties
-        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
+        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
         self.img_dir_path = f'{self.root}/Img'
         # Check that the dataset is present at the local filesystem
         if not self.is_fetched_and_unzipped():
@@ -159,7 +161,8 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
                  target_shape: Optional[int] = None, target_channels: Optional[int] = None,
                  norm_mean: Optional[float] = None, norm_std: Optional[float] = None, batch_size: int = 8,
-                 shuffle: bool = True, seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
+                 shuffle: bool = True, seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None,
+                 log_level: str = 'info'):
         """
         PixelDTDataloader class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
@@ -176,6 +179,7 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
         :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
                            explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
         :param splits: if not None performs training/testing sets split based on given :attr:`split` percentages
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
@@ -188,7 +192,8 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
             image_transforms = PixelDTDataset.get_image_transforms(target_shape, target_channels,
                                                                    norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = PixelDTDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, image_transforms=image_transforms)
+        _dataset = PixelDTDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root,
+                                  image_transforms=image_transforms, log_level=log_level)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set
@@ -211,13 +216,14 @@ class PixelDTScraper:
     This class is used to scrape LookBook dataset's images for the purpose of pixel-wise domain transfer (PixelDT).
     """
 
-    def __init__(self, root: str = '/data/Datasets/LookBook'):
+    def __init__(self, root: str = '/data/Datasets/LookBook', log_level: str = 'info'):
         """
         LookBookScraper class constructor.
-        :param root: LookBook dataset's root directory path
+        :param (str) root: LookBook dataset's root directory path
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         self.tqdm = get_tqdm()
-        self.logger = CommandLineLogger(log_level='debug')
+        self.logger = CommandLineLogger(log_level=log_level)
         self.initial_img_dir_path = f'{root}/ImgHQ'
         self.img_dir_path = f'{root}/Img'
 

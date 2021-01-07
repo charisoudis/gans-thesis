@@ -48,8 +48,8 @@ class FID(nn.Module):
     InceptionV3Cropped = None  # for feature embedding (e.g. for FID, Precision, Recall, F1)
     InceptionV3Classifier = None  # for classification (e.g. for IS)
 
-    def __init__(self, model_fs_folder_or_root: FilesystemFolder, device: str = 'cpu', n_samples: int = 512,
-                 batch_size: int = 8):
+    def __init__(self, model_fs_folder_or_root: FilesystemFolder, device: torch.device or str = 'cpu',
+                 n_samples: int = 512, batch_size: int = 8):
         """
         FID class constructor.
         :param (FilesystemFolder) model_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` instance for cloud or

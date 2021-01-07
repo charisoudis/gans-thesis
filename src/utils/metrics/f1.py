@@ -123,16 +123,16 @@ class F1(FID):
     the paper "Improved Precision and Recall Metric for Assessing Generative Models".
     """
 
-    def __init__(self, model_fs_folder_or_root: Union[FilesystemFolder, str], device: str = 'cpu',
+    def __init__(self, model_fs_folder_or_root: Union[FilesystemFolder, str], device: torch.device or str = 'cpu',
                  n_samples: int = 1024, batch_size: int = 8):
         """
         FID class constructor.
         :param (FilesystemFolder or str) model_fs_folder_or_root: absolute path to model checkpoints directory or
                                                                   FilesystemFolder instance for cloud-synced models
-        :param device: the device type on which to run the Inception model (defaults to 'cpu')
-        :param n_samples: the total number of samples used to compute the metric (defaults to 512; the higher this
+        :param (str) device: the device type on which to run the Inception model (defaults to 'cpu')
+        :param (int) n_samples: the total number of samples used to compute the metric (defaults to 512; the higher this
                           number gets, the more accurate the metric is)
-        :param batch_size: the number of samples to precess at each loop
+        :param (int) batch_size: the number of samples to precess at each loop
         """
         super(F1, self).__init__(model_fs_folder_or_root=model_fs_folder_or_root, device=device,
                                  n_samples=n_samples, batch_size=batch_size)

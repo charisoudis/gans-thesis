@@ -5,7 +5,7 @@ from typing import Optional, Union, Dict
 import torch
 from torch import nn
 # noinspection PyProtectedMember
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset
 
 from utils.ifaces import FilesystemFolder
 from utils.metrics.f1 import F1
@@ -21,8 +21,9 @@ class GanEvaluator(object):
     """
 
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, gen_dataset: Dataset, n_samples: int = 1e4,
-                 batch_size: int = 32, ssim_c_img: int = 3, device: str = 'cpu', target_index: Optional[int] = None,
-                 condition_indices: Optional[Union[int, tuple]] = None, z_dim: Optional[int] = None, f1_k: int = 3):
+                 batch_size: int = 32, ssim_c_img: int = 3, device: torch.device or str = 'cpu',
+                 target_index: Optional[int] = None, condition_indices: Optional[Union[int, tuple]] = None,
+                 z_dim: Optional[int] = None, f1_k: int = 3):
         """
         GanEvaluator class constructor.
         :param (FilesystemFolder) model_fs_folder_or_root: absolute path to model checkpoints directory or
@@ -43,6 +44,7 @@ class GanEvaluator(object):
                                                             with random noise.
         :param (int) f1_k: `k` param of precision/recall metric (default is 3)
         """
+        gen_dataset = gen_dataset.dataset if isinstance(gen_dataset, Subset) else gen_dataset
         if hasattr(gen_dataset, 'transforms'):
             self.gen_transforms = gen_dataset.transforms
         else:

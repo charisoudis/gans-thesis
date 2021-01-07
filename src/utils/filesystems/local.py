@@ -107,7 +107,7 @@ class LocalFolder(FilesystemFolder):
 
     def ensure_local_root_exists(self) -> None:
         if not os.path.exists(self.local_root) or not os.path.isdir(self.local_root):
-            self.fs.logger.warning(f'local_root={self.local_root}: NOT FOUND/NOT DIR. Creating dir now...')
+            self.fs.logger.debug(f'local_root={self.local_root}: NOT FOUND/NOT DIR. Creating dir now...')
             assert 0 == os.system(f'mkdir -p "{self.local_root}"')
 
     def download_file(self, filename_or_cfile: Union[str, LocalFile], in_parallel: bool = False,
@@ -290,7 +290,6 @@ class LocalFilesystem(Filesystem):
             return self.thread_pool.apply_async(func=self.upload_local_file_thread, args=(self,),
                                                 kwds={'local_filepath': local_filepath, 'cloud_folder': cloud_folder,
                                                       'delete_after': delete_after, 'show_progress': show_progress})
-        print(self.__class__.__name__)
         # Find model name from file path
         file_basename = os.path.basename(local_filepath)
         # Create a new pydrive.files.GoogleDriveFile instance that wraps GoogleDrive API File instance

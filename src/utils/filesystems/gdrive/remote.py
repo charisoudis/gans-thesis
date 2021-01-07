@@ -195,7 +195,8 @@ class GDriveFile(FilesystemFile):
 class GDriveFolder(FilesystemFolder):
     """
     GDriveFolder Class:
-    This class, implementing `FilesystemFolder` interface, is used to transfer files from/to respective Google Drive folder.
+    This class, implementing `utils.ifaces.FilesystemFolder` interface, is used to transfer files from/to the respective
+    Google Drive folder.
     """
 
     ExcludedGDriveRootFolders = ['Colab Notebooks']
@@ -280,7 +281,7 @@ class GDriveFolder(FilesystemFolder):
 
     def ensure_local_root_exists(self) -> None:
         if not os.path.exists(self.local_root) or not os.path.isdir(self.local_root):
-            self.fs.logger.warning(f'local_root={self.local_root}: NOT FOUND/NOT DIR. Creating dir now...')
+            self.fs.logger.debug(f'local_root={self.local_root}: NOT FOUND/NOT DIR. Creating dir now...')
             assert 0 == os.system(f'mkdir -p "{self.local_root}"')
 
     def download_file(self, filename_or_gfile: Union[str, GDriveFile], in_parallel: bool = False,

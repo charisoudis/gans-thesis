@@ -38,7 +38,7 @@ class InceptionV3(nn.Module, GDriveModel, Configurable):
 
         # Load checkpoint from Google Drive
         if chkpt_step:
-            chkpt_filepath = self.fetch_checkpoint(step=chkpt_step)
+            chkpt_filepath = self.fetch_checkpoint(epoch_or_id=chkpt_step, step=None)
             self.load_state_dict(torch.load(chkpt_filepath, map_location='cpu'))
 
         # Cutoff FC layer from Inception model when we do not want classification, but feature embedding

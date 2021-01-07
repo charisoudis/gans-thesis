@@ -23,8 +23,8 @@ class IS(FID):
     This class is used to compute the Inception Score (IS) between two given image sets.
     """
 
-    def __init__(self, model_fs_folder_or_root: Union[FilesystemFolder, str], device: str = 'cpu', n_samples: int = 512,
-                 batch_size: int = 8, ):
+    def __init__(self, model_fs_folder_or_root: Union[FilesystemFolder, str], device: torch.device or str = 'cpu',
+                 n_samples: int = 512, batch_size: int = 8, ):
         """
         IS class constructor.
         :param (FilesystemFolder or str) model_fs_folder_or_root: absolute path to model checkpoints directory or

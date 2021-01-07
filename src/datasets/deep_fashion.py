@@ -7,6 +7,7 @@ from typing import Optional, Tuple, Union
 
 import click
 import numpy as np
+import torch
 from IPython import get_ipython
 from PIL import Image, UnidentifiedImageError
 from torch import Tensor
@@ -42,13 +43,14 @@ class ICRBDataset(Dataset, GDriveDataset):
     NormalizeStd = 0.5
 
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
-                 hq: bool = False):
+                 hq: bool = False, log_level: str = 'info'):
         """
         ICRBDataset class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
                                                              dataset from local or remote (Google Drive) filesystem
-        :param image_transforms: a list of torchvision.transforms.* sequential image transforms
-        :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
+        :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param (bool) hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         # Instantiate `torch.utils.data.Dataset` class
         Dataset.__init__(self)
@@ -58,7 +60,7 @@ class ICRBDataset(Dataset, GDriveDataset):
         GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.zip')
         self.root = dataset_fs_folder.local_root
         # Initialize instance properties
-        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
+        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
         self.img_dir_path = f'{self.root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_info.json'
         # Load item info
@@ -164,12 +166,12 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
                  target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
                  norm_std: Optional[float] = None, batch_size: int = 8, hq: bool = False, shuffle: bool = True,
-                 seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None):
+                 seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None, log_level: str = 'info'):
         """
         ICRBDataloader class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
                                                              dataset from local or remote (Google Drive) filesystem
-        :param image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
         :param norm_mean: mean (same for all channels) or None to use dataset's default mean normalization parameter
@@ -178,10 +180,12 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
         :param batch_size: the number of images batch
         :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         :param shuffle: set to True to have sampler shuffle indices when reaches the end
-        :param seed: manual seed parameter of torch.Generator (used in dataset sampler)
-        :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
+        :param (int) seed: manual seed parameter of torch.Generator (used in dataset sampler)
+        :param (bool) pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is thoroughly
                            explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
-        :param splits: if not None performs training/testing sets split based on given :attr:`split` percentages
+        :param (optional) splits: if not None performs training/testing sets split based on given :attr:`split`
+                                  percentages
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
@@ -195,7 +199,7 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
                                                                 norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
         _dataset = ICRBDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, image_transforms=image_transforms,
-                               hq=hq)
+                               hq=hq, log_level=log_level)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
             self.test_set = _test_set
@@ -219,8 +223,12 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
     as to retrieve cross-pose/scale image pairs.
     """
 
+    Image1 = torch.zeros(3, 128, 128)
+    Image2 = torch.zeros(3, 128, 128)
+    Pose2 = torch.zeros(3, 128, 128)
+
     def __init__(self, dataset_fs_folder_or_root, image_transforms: Optional[transforms.Compose] = None,
-                 skip_pose_norm: bool = True, pose: bool = True, hq: bool = False):
+                 skip_pose_norm: bool = True, pose: bool = True, hq: bool = False, log_level: str = 'info'):
         """
         ICRBCrossPoseDataset class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
@@ -230,6 +238,7 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
         :param hq: set to True to process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
         :param pose: set to True to have __getitem__ return target pose image as well, otherwise __getitem__ will return
                      an image pair without target pose for the second image in pair
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         # Instantiate `torch.utils.data.Dataset` class
         Dataset.__init__(self)
@@ -239,7 +248,7 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
         GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.zip')
         self.root = dataset_fs_folder.local_root
         # Initialize instance properties
-        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
+        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
         self.img_dir_path = f'{self.root}/Img{"HQ" if hq else ""}'
         self.items_info_path = f'{self.img_dir_path}/items_posable_info.json'
         self.tqdm = get_tqdm()
@@ -305,6 +314,9 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
         :param index: integer with the current image index that we want to read from disk
         :return: a tuple containing the images from domain A and B, each as a torch.Tensor object
         """
+
+        return ICRBCrossPoseDataset.Image1, ICRBCrossPoseDataset.Image2, ICRBCrossPoseDataset.Pose2
+
         paths_tuple = self.index_to_paths(index)
         # Fetch images
         try:
@@ -344,7 +356,7 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
                  target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
                  norm_std: Optional[float] = None, skip_pose_norm: bool = True, batch_size: int = 8, hq: bool = False,
-                 shuffle: bool = True, pin_memory: bool = True, splits: Optional[list] = None):
+                 shuffle: bool = True, pin_memory: bool = True, splits: Optional[list] = None, log_level: str = 'info'):
         """
         ICRBCrossPoseDataloader class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
@@ -362,6 +374,7 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
         :param pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is more thoroughly
                            explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
         :param splits: if not None performs training/testing sets split based on given :attr:`split` percentages
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
@@ -374,7 +387,7 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
             image_transforms = ICRBDataset.get_image_transforms(target_shape, target_channels,
                                                                 norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance based on the transforms
-        _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, hq=hq,
+        _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, hq=hq, log_level=log_level,
                                         image_transforms=image_transforms, skip_pose_norm=skip_pose_norm, pose=True)
         if splits:
             _dataset, _test_set = train_test_split(_dataset, splits=splits)
@@ -423,17 +436,19 @@ class ICRBScraper:
         (all paths are relative from Img folder under passed $root$ directory)
     """
 
-    def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark', hq: bool = False):
+    def __init__(self, root: str = '/data/Datasets/DeepFashion/In-shop Clothes Retrieval Benchmark', hq: bool = False,
+                 log_level: str = 'info'):
         """
         ICRBScraper class constructor.
         :param root: DeepFashion benchmark's root directory path
-        :param hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
+        :param (bool) hq: if True will process HQ versions of benchmark images (that live inside the Img/ImgHQ folder)
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         self.tqdm = get_tqdm()
         # Test if running inside Colab
         if root.startswith('/data') and os.path.exists('/content'):
             root = f'/content/{root}'
-        self.logger = CommandLineLogger(log_level='info')
+        self.logger = CommandLineLogger(log_level=log_level)
         self.img_dir_path = f'{root}/Img{"HQ" if hq else ""}'
 
         self.item_dirs = []

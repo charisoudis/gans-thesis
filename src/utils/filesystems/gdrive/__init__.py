@@ -1,12 +1,14 @@
 __all__ = ['colab', 'remote', 'GDriveDataset', 'GDriveModel']
 
 import datetime
+import json
 import os
 from multiprocessing.pool import ApplyResult
 from typing import Union, Optional, List, Sequence, Dict
 
 import torch
 import yaml
+from PIL.Image import Image
 
 from utils.command_line_logger import CommandLineLogger
 from utils.filesystems.gdrive.colab import ColabFolder, ColabCapsule, ColabFilesystem, ColabFile
@@ -35,6 +37,9 @@ class GDriveDataset(FilesystemDataset):
         assert self.zip_gfile is not None, f'zip_filename={zip_filename} NOT FOUND in Google Drive folder root'
 
     def fetch_and_unzip(self, in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
+        if self.is_fetched_and_unzipped():
+            if hasattr(self, 'logger') and isinstance(self.logger, CommandLineLogger):
+                self.logger.debug('Dataset is fetched and unzipped!')
         return self.dataset_gfolder.download_file(self.zip_gfile, in_parallel=in_parallel,
                                                   show_progress=show_progress, unzip_after=True)
 
@@ -86,16 +91,40 @@ class GDriveModel(FilesystemModel):
     [root]  Models
             ├── model_name=<model_name: str>: checkpoints for model named after `model_name`
             │   ├── Checkpoints (each may contain metrics inside state dict at the "metrics" key)
-            │   │   ├── batch_size=<batch_size: int or None>
+            │   │   ├── epoch=<epoch: int>
             │   │   │   ├── <step: int or str>.pth
             │   │   │   ├──    ...
             │   │   │   └── <step>.pth
             │   │  ...
             │   │   │
-            │   │   └── batch_size=<another_batch_size>
+            │   │   └── epoch=<another_epoch>
             │   │       ├── <step>.pth
             │   │       ├──    ...
             │   │       └── <step>.pth
+            │   │
+            │   ├── Metrics
+            │   │   ├── epoch=<epoch: int>
+            │   │   │   ├── <step: int or str>.json
+            │   │   │   ├──    ...
+            │   │   │   └── <step>.json
+            │   │  ...
+            │   │   │
+            │   │   └── epoch=<another_epoch>
+            │   │       ├── <step>.json
+            │   │       ├──    ...
+            │   │       └── <step>.json
+            │   │
+            │   ├── Visualizations
+            │   │   ├── epoch=<epoch: int>
+            │   │   │   ├── <step: int or str>.jpg
+            │   │   │   ├──    ...
+            │   │   │   └── <step>.jpg
+            │   │  ...
+            │   │   │
+            │   │   └── epoch=<another_epoch>
+            │   │       ├── <step>.jpg
+            │   │       ├──    ...
+            │   │       └── <step>.jpg
             │   │
             │   └── Configurations
             │       ├── <config_id: int or str>.yaml
@@ -106,16 +135,29 @@ class GDriveModel(FilesystemModel):
             │
             └── model_name=<another_model_name>: checkpoints for model named after `another_model_name`
                     ├── Checkpoints (each may contain metrics inside state dict at the "metrics" key)
-                    │   ├── batch_size=<batch_size>
+                    │   ├── epoch=<epoch>
                     │   │   ├── <step>.pth
                     │   │   ├──    ...
                     │   │   └── <step>.pth
                     │  ...
                     │   │
-                    │   └── batch_size=<another_batch_size>
+                    │   └── epoch=<another_epoch>
                     │       ├── <step>.pth
                     │       ├──    ...
                     │       └── <step>.pth
+                    │
+                    ├── Metrics (each may contain metrics inside state dict at the "metrics" key)
+                    │   ├── epoch=<epoch>
+                    │   │   ├── <step>.json
+                    │   │   ├──    ...
+                    │   │   └── <step>.json
+                    │  ...
+                    │   │
+                    │   └── epoch=<another_epoch>
+                    │       ├── <step>.json
+                    │       ├──    ...
+                    │       └── <step>.json
+                    │
                    ...
                     │
                     └── Configurations
@@ -127,51 +169,87 @@ class GDriveModel(FilesystemModel):
     if a checkpoint at a given batch size/step combination is present in the local filesystem.
     """
 
-    def __init__(self, model_fs_folder: FilesystemFolder, model_name: Optional[str] = None):
+    def __init__(self, model_fs_folder: FilesystemFolder, model_name: Optional[str] = None,
+                 dataset_len: Optional[int] = None, log_level: str = 'info'):
         """
         GDriveModel class constructor.
         :param (FilesystemFolder) model_fs_folder: a `utils.gdrive.GDriveFolder` instance to interact with model folder
                                                    in local or remote (Google Drive) filesystem
         :param (str) model_name: the parent model name or `None` to auto-detect from folder name in Google Drive
+        :param (optional) dataset_len: number of images in the dataset used to train the generator or None to fetched
+                                       from the :attr:`evaluator` dataset property (used for epoch tracking)
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger
         """
-        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
+        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
         # Save args
         self.gfolder = model_fs_folder
         self.local_chkpts_root = model_fs_folder.local_root
         # Define extra properties
-        self.chkpts_gfolder = model_fs_folder.subfolder_by_name(folder_name='Checkpoints')
-        self.metrics_gfolder = model_fs_folder.subfolder_by_name(folder_name='Metrics')
+        self.chkpts_gfolder = model_fs_folder.subfolder_by_name_or_create(folder_name='Checkpoints')
+        self.metrics_gfolder = model_fs_folder.subfolder_by_name_or_create(folder_name='Metrics')
         self.configurations_gfolder = model_fs_folder.subfolder_by_name_or_create(folder_name='Configurations')
+        self.visualizations_gfolder = model_fs_folder.subfolder_by_name_or_create(folder_name='Visualizations')
         self.model_name = model_name if model_name else \
             model_fs_folder.local_root.split(sep='=', maxsplit=1)[-1]
 
         # -------------
         # Checkpoints
         # ------------
-        # Get all checkpoint folders (i.e. folders with names "batch_size=<batch_size>")
-        self.chkpts_batch_gfolders = {}
+        # Get all checkpoint folders (i.e. folders with names "epoch=<epoch>")
+        self.chkpts_epoch_gfolders = {}
         for _sf in self.chkpts_gfolder.subfolders:
-            if _sf.name.startswith('batch_size='):
-                self.chkpts_batch_gfolders[int(_sf.name.replace('batch_size=', ''))] = _sf
-        # No batch_size=* subfolders found: create a batch checkpoint folder with hypothetical batch_size=-1
-        self.chkpts_batch_gfolders[-1] = self.chkpts_gfolder
-        # Initialize internal state of step/batch size
-        self.step = None
-        self.batch_size = None
+            if _sf.name.startswith('epoch='):
+                self.chkpts_epoch_gfolders[int(_sf.name.replace('epoch=', ''))] = _sf
+        # No epoch=* subfolders found: create an epoch checkpoint folder with hypothetical epoch=-1
+        self.chkpts_epoch_gfolders[-1] = self.chkpts_gfolder
+
+        # ---------
+        # Metrics
+        # --------
+        # Get all metrics folders (i.e. folders with names "epoch=<epoch>" under "Metrics" folder)
+        self.metrics_epoch_gfolders = {}
+        for _sf in self.metrics_gfolder.subfolders:
+            if _sf.name.startswith('epoch='):
+                self.metrics_epoch_gfolders[int(_sf.name.replace('epoch=', ''))] = _sf
+        # No epoch=* subfolders found: create an epoch metrics folder with hypothetical epoch=-1
+        self.metrics_epoch_gfolders[-1] = self.metrics_gfolder
+        self.latest_metrics = None
+        self.latest_checkpoint_had_metrics = None
+
+        # ----------------
+        # Visualizations
+        # ---------------
+        # Get all visualizations folders (i.e. folders with names "epoch=<epoch>" under "Visualizations" folder)
+        self.visualizations_epoch_gfolders = {}
+        for _sf in self.visualizations_gfolder.subfolders:
+            if _sf.name.startswith('epoch='):
+                self.visualizations_epoch_gfolders[int(_sf.name.replace('epoch=', ''))] = _sf
+        # No epoch=* subfolders found: create an epoch visualizations folder with hypothetical epoch=-1
+        self.visualizations_epoch_gfolders[-1] = self.visualizations_gfolder
 
         # ----------------
         # Configurations
         # ---------------
         self.configurations = None
 
-    def gcapture(self, checkpoint: bool = True, metrics: bool = True, configuration: bool = False,
-                 in_parallel: bool = True, show_progress: bool = False, delete_after: bool = False) \
-            -> Union[List[ApplyResult], List[FilesystemFile or None]]:
+        # Initialize internal state of step/batch size
+        self.step = None
+        self.initial_step = 0
+        self.epoch = 0
+        self._counter = 0
+        self.epoch_inc = False
+        self.dataset_len = dataset_len
+
+    def gcapture(self, checkpoint: bool = True, metrics: bool = True, visualizations: bool = True,
+                 configuration: bool = False, in_parallel: bool = True, show_progress: bool = False,
+                 delete_after: bool = False) -> Union[List[ApplyResult], List[FilesystemFile or None]]:
         """
         Capture the inherited module's current state, save locally and then upload to Google Drive.
         :param (bool) checkpoint: set to True to capture/upload current model state dict & create a new checkpoint in
                                   Google Drive
         :param (bool) metrics: set to True to capture/upload current model metrics Google to Drive
+        :param (bool) visualizations: set to True to capture/upload images of latest model's forward pass to Google
+                                      Drive
         :param (bool) configuration: set to True to capture/upload current model configuration to Google Drive
         :param (bool) show_progress: set to True to have the capturing/uploading progress displayed in stdout using the
                                      `tqdm` lib
@@ -181,29 +259,16 @@ class GDriveModel(FilesystemModel):
         :return: a `multiprocessing.pool.ApplyResult` object is :attr:`in_parallel` was set else an
                  `utils.gdrive.GDriveFile` object if upload completed successfully, `False` with corresponding messages
                  otherwise
-        :raises AssertionError: if either `self.step` or `self.batch_size` is `None`
+        :raises AssertionError: if either `self.step` or `self.epoch` is `None`
         """
         assert not (checkpoint is False and metrics is False and configuration is False)
-        _returns = []
+        _results = []
         # Save model checkpoint
-        if checkpoint:
-            # Get state dict
-            if hasattr(self, 'state_dict') and callable(getattr(self, 'state_dict')):
-                state_dict = self.state_dict()
-            else:
-                raise NotImplementedError('self.state_dict() is not defined')
-            # Save model metrics in checkpoint
-            if metrics:
-                if hasattr(self, 'evaluate') and callable(getattr(self, 'evaluate')):
-                    metrics_dict = self.evaluate(show_progress=show_progress)
-                    state_dict['metrics'] = metrics_dict
-                else:
-                    raise NotImplementedError('self.evaluate() is not defined')
+        if checkpoint or metrics:
             # Save locally and upload
-            assert self.step is not None and self.batch_size is not None, 'No forward pass has been performed'
-            _returns.append(self.save_and_upload_checkpoint(state_dict=state_dict, step=self.step,
-                                                            batch_size=self.batch_size, delete_after=delete_after,
-                                                            in_parallel=in_parallel, show_progress=show_progress))
+            assert self.step is not None and self.epoch is not None, 'No forward pass has been performed'
+            _results += self.checkpoint_metrics_capture(checkpoint=checkpoint, metrics=metrics, in_parallel=in_parallel,
+                                                        delete_after=delete_after, show_progress=show_progress)
         # Save model configuration
         if configuration:
             # Extract current model configuration
@@ -214,157 +279,385 @@ class GDriveModel(FilesystemModel):
                                           ' configuration')
             # Save the extracted configuration and upload to Google Drive
             config_id = self.config_id if hasattr(self, 'config_id') else None
-            _returns.append(self.save_and_upload_configuration(configuration=configuration, config_id=config_id,
+            _results.append(self.save_and_upload_configuration(configuration=configuration, config_id=config_id,
                                                                delete_after=delete_after, in_parallel=in_parallel,
-                                                               show_progress=not in_parallel))
-        return _returns
+                                                               show_progress=show_progress))
+        # Save model visualizations
+        if visualizations:
+            # We need at least one forward pass
+            assert self.step is not None and self.epoch is not None, 'No forward pass has been performed'
+            # Extract current model visualization
+            if hasattr(self, 'visualize') and callable(getattr(self, 'visualize')):
+                visualization_img = self.visualize()
+                if not isinstance(visualization_img, Image):
+                    raise AssertionError('visualization_img must be a PIL.Image.Image object')
+            else:
+                raise NotImplementedError('self must implement utils.ifaces.Visualizable to capture its latest'
+                                          ' visualization')
+            # Get current epoch and step
+            epoch_or_id = self.epoch
+            epoch = epoch_or_id if type(epoch_or_id) == int else -1
+            # Get new visualizations file name
+            new_visualizations_path = self._get_visualizations_filepath(epoch_or_id=epoch_or_id, step=self.step)
+            is_update = os.path.exists(new_visualizations_path)
+            # Save visualization locally
+            visualization_img.save(new_visualizations_path)
+            # Upload new visualization file to Google Drive
+            #   - ensure visualizations folder exists locally & in Google Drive
+            self.ensure_visualizations_gfolder_exists(epoch=epoch)
+            #   - upload local file to Google Drive
+            upload_gfolder = self.visualizations_epoch_gfolders[epoch]
+            _results.append(upload_gfolder.upload_file(local_filename=os.path.basename(new_visualizations_path),
+                                                       delete_after=delete_after, in_parallel=in_parallel,
+                                                       show_progress=show_progress, is_update=is_update))
+        return _results
+
+    def gforward(self, batch_size: int = None) -> None:
+        """
+        Function to be triggered on inherited model's forward pass to set step and epoch internally.
+        :param (optional) batch_size: the current batch size (to update internal samples counter and therefore keep
+                                      track of the current epoch and step)
+        """
+        if self.dataset_len is None:
+            raise AttributeError('self.dataset_len is None: need to re-implement some methods to allow this...')
+        # Update current step (ever-growing counter)
+        self.step = self.step + 1 if self.step else 1
+        self.initial_step += 1
+        # Update current epoch
+        if self.epoch_inc:
+            self.epoch = self.epoch + 1
+            self._counter = 0
+            self.epoch_inc = False
+        # Update number of samples seen
+        self._counter += batch_size
+        # Check if enc of epoch reached
+        if self._counter == self.dataset_len:
+            self.epoch_inc = True
+            self.initial_step = 0
+        # Debug info
+        self.logger.debug(f'self.dataset_len={self.dataset_len}, self._counter={self._counter}, '
+                          f'self.step={self.step}, self.epoch={self.epoch}, self.epoch_inc={self.epoch_inc}')
+
+    def load_gforward_state(self, state: dict):
+        """
+        Loads running statistics (e.g. counters) from the model checkpoint.
+        :param (dict) state: a `dict` object containing the keys corresponding to instance properties used by gforward()
+        """
+        self.step = state['step']
+        self.initial_step = state['initial_step']
+        self.epoch = state['epoch']
+        self.epoch_inc = state['epoch_inc']
+        self._counter = state['_counter']
+        self.logger.debug(f'Loading gforward state: {str(state)}')
 
     #
-    # ------------------------------------
-    #  Model Checkpoints
-    # ---------------------------------
+    # ------------------------------
+    #  Model Checkpoints & Metrics
+    # -----------------------------
     #
     # Below, are the methods to capture, save, upload and download model checkpoints to cloud storage.
     #
 
-    def gforward(self, batch_size: Optional[int] = None) -> None:
+    def checkpoint_metrics_capture(self, checkpoint: bool, metrics: bool, delete_after: bool = False,
+                                   in_parallel: bool = False, show_progress: bool = False) \
+            -> List[ApplyResult or FilesystemFile or None]:
         """
-        Function to be triggered on inherited model's forward pass to set step and batch_size internally.
-        :param (optional) batch_size: if `self.batch_size` is `None`, then this will be used to initialize it
+        Save locally and upload to Google Drive current model checkpoint and/or evaluation metrics.
+        :param (bool) checkpoint: set to True to save & upload model checkpoint .pth (a.k.a. state dict)
+        :param (bool) metrics: set to True to save & upload model metrics .json file
+        :param (bool) delete_after: set to True to delete local file(s) after successful upload
+        :param (bool) in_parallel: set to True to run the file(s) uploading in a separate thread
+        :param (bool) show_progress: set to True to show progress while generating metrics & uploading local file(s)
+        :return:
         """
-        self.step = 1 if not self.step else \
-            self.step + 1
-        if not self.batch_size:
-            self.batch_size = batch_size
+        # Get state dict
+        state_dict = None
+        metrics_dict = None
+        if checkpoint:
+            if hasattr(self, 'state_dict') and callable(getattr(self, 'state_dict')):
+                state_dict = self.state_dict()
+                state_dict['gforward'] = {
+                    'step': self.step,
+                    'initial_step': self.initial_step,
+                    'epoch': self.epoch,
+                    '_counter': self._counter,
+                    'epoch_inc': self.epoch_inc,
+                }
+            else:
+                raise NotImplementedError('self.state_dict() is not defined')
+        # Get evaluation metrics
+        if metrics:
+            if hasattr(self, 'evaluate') and callable(getattr(self, 'evaluate')):
+                metrics_dict = self.evaluate(show_progress=show_progress)
+                # Save model metrics in checkpoint
+                if state_dict:
+                    state_dict['metrics'] = metrics_dict
+                # Save model metrics in instance
+                self.latest_metrics = metrics_dict
+                self.latest_checkpoint_had_metrics = True
+            else:
+                raise NotImplementedError('self.evaluate() is not defined')
+        else:
+            self.latest_checkpoint_had_metrics = False
+        return self.save_and_upload_checkpoint(state_dict=state_dict, metrics_dict=metrics_dict, epoch_or_id=self.epoch,
+                                               step=self.step, delete_after=delete_after, in_parallel=in_parallel,
+                                               show_progress=show_progress)
 
-    def download_checkpoint(self, step: Union[int, str], batch_size: Optional[int] = None,
-                            in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
-        # Check & correct given args
-        if batch_size is None:
-            batch_size = -1
-        step_str = step if isinstance(step, str) else str(step).zfill(10)
+    def download_checkpoint(self, epoch_or_id: Union[int, str], step: Optional[int] = None, in_parallel: bool = False,
+                            show_progress: bool = False) -> Union[ApplyResult, bool]:
+        # Get correct epoch & step
+        epoch = epoch_or_id if type(epoch_or_id) == int else -1
         # Ensure folder exists locally & in Google Drive
-        self.ensure_chkpts_gfolder_exists(batch_size=batch_size)
+        self.ensure_chkpts_gfolder_exists(epoch=epoch)
         # Get the correct GoogleDrive folder to search for checkpoint files
-        chkpts_gfolder = self.chkpts_batch_gfolders[batch_size]
+        chkpts_gfolder = self.chkpts_epoch_gfolders[epoch]
 
         # Search for the checkpoint in the list with all model checkpoints inside checkpoints folder for given batch
-        chkpt_filename = f'{step_str}.pth'
+        chkpt_filepath = self._get_checkpoint_filepath(epoch_or_id=epoch_or_id, step=step)
+        chkpt_filename = os.path.basename(chkpt_filepath)
         for _f in chkpts_gfolder.files:
             if _f.name == chkpt_filename:
                 # Checkpoint file found!
                 return _f.download(in_parallel=in_parallel, show_progress=show_progress)
         # If reached here, no checkpoint files matching given step & batch size could be found
         raise FileNotFoundError(f'No checkpoint file could be found inside "{chkpts_gfolder.name}" matching ' +
-                                f'step="{step_str}"' + '' if batch_size == -1 else f' and batch_size="{batch_size}"')
+                                f'epoch="{epoch}" and step={step if type(epoch_or_id) is int else epoch_or_id}')
 
-    def ensure_chkpts_gfolder_exists(self, batch_size: Optional[int] = None) -> None:
+    def ensure_chkpts_gfolder_exists(self, epoch: Optional[int] = None) -> None:
         """
         Checks if folder for given batch size exists locally as well as in Google Drive
-        :param (int or None) batch_size: the folder should be named "batch_size=<batch_size>"; this is where this
-                                         parameter is used
+        :param (int or None) epoch: the folder should be named "epoch=<epoch>"; this is where this parameter is used.
+                                    if :attr:`epoch` is `None`, then the root Checkpoints folder is considered
         """
-        # Convert "batch_size=None" folder name to batch_size = -1, since None cannot be a valid dict key
-        if batch_size is None:
-            batch_size = -1
-        # Check instance for folder of given batch_size
-        if batch_size not in self.chkpts_batch_gfolders.keys():
+        # Convert "epoch=None" folder name to epoch = -1 (thus targeting root checkpoints folder), since None cannot
+        # be a valid dict key
+        if epoch is None:
+            epoch = -1
+        # Check instance for folder of given epoch
+        if epoch not in self.chkpts_epoch_gfolders.keys():
             # Folder for given batch size does not exist, create a new folder now and save in instance's dict
             # This will also create folder locally
-            self.chkpts_batch_gfolders[batch_size] = \
-                self.chkpts_gfolder.create_subfolder(folder_name=f'batch_size={str(batch_size)}',
-                                                     force_create_local=True)
+            self.chkpts_epoch_gfolders[epoch] = self.chkpts_gfolder.create_subfolder(folder_name=f'epoch={epoch}',
+                                                                                     force_create_local=True)
 
-    def fetch_checkpoint(self, step: Union[int, str], batch_size: Optional[int] = None) -> str or False:
-        if 'latest' == step:
-            return self.fetch_latest_checkpoint(batch_size=batch_size)
+    def ensure_metrics_gfolder_exists(self, epoch: Optional[int] = None) -> None:
+        """
+        Checks if metrics folder for given batch size exists locally as well as in Google Drive.
+        :param (int or None) epoch: the folder should be named "epoch=<epoch>"; this is where this parameter is used.
+                                    if :attr:`epoch` is `None`, then the root Checkpoints folder is considered
+        """
+        # Convert "epoch=None" folder name to epoch = -1 (thus targeting root checkpoints folder), since None cannot
+        # be a valid dict key
+        if epoch is None:
+            epoch = -1
+        # Check instance for folder of given epoch
+        if epoch not in self.metrics_epoch_gfolders.keys():
+            # Folder for given batch size does not exist, create a new folder now and save in instance's dict
+            # This will also create folder locally
+            self.metrics_epoch_gfolders[epoch] = \
+                self.metrics_gfolder.create_subfolder(folder_name=f'epoch={epoch}', force_create_local=True)
+
+    def ensure_visualizations_gfolder_exists(self, epoch: Optional[int] = None) -> None:
+        """
+        Checks if visualizations folder for given batch size exists locally as well as in Google Drive.
+        :param (int or None) epoch: the folder should be named "epoch=<epoch>"; this is where this parameter is used.
+                                    if :attr:`epoch` is `None`, then the root Checkpoints folder is considered
+        """
+        # Convert "epoch=None" folder name to epoch = -1 (thus targeting root checkpoints folder), since None cannot
+        # be a valid dict key
+        if epoch is None:
+            epoch = -1
+        # Check instance for folder of given epoch
+        if epoch not in self.visualizations_epoch_gfolders.keys():
+            # Folder for given batch size does not exist, create a new folder now and save in instance's dict
+            # This will also create folder locally
+            self.visualizations_epoch_gfolders[epoch] = \
+                self.visualizations_gfolder.create_subfolder(folder_name=f'epoch={epoch}', force_create_local=True)
+
+    def fetch_checkpoint(self, epoch_or_id: Union[int, str], step: Optional[int] = None) -> str or False:
+        # Check if latest checkpoint is requested
+        if 'latest' == epoch_or_id:
+            return self.fetch_latest_checkpoint(epoch=None)
         # Check if checkpoint file exists in local filesystem
-        local_filepath = self.is_checkpoint_fetched(step=step, batch_size=batch_size)
+        local_filepath = self.is_checkpoint_fetched(epoch_or_id=epoch_or_id, step=step)
         if local_filepath:
             return local_filepath
         # Download checkpoint file from Google Drive
-        if self.download_checkpoint(step=step, batch_size=batch_size, in_parallel=False, show_progress=True):
-            return self.is_checkpoint_fetched(step=step, batch_size=batch_size)
+        if self.download_checkpoint(epoch_or_id=epoch_or_id, step=step, in_parallel=False, show_progress=True):
+            if not self.is_checkpoint_fetched(epoch_or_id=epoch_or_id, step=step):
+                return False
+            # Update internal state
+            if type(epoch_or_id) is int:
+                self.epoch = epoch_or_id
+            if step and type(step) is int:
+                self.step = step
         # If reaches here, file could not be downloaded, probably due to an unidentified error
         raise ValueError('self.download_checkpoint returned False')
 
-    def fetch_latest_checkpoint(self, batch_size: Optional[int] = None) -> str or False:
-        chkpts = self.list_checkpoints(batch_size=batch_size, only_keys=('title',))
+    def fetch_latest_checkpoint(self, epoch: Optional[int] = None) -> str or False:
+        # Format args
+        if epoch is None:
+            epoch = sorted(self.chkpts_epoch_gfolders.keys(), reverse=True)[0]
+        epoch = -1 if epoch is None else epoch
+        # Get all checkpoint files under given epoch folder
+        chkpts = self.list_checkpoints(epoch=epoch, only_keys=('title',))
         if len(chkpts) == 0:
-            raise FileNotFoundError(f'No latest checkpoint file could be found matching batch_size="{batch_size}"')
+            raise FileNotFoundError(f'No checkpoint files could be found matching epoch="{epoch}"')
+        # Sort filenames in descending order
         chkpts = sorted(chkpts, key=lambda _d: _d['title'], reverse=True)
+        # Take the first and download it locally
         latest_step = chkpts[0]['title'].replace('.pth', '')
-        return self.fetch_checkpoint(step=int(latest_step) if latest_step.isdigit() else latest_step,
-                                     batch_size=batch_size)
+        step = int(latest_step) if epoch != -1 and latest_step.isdigit() else None
+        return self.fetch_checkpoint(epoch_or_id=latest_step if epoch == -1 else epoch, step=step)
 
-    def _get_checkpoint_filepath(self, step: Union[int, str], batch_size: Optional[int] = None):
+    def _get_checkpoint_filepath(self, epoch_or_id: Union[int or str] = None, step: Optional[int] = None) -> str:
         """
-        Get the absolute path to the local checkpoint file at given :attr:`step` and :attr:`batch_size`.
-        :param step: TODO
-        :param batch_size:
+        Get the absolute path to the local checkpoint file at given :attr:`epoch` and :attr:`step` or whose filename is
+        ":attr:`id`.pth".
+        :param (int or str) epoch_or_id: see `utils.ifaces.FilesystemModel::download_checkpoint()`
+        :param (int or str) step: see `utils.ifaces.FilesystemModel::download_checkpoint()`
         :return:
         """
         # Check & correct given args
-        if batch_size is None:
-            batch_size = -1
-        step_str = step if isinstance(step, str) else str(step).zfill(10)
+        if type(epoch_or_id) == str:
+            epoch = -1
+            assert step is None, f'provided checkpoint id (epoch_or_id={epoch_or_id}) is mutually exclusive with ' + \
+                                 f'step attribute (step={step})'
+            chkpt_id = epoch_or_id
+        else:
+            epoch = epoch_or_id
+            assert step is not None, f'provided epoch number (epoch_or_id={epoch}) but step=None. No way to find file'
+            chkpt_id = str(step).zfill(10)
         # Find containing folder
-        if batch_size not in self.chkpts_batch_gfolders.keys():
-            self.ensure_chkpts_gfolder_exists(batch_size=batch_size)
-        chkpts_gfolder = self.chkpts_batch_gfolders[batch_size]
+        self.ensure_chkpts_gfolder_exists(epoch=epoch)
+        chkpts_gfolder = self.chkpts_epoch_gfolders[epoch]
         chkpts_gfolder.ensure_local_root_exists()
         # Format and return
-        return f'{chkpts_gfolder.local_root}/{step_str}.pth'
+        return f'{chkpts_gfolder.local_root}/{chkpt_id}.pth'
 
-    def is_checkpoint_fetched(self, step: Union[int, str], batch_size: Optional[int] = None) -> str or False:
-        local_filepath = self._get_checkpoint_filepath(step=step, batch_size=batch_size)
+    def _get_metrics_filepath(self, epoch_or_id: Union[int or str] = None, step: Optional[int] = None) -> str:
+        """
+        Get the absolute path to the local metrics file at given :attr:`epoch` and :attr:`step` or whose filename is
+        ":attr:`id`.json".
+        :param (int or str) epoch_or_id: see `utils.ifaces.FilesystemModel::download_checkpoint()`
+        :param (int or str) step: see `utils.ifaces.FilesystemModel::download_checkpoint()`
+        :return:
+        """
+        # Check & correct given args
+        if type(epoch_or_id) == str:
+            epoch = -1
+            assert step is None, f'provided metrics id (epoch_or_id={epoch_or_id}) is mutually exclusive with ' + \
+                                 f'step attribute (step={step})'
+            chkpt_id = epoch_or_id
+        else:
+            epoch = epoch_or_id
+            assert step is not None, f'provided epoch number (epoch_or_id={epoch}) but step=None. No way to find file'
+            chkpt_id = str(step).zfill(10)
+        # Find containing folder
+        self.ensure_metrics_gfolder_exists(epoch=epoch)
+        metrics_gfolder = self.metrics_epoch_gfolders[epoch]
+        metrics_gfolder.ensure_local_root_exists()
+        # Format and return
+        return f'{metrics_gfolder.local_root}/{chkpt_id}.json'
+
+    def _get_visualizations_filepath(self, epoch_or_id: Union[int or str] = None, step: Optional[int] = None) -> str:
+        """
+        Get the absolute path to the local visualizations file at given :attr:`epoch` and :attr:`step` or whose filename
+        is ":attr:`id`.jpg".
+        :param (int or str) epoch_or_id: see `utils.ifaces.FilesystemModel::download_checkpoint()`
+        :param (int or str) step: see `utils.ifaces.FilesystemModel::download_checkpoint()`
+        :return: absolute file path as a `str object`
+        """
+        # Check & correct given args
+        if type(epoch_or_id) == str:
+            epoch = -1
+            assert step is None, f'provided visualizations id (epoch_or_id={epoch_or_id}) is mutually exclusive ' + \
+                                 f'with step attribute (step={step})'
+            chkpt_id = epoch_or_id
+        else:
+            epoch = epoch_or_id
+            assert step is not None, f'provided epoch number (epoch_or_id={epoch}) but step=None. No way to find file'
+            chkpt_id = str(step).zfill(10)
+        # Find containing folder
+        self.ensure_visualizations_gfolder_exists(epoch=epoch)
+        visualizations_gfolder = self.visualizations_epoch_gfolders[epoch]
+        visualizations_gfolder.ensure_local_root_exists()
+        # Format and return
+        return f'{visualizations_gfolder.local_root}/{chkpt_id}.jpg'
+
+    def is_checkpoint_fetched(self, epoch_or_id: Union[int, str], step: Optional[int] = None) -> str or False:
+        local_filepath = self._get_checkpoint_filepath(epoch_or_id=epoch_or_id, step=step)
         return local_filepath if os.path.exists(local_filepath) and os.path.isfile(local_filepath) \
             else False
 
-    def list_checkpoints(self, batch_size: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
+    def list_checkpoints(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
             -> List[GDriveFile or ColabFile or dict]:
         # Check & correct given args
-        if batch_size is None:
-            batch_size = -1
+        if epoch is None:
+            epoch = -1
         # Get the correct GoogleDrive folder to list the checkpoint files that are inside
-        if batch_size not in self.chkpts_batch_gfolders.keys():
-            raise FileNotFoundError(f'batch_size="{batch_size}" not found in self.chkpts_batch_gfolders.keys()')
+        if epoch not in self.chkpts_epoch_gfolders.keys():
+            raise FileNotFoundError(f'epoch="{epoch}" not found in self.chkpts_epoch_gfolders.keys()')
         # Get checkpoint files list and filter it if only_keys attribute is set
-        chkpt_files_list = self.chkpts_batch_gfolders[batch_size].files
+        chkpt_files_list = self.chkpts_epoch_gfolders[epoch].files
         return chkpt_files_list if not only_keys else \
             [dict((k, _f[k]) for k in only_keys) for _f in chkpt_files_list]
 
     def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) \
             -> Dict[int, List[GDriveFile or ColabFile or dict]]:
         _return_dict = {}
-        for batch_size in self.chkpts_batch_gfolders.keys():
-            batch_chkpts_list = self.list_checkpoints(batch_size=batch_size, only_keys=only_keys)
-            if len(batch_chkpts_list) > 0:
-                _return_dict[batch_size] = batch_chkpts_list
+        for _epoch in self.chkpts_epoch_gfolders.keys():
+            _epoch_chkpts_list = self.list_checkpoints(epoch=_epoch, only_keys=only_keys)
+            if len(_epoch_chkpts_list) > 0:
+                _return_dict[_epoch] = _epoch_chkpts_list
         return _return_dict
 
-    def save_and_upload_checkpoint(self, state_dict: dict, step: Union[int, str], batch_size: Optional[int] = None,
-                                   delete_after: bool = False, in_parallel: bool = False,
-                                   show_progress: bool = False) -> Union[ApplyResult, GDriveFile or ColabFile or None]:
-        # Get new checkpoint file name
-        new_chkpt_path = self._get_checkpoint_filepath(step=step, batch_size=batch_size)
-        is_update = os.path.exists(new_chkpt_path)
-        # Save state_dict locally
-        torch.save(state_dict, new_chkpt_path)
-        # Upload new checkpoint file to Google Drive
-        return self.upload_checkpoint(chkpt_filename=new_chkpt_path, batch_size=batch_size, delete_after=delete_after,
-                                      in_parallel=in_parallel, show_progress=show_progress, is_update=is_update)
+    def save_and_upload_checkpoint(self, state_dict: dict, epoch_or_id: Union[int, str], step: Optional[int] = None,
+                                   metrics_dict: Optional[dict] = None, delete_after: bool = False,
+                                   in_parallel: bool = False, show_progress: bool = False) \
+            -> Union[List[ApplyResult], List[FilesystemFile or None]]:
+        _results = []
+        # Get correct epoch number or -1 if no epoch info is saved
+        epoch = epoch_or_id if type(epoch_or_id) == int else -1
+        # Upload state dict in Google Drive (under "Checkpoints" folder)
+        if state_dict:
+            # Get new checkpoint file name
+            new_chkpt_path = self._get_checkpoint_filepath(epoch_or_id=epoch_or_id, step=step)
+            is_update = os.path.exists(new_chkpt_path)
+            # Save state_dict locally
+            torch.save(state_dict, new_chkpt_path)
+            # Upload new checkpoint file to Google Drive
+            _results.append(self.upload_checkpoint(chkpt_filename=new_chkpt_path, epoch=epoch,
+                                                   delete_after=delete_after, in_parallel=in_parallel,
+                                                   show_progress=show_progress, is_update=is_update))
+        # Upload metrics dict in Google Drive (under "Metrics" folder)
+        if metrics_dict:
+            # Get new metrics file name
+            new_metrics_path = self._get_metrics_filepath(epoch_or_id=epoch_or_id, step=step)
+            is_update = os.path.exists(new_metrics_path)
+            # Save metrics_dict locally
+            with open(new_metrics_path, 'w') as json_fp:
+                json.dump(metrics_dict, json_fp, indent=4)
+            # Upload new metrics file to Google Drive
+            #   - ensure metrics folder exists locally & in Google Drive
+            self.ensure_metrics_gfolder_exists(epoch=epoch)
+            #   - upload local file to Google Drive
+            upload_gfolder = self.metrics_epoch_gfolders[epoch]
+            _results.append(upload_gfolder.upload_file(local_filename=os.path.basename(new_metrics_path),
+                                                       delete_after=delete_after, in_parallel=in_parallel,
+                                                       show_progress=show_progress, is_update=is_update))
+        return _results
 
-    def upload_checkpoint(self, chkpt_filename: str, batch_size: Optional[int] = None, delete_after: bool = False,
+    def upload_checkpoint(self, chkpt_filename: str, epoch: Optional[int] = None, delete_after: bool = False,
                           in_parallel: bool = False, show_progress: bool = False, is_update: bool = False) \
-            -> Union[ApplyResult, GDriveFile or ColabFile or None]:
+            -> Union[ApplyResult, FilesystemFile, None]:
         # Check if needed to create the folder in Google Drive before uploading
-        if batch_size is None:
-            batch_size = -1
+        if epoch is None:
+            epoch = -1
         # Ensure folder exists locally & in Google Drive
-        self.ensure_chkpts_gfolder_exists(batch_size=batch_size)
+        self.ensure_chkpts_gfolder_exists(epoch=epoch)
         # Upload local file to Google Drive
-        upload_gfolder = self.chkpts_batch_gfolders[batch_size]
+        upload_gfolder = self.chkpts_epoch_gfolders[epoch]
         return upload_gfolder.upload_file(local_filename=os.path.basename(chkpt_filename), delete_after=delete_after,
                                           in_parallel=in_parallel, show_progress=show_progress, is_update=is_update)
 
@@ -403,20 +696,21 @@ class GDriveModel(FilesystemModel):
     def is_configuration_fetched(self, config_id: Union[int, str]) -> str or False:
         # Check & correct given args
         config_id_str = config_id if isinstance(config_id, str) else str(config_id).zfill(10)
-        # Search for the checkpoint in the list with all model checkpoints inside checkpoints folder for given batch
+        # Search for the configuration in the list with all model configurations inside Configurations folder for
+        # given configuration id
         local_filepath = f'{self.configurations_gfolder.local_root}/{config_id_str}.yaml'
         return local_filepath if os.path.exists(local_filepath) and os.path.isfile(local_filepath) \
             else False
 
-    def list_all_configurations(self, only_keys: Optional[Sequence] = None) -> List[GDriveFile or ColabFile or dict]:
-        # Get checkpoint files list and filter it if only_keys attribute is set
+    def list_configurations(self, only_keys: Optional[Sequence] = None) -> List[GDriveFile or ColabFile or dict]:
+        # Get configuration files list and filter it if only_keys attribute is set
         config_files_list = self.configurations_gfolder.files
         return config_files_list if not only_keys else \
             [dict((k, _f[k]) for k in only_keys) for _f in config_files_list]
 
     def save_and_upload_configuration(self, configuration: dict, config_id: Optional[str or int] = None,
                                       delete_after: bool = False, in_parallel: bool = False,
-                                      show_progress: bool = False) -> ApplyResult or GDriveFile or ColabFile or None:
+                                      show_progress: bool = False) -> ApplyResult or FilesystemFile or None:
         # Check & correct given args
         if config_id:
             config_id_str = config_id if isinstance(config_id, str) else str(config_id).zfill(10)
