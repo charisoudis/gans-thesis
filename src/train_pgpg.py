@@ -24,15 +24,19 @@ run_locally = True
 if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
     exec_env = 'colab'
     local_gdrive_root = '/content/drive/MyDrive'
+    run_locally = False
 elif 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:
     exec_env = 'kaggle'
     local_gdrive_root = '/kaggle/working/GoogleDrive'
+    run_locally = False
 else:
     exec_env = 'ssh'
     local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
     if not os.path.exists(local_gdrive_root):
         local_gdrive_root = input('local_gdrive_root = ')
+        run_locally = False
 assert os.path.exists(local_gdrive_root), f'local_gdrive_root={local_gdrive_root} NOT FOUND'
+print(f'run_locally={run_locally}')
 
 # Check if GPU is available
 exec_device = torch.device('cuda' if torch.cuda.is_available() and not run_locally else 'cpu')
