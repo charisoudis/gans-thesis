@@ -31,14 +31,17 @@ def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = Fal
     # Visit all subfolders and copy .ttf files to matplotlib fonts dir
     new_ttf_files = []
     for sf in fonts_gfolder.subfolders:
+        sf_fonts_folder = f'/usr/share/fonts/truetype/{sf.name.replace(" ", "").lower()}'
+        os.system(f'mkdir -p {sf_fonts_folder}')
         for f in sf.files:
             if not f.name.endswith('ttf'):
                 continue
             # Copy file to matplotlib folder
             if not os.path.exists(f'{matplotlib_ttf_path}/{f.name}'):
-                new_ttf_files.append(
-                    copy2(f.path, matplotlib_ttf_path)
-                )
+                new_ttf_files.append(copy2(f.path, matplotlib_ttf_path))
+            # Copy to system fonts folder
+            if not os.path.exists(f'{sf_fonts_folder}/{f.name}'):
+                copy2(f.path, sf_fonts_folder)
     # Inform and rebuild fonts cache
     rebuild = force_rebuild
     if len(new_ttf_files) > 0:
@@ -46,10 +49,11 @@ def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = Fal
         print(json.dumps(new_ttf_files, indent=4))
         rebuild = True
     if rebuild:
+        # Rebuild system font cache
+        os.system('fc-cache -fv')
         # Rebuild matplotlib font cache
         os.system('rm ~/.cache/matplotlib -rf')
         os.system('mkdir -p ~/.cache/matplotlib')
-        os.system('fc-cache -fv')
         # noinspection PyProtectedMember
         matplotlib.font_manager._rebuild()
 
