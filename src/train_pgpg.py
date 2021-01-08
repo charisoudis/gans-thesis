@@ -54,6 +54,7 @@ if in_notebook():
         assert log_level in ['debug', 'info', 'warning', 'error']
 else:
     log_level = 'info' if not run_locally else 'debug'
+print(f'log_level={log_level}')
 
 ###################################
 ###  Hyper-parameters settings  ###
