@@ -10,7 +10,7 @@ class KaggleCapsule(LocalCapsule):
     will submit HTTP request for the various needed operations (e.g. download/upload/list ops).
     """
 
-    def __init__(self, local_root: str = '/kaggle/working'):
+    def __init__(self, local_root: str = '/kaggle/working/GoogleDrive'):
         """
         KaggleCapsule class constructor.
         :param (str) local_root: absolute path to the local directory where Google Drive files will be synced to

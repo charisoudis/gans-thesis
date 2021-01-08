@@ -4,6 +4,7 @@ import sys
 import torch
 from IPython import get_ipython
 from IPython.core.display import display
+from ipywidgets import widgets
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import DataLoader
@@ -19,7 +20,17 @@ from utils.metrics import GanEvaluator
 # Flag to run first test batches locally
 from utils.plot import ensure_matplotlib_fonts_exist
 
-run_locally = True
+if in_notebook():
+    run_locally = widgets.Select(
+        options=['True', 'False'],
+        value='False',
+        description='run_locally=',
+        disabled=False,
+    )
+    print(f'run_locally set to "{run_locally}"')
+else:
+    run_locally = True
+    print(f'run_locally={run_locally}')
 
 # Check if running inside Colab or Kaggle
 if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
@@ -37,7 +48,6 @@ else:
         local_gdrive_root = input('local_gdrive_root = ')
         run_locally = False
 assert os.path.exists(local_gdrive_root), f'local_gdrive_root={local_gdrive_root} NOT FOUND'
-print(f'run_locally={run_locally}')
 
 # Check if GPU is available
 exec_device = torch.device('cuda' if torch.cuda.is_available() and not run_locally else 'cpu')
@@ -64,7 +74,16 @@ skip_pose_norm = True
 #   - PGPG config file
 pgpg_config_id = f'{target_shape}_MSE_256_6_4_5_none_none_1e4_true_false_false'  # as proposed in the original paper
 #   - other functional parameters
-log_level = 'info' if not run_locally else 'debug'
+if in_notebook():
+    log_level = widgets.Select(
+        options=['debug', 'info', 'warning'],
+        value='info',
+        description='log_level=',
+        disabled=False,
+    )
+    print(f'log_level set to "{log_level}"')
+else:
+    log_level = 'info' if not run_locally else 'debug'
 
 ##########################################
 ###  GDrive Filesystem Initialization  ###
