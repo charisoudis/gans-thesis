@@ -35,7 +35,7 @@ def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = Fal
         sf_fonts_folder = f'/usr/share/fonts/truetype/{sf.name.replace(" ", "").lower()}'
 
         # Copy only JetBrains Mono font
-        if not sf.name == 'jetbrainsmono':
+        if not sf_fonts_folder.endswith('jetbrainsmono'):
             continue
         os.system(f'mkdir -p {sf_fonts_folder}')
         for f in sf.files:
