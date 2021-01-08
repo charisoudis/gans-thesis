@@ -272,26 +272,6 @@ class GDriveModel(FilesystemModel):
         """
         assert not (checkpoint is False and metrics is False and configuration is False)
         _results = []
-        # Save model checkpoint
-        if checkpoint or metrics:
-            # Save locally and upload
-            assert self.step is not None and self.epoch is not None, 'No forward pass has been performed'
-            _results += self.checkpoint_metrics_capture(checkpoint=checkpoint, metrics=metrics, in_parallel=in_parallel,
-                                                        delete_after=delete_after, show_progress=show_progress,
-                                                        dataloader=dataloader)
-        # Save model configuration
-        if configuration:
-            # Extract current model configuration
-            if hasattr(self, 'configuration') and callable(getattr(self, 'configuration')):
-                configuration = self.configuration()
-            else:
-                raise NotImplementedError('self must implement utils.ifaces.Configurable to capture its current current'
-                                          ' configuration')
-            # Save the extracted configuration and upload to Google Drive
-            config_id = self.config_id if hasattr(self, 'config_id') else None
-            _results.append(self.save_and_upload_configuration(configuration=configuration, config_id=config_id,
-                                                               delete_after=delete_after, in_parallel=in_parallel,
-                                                               show_progress=show_progress))
         # Save model visualizations
         if visualizations:
             # We need at least one forward pass
@@ -320,6 +300,26 @@ class GDriveModel(FilesystemModel):
             _results.append(upload_gfolder.upload_file(local_filename=os.path.basename(new_visualizations_path),
                                                        delete_after=delete_after, in_parallel=in_parallel,
                                                        show_progress=show_progress, is_update=is_update))
+        # Save model checkpoint
+        if checkpoint or metrics:
+            # Save locally and upload
+            assert self.step is not None and self.epoch is not None, 'No forward pass has been performed'
+            _results += self.checkpoint_metrics_capture(checkpoint=checkpoint, metrics=metrics, in_parallel=in_parallel,
+                                                        delete_after=delete_after, show_progress=show_progress,
+                                                        dataloader=dataloader)
+        # Save model configuration
+        if configuration:
+            # Extract current model configuration
+            if hasattr(self, 'configuration') and callable(getattr(self, 'configuration')):
+                configuration = self.configuration()
+            else:
+                raise NotImplementedError('self must implement utils.ifaces.Configurable to capture its current current'
+                                          ' configuration')
+            # Save the extracted configuration and upload to Google Drive
+            config_id = self.config_id if hasattr(self, 'config_id') else None
+            _results.append(self.save_and_upload_configuration(configuration=configuration, config_id=config_id,
+                                                               delete_after=delete_after, in_parallel=in_parallel,
+                                                               show_progress=show_progress))
         return _results
 
     def gforward(self, batch_size: int = None) -> None:
