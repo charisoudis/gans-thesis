@@ -501,13 +501,15 @@ class GDriveModel(FilesystemModel):
             return local_filepath
         # Download checkpoint file from Google Drive
         if self.download_checkpoint(epoch_or_id=epoch_or_id, step=step, in_parallel=False, show_progress=True):
-            if not self.is_checkpoint_fetched(epoch_or_id=epoch_or_id, step=step):
+            _path = self.is_checkpoint_fetched(epoch_or_id=epoch_or_id, step=step)
+            if _path == False:
                 return False
             # Update internal state
             if type(epoch_or_id) is int:
                 self.epoch = epoch_or_id
             if step and type(step) is int:
                 self.step = step
+            return _path
         # If reaches here, file could not be downloaded, probably due to an unidentified error
         raise ValueError('self.download_checkpoint returned False')
 
