@@ -16,8 +16,9 @@ from utils.filesystems.gdrive.remote import GDriveCapsule, GDriveFilesystem, GDr
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemDataset
 from utils.metrics import GanEvaluator
-
 # Flag to run first test batches locally
+from utils.plot import ensure_matplotlib_fonts_exist
+
 run_locally = True
 
 # Check if running inside Colab or Kaggle
@@ -86,6 +87,13 @@ else:
 # print(json.dumps(groot.subfolders, indent=4))
 datasets_groot = groot.subfolder_by_name('Datasets')
 models_groot = groot.subfolder_by_name('Models')
+fonts_groot = groot.subfolder_by_name('Fonts')
+#   - ensure that system and matplotlib fonts directories exist and have the correct font files
+rebuilt_fonts = ensure_matplotlib_fonts_exist(fonts_groot, force_rebuild=False)
+if rebuilt_fonts and exec_env is not 'ssh':
+    groot.fs.logger.critical('Fonts rebuilt! Terminating python process now.')
+    os.kill(os.getpid(), 9)
+
 
 ###################################
 ###   Dataset Initialization    ###
@@ -132,6 +140,7 @@ pgpg.logger.debug(f'Model initialized. Number of params = {pgpg.nparams_hr}')
 if 'dataloader' in pgpg.other_state_dicts.keys():
     dataloader.set_state(pgpg.other_state_dicts['dataloader'])
     pgpg.logger.debug(f'Loaded dataloader state! Current pem_index={dataloader.get_state()["perm_index"]}')
+
 
 
 ###################################

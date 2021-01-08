@@ -13,12 +13,13 @@ from matplotlib.figure import Figure
 from utils.filesystems.gdrive.remote import GDriveFolder
 
 
-def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = False) -> None:
+def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = False) -> bool:
     """
     Downloads all TTF files from Google Drive's "Fonts" folder and places them in the directory `matplotlib` expects to
     find its .ttf font files.
     :param (GDriveFolder) groot: the parent of "Fonts" folder in Google Drive
     :param (bool) force_rebuild: set to True to forcefully rebuild fonts cache in matplotlib
+    :return: a `bool` object set to `True` if fonts rebuilding was performed, `False` otherwise
     """
     # Get fonts gfolder
     fonts_gfolder = groot if 'Fonts' == groot.name else \
@@ -56,6 +57,7 @@ def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = Fal
         os.system('mkdir -p ~/.cache/matplotlib')
         # noinspection PyProtectedMember
         matplotlib.font_manager._rebuild()
+    return rebuild
 
 
 def pltfig_to_pil(figure: Figure) -> Image:
