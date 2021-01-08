@@ -209,6 +209,8 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         self.image_1 = None
         self.image_2 = None
         self.pose_2 = None
+        self.gen_losses = []
+        self.disc_losses = []
 
     @property
     def nparams(self) -> int or str:
@@ -266,10 +268,16 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         :param kwargs: see `nn.Module.state_dict()`
         :return: see `nn.Module.state_dict()`
         """
+        mean_gen_loss = np.mean(self.gen_losses)
+        self.gen_losses.clear()
+        mean_disc_loss = np.mean(self.disc_losses)
+        self.disc_losses.clear()
         return {
             'gen': self.gen.state_dict(),
+            'gen_loss': mean_gen_loss,
             'gen_opt': self.gen_opt.state_dict(),
             'disc': self.disc.state_dict(),
+            'disc_loss': mean_disc_loss,
             'disc_opt': self.disc_opt.state_dict(),
             'nparams': self.nparams,
             'nparams_hr': self.nparams_hr,
@@ -336,6 +344,8 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         self.image_1 = image_1[::len(image_1) - 1].detach().cpu()
         self.image_2 = image_2[::len(image_2) - 1].detach().cpu()
         self.pose_2 = pose_2[::len(pose_2) - 1].detach().cpu()
+        self.gen_losses.append(gen_loss.item())
+        self.disc_losses.append(disc_loss.item())
 
         return disc_loss, gen_loss
 
@@ -418,8 +428,9 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         # Remove annoying axes
         plt.axis('off')
         # Create image and return
-        plt.suptitle(f'epoch={self.epoch} | step={str(self.step).zfill(10)}', y=0.03, fontsize=4, fontweight='light',
-                     horizontalalignment='left', x=0.001)
+        footer_title = f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}' + ' ' * 91 + \
+                       f'gen_loss={round(np.mean(self.gen_losses), 3)}, disc_loss={round(np.mean(self.disc_losses), 3)}'
+        plt.suptitle(footer_title, y=0.03, fontsize=4, fontweight='light', horizontalalignment='left', x=0.001)
         plt.imshow(cat_images.permute(1, 2, 0))
         return pltfig_to_pil(plt.gcf())
 
@@ -519,7 +530,7 @@ if __name__ == '__main__':
 
     # Initialize model
     _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
-                 dataset_len=len(_dataset), chkpt_epoch='latest', log_level=_log_level,
+                 dataset_len=len(_dataset), chkpt_epoch=None, log_level=_log_level,
                  evaluator=_evaluator, device='cpu')
 
     # # for _e in range(3):
@@ -536,6 +547,7 @@ if __name__ == '__main__':
 
     _img = _pgpg.visualize()
     _img.show()
+    exit(0)
 
     import time
 

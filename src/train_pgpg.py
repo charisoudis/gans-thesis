@@ -90,7 +90,7 @@ models_groot = groot.subfolder_by_name('Models')
 fonts_groot = groot.subfolder_by_name('Fonts')
 #   - ensure that system and matplotlib fonts directories exist and have the correct font files
 rebuilt_fonts = ensure_matplotlib_fonts_exist(fonts_groot, force_rebuild=False)
-if rebuilt_fonts and exec_env is not 'ssh':
+if rebuilt_fonts and exec_env != 'ssh':
     groot.fs.logger.critical('Fonts rebuilt! Terminating python process now.')
     os.kill(os.getpid(), 9)
 

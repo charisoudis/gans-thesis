@@ -2,7 +2,7 @@ import atexit
 import io
 import json
 import os
-from shutil import copy2
+import shutil
 from typing import Union, Optional
 
 import matplotlib
@@ -39,10 +39,10 @@ def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = Fal
                 continue
             # Copy file to matplotlib folder
             if not os.path.exists(f'{matplotlib_ttf_path}/{f.name}'):
-                new_ttf_files.append(copy2(f.path, matplotlib_ttf_path))
+                new_ttf_files.append(shutil.copy2(f.path, matplotlib_ttf_path))
             # Copy to system fonts folder
             if not os.path.exists(f'{sf_fonts_folder}/{f.name}'):
-                copy2(f.path, sf_fonts_folder)
+                shutil.copy2(f.path, sf_fonts_folder)
     # Inform and rebuild fonts cache
     rebuild = force_rebuild
     if len(new_ttf_files) > 0:
