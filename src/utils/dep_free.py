@@ -11,8 +11,9 @@ def in_notebook() -> bool:
     :return:
     """
     try:
+        shell_class = get_ipython().__class__
         shell = get_ipython().__class__.__name__
-        if shell == 'ZMQInteractiveShell':
+        if shell == 'ZMQInteractiveShell' or 'google.colab' in str(shell_class):
             return True  # Jupyter notebook or Qt console
         elif shell == 'TerminalInteractiveShell':
             return False  # Terminal running IPython

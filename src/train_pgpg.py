@@ -3,14 +3,14 @@ import sys
 
 import torch
 from IPython import get_ipython
+from IPython.core.display import display
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataloader
 from modules.pgpg import PGPG
-from utils.dep_free import get_tqdm
+from utils.dep_free import get_tqdm, in_notebook
 from utils.filesystems.gdrive.colab import ColabFilesystem, ColabFolder, ColabCapsule
 from utils.filesystems.gdrive.remote import GDriveCapsule, GDriveFilesystem, GDriveFolder
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
@@ -94,7 +94,6 @@ if rebuilt_fonts and exec_env is not 'ssh':
     groot.fs.logger.critical('Fonts rebuilt! Terminating python process now.')
     os.kill(os.getpid(), 9)
 
-
 ###################################
 ###   Dataset Initialization    ###
 ###################################
@@ -141,8 +140,6 @@ if 'dataloader' in pgpg.other_state_dicts.keys():
     dataloader.set_state(pgpg.other_state_dicts['dataloader'])
     pgpg.logger.debug(f'Loaded dataloader state! Current pem_index={dataloader.get_state()["perm_index"]}')
 
-
-
 ###################################
 ###       Training Loop         ###
 ###################################
@@ -156,7 +153,7 @@ for epoch in range(pgpg.epoch, n_epochs):
     image_1: Tensor
     image_2: Tensor
     pose_2: Tensor
-    for image_1, image_2, pose_2 in tqdm(dataloader, initial=pgpg.initial_step):
+    for image_1, image_2, pose_2 in get_tqdm()(dataloader, initial=pgpg.initial_step):
         # Transfer image batches to GPU
         image_1 = image_1.to(exec_device)
         image_2 = image_2.to(exec_device)
@@ -180,7 +177,7 @@ for epoch in range(pgpg.epoch, n_epochs):
         # Visualization code
         elif pgpg.step % display_step == 0:
             visualization_img = pgpg.visualize()
-            visualization_img.show()
+            visualization_img.show() if not in_notebook() else display(visualization_img)
 
         # Check if a pending checkpoint upload has finished
         if async_results:
