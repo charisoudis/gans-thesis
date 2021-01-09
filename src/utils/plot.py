@@ -43,10 +43,10 @@ def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = Fal
                 continue
             # Copy file to matplotlib folder
             if not os.path.exists(f'{matplotlib_ttf_path}/{f.name}'):
-                new_ttf_files.append(shutil.copy2(f.path, matplotlib_ttf_path))
+                new_ttf_files.append(shutil.copy(f.path, matplotlib_ttf_path))
             # Copy to system fonts folder
             if not os.path.exists(f'{sf_fonts_folder}/{f.name}'):
-                shutil.copy2(f.path, sf_fonts_folder)
+                shutil.copy(f.path, sf_fonts_folder)
     # Inform and rebuild fonts cache
     rebuild = force_rebuild
     if len(new_ttf_files) > 0:

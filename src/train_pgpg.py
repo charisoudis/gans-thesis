@@ -146,7 +146,12 @@ evaluator = GanEvaluator(model_fs_folder_or_root=models_groot, gen_dataset=datas
 #   - initialize model
 global chkpt_step
 try:
-    pgpg_chkpt_step = chkpt_step
+    if chkpt_step == 'latest':
+        pgpg_chkpt_step = chkpt_step
+    elif isinstance(chkpt_step, str) and chkpt_step.isdigit():
+        pgpg_chkpt_step = int(chkpt_step)
+    else:
+        pgpg_chkpt_step = None
 except NameError:
     pgpg_chkpt_step = 'latest'
 pgpg = PGPG(model_fs_folder_or_root=models_groot, config_id=pgpg_config_id, dataset_len=len(dataset),

@@ -450,7 +450,8 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
 
             metric_file: FilesystemFile
             for _fi, metric_file in enumerate(_files):
-                # Fetch metrics from fle
+                # Fetch metrics from file
+                self.logger.debug(f'opening metrics file: {metric_file.path}')
                 with open(metric_file.path) as json_fp:
                     metrics = json.load(json_fp)
                 # Update lists
