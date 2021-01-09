@@ -144,8 +144,13 @@ evaluator = GanEvaluator(model_fs_folder_or_root=models_groot, gen_dataset=datas
                          condition_indices=(0, 2), n_samples=metrics_n_samples, batch_size=metrics_batch_size,
                          f1_k=f1_k)
 #   - initialize model
+global chkpt_step
+try:
+    pgpg_chkpt_step = chkpt_step
+except NameError:
+    pgpg_chkpt_step = 'latest'
 pgpg = PGPG(model_fs_folder_or_root=models_groot, config_id=pgpg_config_id, dataset_len=len(dataset),
-            chkpt_epoch='latest', evaluator=evaluator, device=exec_device, log_level=log_level)
+            chkpt_epoch=pgpg_chkpt_step, evaluator=evaluator, device=exec_device, log_level=log_level)
 pgpg.logger.debug(f'Model initialized. Number of params = {pgpg.nparams_hr}')
 #   - load dataloader state (from model checkpoint)
 if 'dataloader' in pgpg.other_state_dicts.keys():
