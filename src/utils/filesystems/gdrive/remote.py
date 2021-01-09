@@ -2,6 +2,7 @@ import atexit
 import json
 import os
 import sys
+import time
 from datetime import datetime as dt, timedelta
 from io import BufferedWriter, BufferedRandom
 from multiprocessing.pool import ApplyResult, ThreadPool
@@ -34,9 +35,13 @@ class GDriveCapsule(FilesystemCapsule):
     will submit HTTP request for the various needed operations (e.g. download/upload/list ops).
     """
 
-    def __init__(self, local_gdrive_root: str, use_http_cache: bool = False, update_credentials: bool = False):
+    def __init__(self, local_gdrive_root: str, use_refresh_token: bool = False, use_http_cache: bool = False,
+                 update_credentials: bool = False):
         """
         :param (str) local_gdrive_root: absolute path to the local directory where Google Drive files will be synced to
+        :param (bool) use_refresh_token: set to True to use refresh token found inside the `client_secrets.json` file,
+                                         else a prompt with an authorization url will be displayed.
+                                         Attention: using `refresh_token` multiple times is known to cause 403 errors!
         :param (bool) use_http_cache: set to True to have the Http client cache HTTP requests based on response headers
         :param (bool) update_credentials: set to True to have json file updated with new access_token/token expiry
                                           if a new token was generated
@@ -46,19 +51,31 @@ class GDriveCapsule(FilesystemCapsule):
         self.client_secrets_filepath = f'{local_gdrive_root}/client_secrets.json'
         self.update_credentials = update_credentials
 
-        # Get client credentials
-        self.credentials = self.get_client_dict(update_credentials=update_credentials)
-        # Get authenticated Http client
-        self.gservice, self.ghttp, self.gcredentials = self.get_service(
-            cache_root=f'{local_gdrive_root}/.http_cache' if use_http_cache else None
-        )
         # Create a pydrive.drive.GoogleAuth instance
         self.pydrive_auth = GoogleAuth()
-        # and set the correct resource and http instances
         self.pydrive_auth.settings['client_config_file'] = self.client_secrets_filepath
-        self.pydrive_auth.credentials = self.gcredentials
-        self.pydrive_auth.http = self.ghttp
-        self.pydrive_auth.service = self.gservice
+
+        if use_refresh_token:
+            # Get client credentials
+            self.credentials = self.get_client_dict(update_credentials=update_credentials)
+            # Get authenticated Http client
+            self.gservice, self.ghttp, self.gcredentials = self.get_service(
+                cache_root=f'{local_gdrive_root}/.http_cache' if use_http_cache else None
+            )
+            # and set the correct resource and http instances
+            self.pydrive_auth.credentials = self.gcredentials
+            self.pydrive_auth.http = self.ghttp
+            self.pydrive_auth.service = self.gservice
+        else:
+            # Authenticate using authorization url (Colab-like authentication flow)
+            auth_url = self.pydrive_auth.GetAuthUrl()
+            self.logger.critical(f'Get the authorization code from: {auth_url}')
+            time.sleep(0.5)
+            self.pydrive_auth.Auth(input('code = ').strip())
+            # Save service and http objects in instance
+            self.gservice = self.pydrive_auth.service
+            self.ghttp = self.pydrive_auth.http
+
         # Finally, create a pydrive.drive.GoogleDrive instance to interact with GoogleDrive API
         self.pydrive = GoogleDrive(auth=self.pydrive_auth)
         # When running locally, disable OAuthLib's HTTPs verification
