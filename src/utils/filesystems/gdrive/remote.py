@@ -97,7 +97,8 @@ class GDriveCapsule(FilesystemCapsule):
             if 'web' in _client_dict.keys():
                 _client_dict = _client_dict['web']
 
-        token_expires_at = dt.fromisoformat(_client_dict['access_token_expires_at'])
+        token_expires_at = dt.fromisoformat(_client_dict['access_token_expires_at']) if 'access_token_expires_at' in \
+            _client_dict.keys() else dt.fromtimestamp(0.0)
         now = dt.utcnow()
         should_refresh = 'access_token' not in _client_dict.keys() or \
                          'access_token_expires_at' not in _client_dict.keys() or \

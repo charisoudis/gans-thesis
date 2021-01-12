@@ -131,7 +131,7 @@ class PGPGGenerator(nn.Module):
         return g1_out, self.output_activation(g2_out + g1_out)
 
     def get_loss(self, x: Tensor, y_pose: Tensor, y: Tensor, disc: nn.Module,
-                 adv_criterion: Optional[nn.modules.Module] = None,
+                 adv_criterion: Optional[nn.modules.Module] = None, lambda_recon: int = 5,
                  recon_criterion: Optional[nn.Module] = None) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Get the loss of the generator given inputs. If the criterions are not provided they will be set using the
@@ -142,6 +142,7 @@ class PGPGGenerator(nn.Module):
         :param disc: the Discriminator network
         :param (optional) adv_criterion: the adversarial loss function; takes the discriminator predictions and the
                                          target labels and returns a adversarial loss (which we aim to minimize)
+        :param (int) lambda_recon: weighting factor of L1 loss to calculate G2's final loss
         :param (optional) recon_criterion: the reconstruction loss function; takes the real images from Y and those
                                            images put through a (X,Yp)->Y generator and returns the image reconstruction
                                            loss (which we aim to minimize)
@@ -164,7 +165,7 @@ class PGPGGenerator(nn.Module):
             adv_criterion
         g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
         # Aggregate
-        g2_loss = g2_loss_recon + g2_loss_adv
+        g2_loss = g2_loss_adv + lambda_recon * g2_loss_recon
         return g1_loss, g2_loss, g1_out, g_out
 
 

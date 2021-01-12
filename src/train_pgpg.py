@@ -86,13 +86,14 @@ if exec_env == 'colab':
     # Colab filesystem is a locally-mounted filesystem. Interacts with native OS calls.
     fs = ColabFilesystem(ccapsule=ColabCapsule())
     groot = ColabFolder.root(capsule_or_fs=fs)
-elif run_locally:
+elif run_locally and False:
     # Local filesystem (basically one directory under given root). Interacts with native OS calls.
     fs = LocalFilesystem(ccapsule=LocalCapsule(local_root=local_gdrive_root))
     groot = LocalFolder.root(capsule_or_fs=fs)
 else:
     # Remove filesystem. Interacts via GoogleDrive API calls.
-    gcapsule = GDriveCapsule(local_gdrive_root=local_gdrive_root, use_http_cache=True, update_credentials=True)
+    gcapsule = GDriveCapsule(local_gdrive_root=local_gdrive_root, use_http_cache=True, update_credentials=True,
+                             use_refresh_token=run_locally)
     fs = GDriveFilesystem(gcapsule=gcapsule)
     groot = GDriveFolder.root(capsule_or_fs=fs, update_cache=True)
 #   - define immediate sub-folders of root folder
@@ -153,7 +154,7 @@ try:
     else:
         pgpg_chkpt_step = None
 except NameError:
-    pgpg_chkpt_step = 'latest'
+    pgpg_chkpt_step = None
 pgpg = PGPG(model_fs_folder_or_root=models_groot, config_id=pgpg_config_id, dataset_len=len(dataset),
             chkpt_epoch=pgpg_chkpt_step, evaluator=evaluator, device=exec_device, log_level=log_level)
 pgpg.logger.debug(f'Model initialized. Number of params = {pgpg.nparams_hr}')

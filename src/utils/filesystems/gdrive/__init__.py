@@ -649,7 +649,7 @@ class GDriveModel(FilesystemModel):
     def list_all_metrics(self, only_keys: Optional[Sequence[str]] = None) \
             -> Dict[int, List[GDriveFile or ColabFile or dict]]:
         _return_dict = {}
-        for _epoch in self.metrics_epoch_gfolders.keys():
+        for _epoch in sorted(self.metrics_epoch_gfolders.keys(), key=lambda _k: int(_k)):
             _epoch_metrics_list = self.list_metrics(epoch=_epoch, only_keys=only_keys)
             if len(_epoch_metrics_list) > 0:
                 _return_dict[_epoch] = _epoch_metrics_list
