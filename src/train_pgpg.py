@@ -86,7 +86,7 @@ if exec_env == 'colab':
     # Colab filesystem is a locally-mounted filesystem. Interacts with native OS calls.
     fs = ColabFilesystem(ccapsule=ColabCapsule())
     groot = ColabFolder.root(capsule_or_fs=fs)
-elif run_locally and False:
+elif run_locally:
     # Local filesystem (basically one directory under given root). Interacts with native OS calls.
     fs = LocalFilesystem(ccapsule=LocalCapsule(local_root=local_gdrive_root))
     groot = LocalFolder.root(capsule_or_fs=fs)
