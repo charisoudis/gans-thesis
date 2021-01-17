@@ -131,7 +131,7 @@ class PGPGGenerator(nn.Module):
         return g1_out, self.output_activation(g2_out + g1_out)
 
     def get_loss(self, x: Tensor, y_pose: Tensor, y: Tensor, disc: nn.Module,
-                 adv_criterion: Optional[nn.modules.Module] = None, lambda_recon: int = 5,
+                 adv_criterion: Optional[nn.modules.Module] = None, lambda_recon: int = 10,
                  recon_criterion: Optional[nn.Module] = None) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Get the loss of the generator given inputs. If the criterions are not provided they will be set using the
