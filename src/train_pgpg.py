@@ -92,8 +92,13 @@ elif run_locally:
     groot = LocalFolder.root(capsule_or_fs=fs)
 else:
     # Remove filesystem. Interacts via GoogleDrive API calls.
+    global use_refresh_token
+    try:
+        use_refresh_token = use_refresh_token or False
+    except NameError:
+        use_refresh_token = run_locally
     gcapsule = GDriveCapsule(local_gdrive_root=local_gdrive_root, use_http_cache=True, update_credentials=True,
-                             use_refresh_token=run_locally)
+                             use_refresh_token=use_refresh_token)
     fs = GDriveFilesystem(gcapsule=gcapsule)
     groot = GDriveFolder.root(capsule_or_fs=fs, update_cache=True)
 #   - define immediate sub-folders of root folder
