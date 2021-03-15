@@ -12,7 +12,7 @@ numpy
 Pillow
 ipython
 scipy
-httplib2
+httplib2==0.15.0
 oauth2client
 google-api-python-client
 pydrive

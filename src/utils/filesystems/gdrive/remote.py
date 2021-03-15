@@ -9,11 +9,12 @@ from multiprocessing.pool import ApplyResult, ThreadPool
 from typing import Optional, List, Tuple, Union, Type
 
 import httplib2
+from apiclient import errors as pydrive_errors
 # noinspection PyProtectedMember
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
 # noinspection PyProtectedMember
-from googleapiclient.http import MediaIoBaseDownload, _retry_request, HttpRequest
+from googleapiclient.http import MediaIoBaseDownload, _retry_request, HttpRequest, MediaIoBaseUpload
 from oauth2client.client import OAuth2Credentials
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
@@ -711,9 +712,76 @@ class GDriveFilesystem(Filesystem):
         # Load local file data into the File instance
         assert os.path.exists(local_filepath), f'local_filepath={local_filepath}'
         file.SetContentFile(local_filepath)
+        # Set mime type
+        if file.get('mimeType') is None:
+            file['mimeType'] = 'application/octet-stream'
+
+        # Upload file
         try:
-            file.Upload()
-        except ApiRequestError as e:
+            # Create upload HTTP request object
+            if is_update:
+                http_request = self.gservice_files.update(
+                    body=file.GetChanges(),
+                    media_body=MediaIoBaseUpload(file.content, file['mimeType'],
+                                                 chunksize=GMediaIoDownload.DefaultChunkSizeInMB * 1024 * 1024,
+                                                 resumable=True),
+                    fileId=file['id']
+                )
+            else:
+                http_request = self.gservice_files.insert(
+                    body=file.GetChanges(),
+                    media_body=MediaIoBaseUpload(file.content, file['mimeType'],
+                                                 chunksize=GMediaIoDownload.DefaultChunkSizeInMB * 1024 * 1024,
+                                                 resumable=True)
+                )
+
+            # Check if should resume upload
+            if os.path.exists(f'{local_filepath}.part'):
+                with open(f'{local_filepath}.part', 'r') as part_fp:
+                    http_request_data = json.load(part_fp)
+                http_request.resumable_uri = http_request_data['resumable_uri']
+
+            # Start resumable file upload
+            # If show_progress=True, will initialize the tqdm for file download using the code provided here:
+            # https://github.com/sirbowen78/lab/blob/master/file_handling/dl_file1.py
+            # with self.tqdm(disable=not show_progress, total=100, unit='%') as progress_bar:
+            with self.tqdm(
+                    disable=not show_progress,
+                    unit="B",           # unit string to be displayed.
+                    unit_scale=True,    # let tqdm to determine the scale in kilo, mega..etc.
+                    unit_divisor=1024,  # is used when unit_scale is true
+                    total=http_request.resumable.size(),
+                    initial=http_request.resumable_progress,
+                    file=sys.stdout,
+                    desc=f'Uploading "{file_basename}"'  # prefix to be displayed on progress bar.
+            ) as progress_bar:
+
+                metadata = None
+                progress_last = 0
+                while metadata is None:
+                    # Upload next chunk to Google Drive
+                    progress, metadata = http_request.next_chunk(http=self.gcapsule.ghttp, num_retries=1)
+                    if metadata is not None:
+                        os.remove(f'{local_filepath}.part')
+                        progress_bar.update(http_request.resumable.size() - progress_last)
+                    else:
+                        # Write latest progress to part file
+                        with open(f'{local_filepath}.part', 'w') as part_fp:
+                            json.dump({
+                                'resumable_uri': http_request.resumable_uri,
+                                'progress_bytes': progress.resumable_progress,
+                                'progress_total': progress.total_size,
+                                'progress_prc': progress.progress(),
+                            }, part_fp, indent=4)
+                        # Update progress
+                        progress_bar.update(progress.resumable_progress - progress_last)
+                        progress_last = progress.resumable_progress
+
+            # Upload finished
+            file.uploaded = True
+            file.dirty['content'] = False
+            file.UpdateMetadata(metadata)
+        except pydrive_errors.HttpError as e:
             self.logger.critical(f'File upload failed (local_filepath={local_filepath}): {str(e)}')
             return None
         # Close file handle

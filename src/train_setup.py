@@ -68,7 +68,7 @@ elif run_locally:
     fs = LocalFilesystem(ccapsule=LocalCapsule(local_root=local_gdrive_root))
     groot = LocalFolder.root(capsule_or_fs=fs)
 else:
-    # Remove filesystem. Interacts via GoogleDrive API calls.
+    # Remote filesystem. Interacts via GoogleDrive API calls.
     global use_refresh_token
     try:
         use_refresh_token = use_refresh_token or False

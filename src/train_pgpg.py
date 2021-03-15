@@ -120,7 +120,7 @@ for epoch in range(pgpg.epoch, n_epochs):
                 pgpg.logger.warning('DONE! Starting new capture now.')
             # Capture current model state, including metrics and visualizations
             async_results = pgpg.gcapture(checkpoint=True, metrics=pgpg.step % metrics_step == 0, visualizations=True,
-                                          dataloader=dataloader, in_parallel=True, show_progress=run_locally,
+                                          dataloader=dataloader, in_parallel=True, show_progress=True,
                                           delete_after=False)
         # Visualization code
         elif pgpg.step % display_step == 0:

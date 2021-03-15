@@ -502,7 +502,7 @@ class GDriveModel(FilesystemModel):
         # Download checkpoint file from Google Drive
         if self.download_checkpoint(epoch_or_id=epoch_or_id, step=step, in_parallel=False, show_progress=True):
             _path = self.is_checkpoint_fetched(epoch_or_id=epoch_or_id, step=step)
-            if _path == False:
+            if not _path:
                 return False
             # Update internal state
             if type(epoch_or_id) is int:
