@@ -427,6 +427,9 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
         return self._sampler.get_state()
 
     def set_state(self, state: dict) -> None:
+        # FIX: Skipping last batch size (interrupted before forward pass completed)
+        if 'perm_index' in state.keys():
+            state['perm_index'] -= self.batch_size
         return self._sampler.set_state(state)
 
 

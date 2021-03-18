@@ -133,7 +133,7 @@ class ResumableRandomSampler(Sampler):
     def set_state(self, state: dict) -> None:
         self.shuffle = bool(state.get("shuffle", True))
         self.perm = state["perm"]
-        self.perm_index = state["perm_index"] - 1
+        self.perm_index = state["perm_index"]
         self.generator.set_state(state["generator_state"])
 
 
