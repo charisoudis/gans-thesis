@@ -217,6 +217,11 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
         return self._sampler.get_state()
 
     def set_state(self, state: dict) -> None:
+        # FIX: Skipping last batch size (interrupted before forward pass completed)
+        if 'perm_index' in state.keys():
+            state['perm_index'] -= self.batch_size
+            if state['perm_index'] < 0:
+                state['perm_index'] = self.__len__() + state['perm_index'] + 1
         return self._sampler.set_state(state)
 
 
@@ -308,9 +313,9 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
             f'{self.img_dir_path}/{image_2_path}', f'{self.img_dir_path}/{image_2_path.replace(".jpg", "_IUV.png")}'
         )
 
-    IMAGE_1 = None
-    IMAGE_2 = None
-    IMAGE_2P = None
+    # IMAGE_1 = None
+    # IMAGE_2 = None
+    # IMAGE_2P = None
 
     def __getitem__(self, index: int) -> Union[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]]:
         """
@@ -319,18 +324,17 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
         :return: a tuple containing the images from domain A and B, each as a torch.Tensor object
         """
 
-        if self.IMAGE_1 is None:
-            paths_tuple = self.index_to_paths(78400)
-            image_1 = Image.open(paths_tuple[0])
-            image_2_path = paths_tuple[1] if not self.pose else paths_tuple[2]
-            image_2 = Image.open(image_2_path)
-            target_pose_2 = None if not self.pose else Image.open(paths_tuple[3])
-            # Apply transforms
-            self.IMAGE_1 = self.transforms(image_1)
-            self.IMAGE_2 = self.transforms(image_2)
-            self.IMAGE_2P = None if not self.pose else self.pose_transforms(target_pose_2)
-        return (self.IMAGE_1, self.IMAGE_2) if not self.pose else (self.IMAGE_1, self.IMAGE_2, self.IMAGE_2P)
-
+        # if self.IMAGE_1 is None:
+        #     paths_tuple = self.index_to_paths(78400)
+        #     image_1 = Image.open(paths_tuple[0])
+        #     image_2_path = paths_tuple[1] if not self.pose else paths_tuple[2]
+        #     image_2 = Image.open(image_2_path)
+        #     target_pose_2 = None if not self.pose else Image.open(paths_tuple[3])
+        #     # Apply transforms
+        #     self.IMAGE_1 = self.transforms(image_1)
+        #     self.IMAGE_2 = self.transforms(image_2)
+        #     self.IMAGE_2P = None if not self.pose else self.pose_transforms(target_pose_2)
+        # return (self.IMAGE_1, self.IMAGE_2) if not self.pose else (self.IMAGE_1, self.IMAGE_2, self.IMAGE_2P)
 
         # Get image paths
         paths_tuple = self.index_to_paths(index)
@@ -430,6 +434,8 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
         # FIX: Skipping last batch size (interrupted before forward pass completed)
         if 'perm_index' in state.keys():
             state['perm_index'] -= self.batch_size
+            if state['perm_index'] < 0:
+                state['perm_index'] = self.__len__() + state['perm_index'] + 1
         return self._sampler.set_state(state)
 
 

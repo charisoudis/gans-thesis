@@ -101,13 +101,24 @@ for epoch in range(pgpg.epoch, n_epochs):
     image_1: Tensor
     image_2: Tensor
     pose_2: Tensor
-    for image_1, image_2, pose_2 in get_tqdm()(dataloader, initial=pgpg.initial_step):
-        continue
 
+    d = {
+        'step': pgpg.step,
+        'initial_step': pgpg.initial_step,
+        'epoch': pgpg.epoch,
+        '_counter': pgpg._counter,
+        'epoch_inc': pgpg.epoch_inc,
+    }
+    # initial_step = pgpg.initial_step % len(dataloader)
+    pgpg.logger.debug('[START OF EPOCH] ' + {str(d)})
+    for image_1, image_2, pose_2 in get_tqdm()(dataloader, initial=pgpg.initial_step):
         # Transfer image batches to GPU
         image_1 = image_1.to(exec_device)
         image_2 = image_2.to(exec_device)
         pose_2 = pose_2.to(exec_device)
+
+        pgpg.gforward(image_1.shape[0])
+        continue
 
         # Perform a forward + backward pass + weight update on the Generator & Discriminator models
         disc_loss, gen_loss = pgpg(image_1=image_1, image_2=image_2, pose_2=pose_2)
@@ -145,6 +156,15 @@ for epoch in range(pgpg.epoch, n_epochs):
     # If run locally one pass is enough
     if run_locally:
         break
+
+    d = {
+        'step': pgpg.step,
+        'initial_step': pgpg.initial_step,
+        'epoch': pgpg.epoch,
+        '_counter': pgpg._counter,
+        'epoch_inc': pgpg.epoch_inc,
+    }
+    pgpg.logger.debug('[END OF EPOCH] ' + str(d))
 
 # Check if a pending checkpoint exists
 if async_results:
