@@ -341,7 +341,8 @@ class GDriveModel(FilesystemModel):
         # Update number of samples seen
         self._counter += batch_size
         # Check if enc of epoch reached
-        if self._counter >= self.dataset_len:
+        assert self._counter <= self.dataset_len, f'self._counter={self._counter} > self.dataset_len={self.dataset_len}'
+        if self._counter == self.dataset_len:
             self.epoch_inc = True
             self.initial_step = 0
         # Debug info

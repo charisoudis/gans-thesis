@@ -1,10 +1,11 @@
+from IPython.core.display import display
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import DataLoader
 
 from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataloader
 from modules.pgpg import PGPG
-from train_setup import run_locally, exec_device, log_level, datasets_groot, models_groot
+from train_setup import run_locally, exec_device, log_level, datasets_groot, models_groot, in_notebook
 from utils.dep_free import get_tqdm
 from utils.ifaces import FilesystemDataset
 from utils.metrics import GanEvaluator
@@ -102,6 +103,7 @@ for epoch in range(pgpg.epoch, n_epochs):
     image_2: Tensor
     pose_2: Tensor
 
+    # noinspection PyProtectedMember
     d = {
         'step': pgpg.step,
         'initial_step': pgpg.initial_step,
@@ -116,9 +118,6 @@ for epoch in range(pgpg.epoch, n_epochs):
         image_1 = image_1.to(exec_device)
         image_2 = image_2.to(exec_device)
         pose_2 = pose_2.to(exec_device)
-
-        pgpg.gforward(image_1.shape[0])
-        continue
 
         # Perform a forward + backward pass + weight update on the Generator & Discriminator models
         disc_loss, gen_loss = pgpg(image_1=image_1, image_2=image_2, pose_2=pose_2)
@@ -157,6 +156,7 @@ for epoch in range(pgpg.epoch, n_epochs):
     if run_locally:
         break
 
+    # noinspection PyProtectedMember
     d = {
         'step': pgpg.step,
         'initial_step': pgpg.initial_step,
