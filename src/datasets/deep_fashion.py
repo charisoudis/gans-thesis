@@ -308,12 +308,30 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
             f'{self.img_dir_path}/{image_2_path}', f'{self.img_dir_path}/{image_2_path.replace(".jpg", "_IUV.png")}'
         )
 
+    IMAGE_1 = None
+    IMAGE_2 = None
+    IMAGE_2P = None
+
     def __getitem__(self, index: int) -> Union[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]]:
         """
         Implements abstract Dataset::__getitem__() method.
         :param index: integer with the current image index that we want to read from disk
         :return: a tuple containing the images from domain A and B, each as a torch.Tensor object
         """
+
+        if self.IMAGE_1 is None:
+            paths_tuple = self.index_to_paths(78400)
+            image_1 = Image.open(paths_tuple[0])
+            image_2_path = paths_tuple[1] if not self.pose else paths_tuple[2]
+            image_2 = Image.open(image_2_path)
+            target_pose_2 = None if not self.pose else Image.open(paths_tuple[3])
+            # Apply transforms
+            self.IMAGE_1 = self.transforms(image_1)
+            self.IMAGE_2 = self.transforms(image_2)
+            self.IMAGE_2P = None if not self.pose else self.pose_transforms(target_pose_2)
+        return (self.IMAGE_1, self.IMAGE_2) if not self.pose else (self.IMAGE_1, self.IMAGE_2, self.IMAGE_2P)
+
+
         # Get image paths
         paths_tuple = self.index_to_paths(index)
         # Fetch images
@@ -399,7 +417,8 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
             _training_set = _test_set = _dataset
         self.test_set = _test_set
         # Create sample instance
-        self._sampler = ResumableRandomSampler(data_source=_training_set, shuffle=shuffle, seed=seed)
+        self._sampler = ResumableRandomSampler(data_source=_training_set, shuffle=shuffle, seed=seed,
+                                               logger=_dataset.logger)
         # Finally, instantiate dataloader
         super(ICRBCrossPoseDataloader, self).__init__(dataset=_training_set, batch_size=batch_size,
                                                       sampler=self._sampler, pin_memory=pin_memory)

@@ -1,13 +1,14 @@
 import json
 import os
 import os.path
-from typing import Optional, List, Sized
+from typing import Optional, List, Sized, Union
 
 import prettytable
 import torch
 # noinspection PyProtectedMember
 from torch.utils.data import Sampler
 
+from utils.command_line_logger import CommandLineLogger
 from utils.string import to_human_readable
 
 
@@ -75,12 +76,15 @@ class ResumableRandomSampler(Sampler):
     Original source: https://gist.github.com/usamec/1b3b4dcbafad2d58faa71a9633eea6a5
     """
 
-    def __init__(self, data_source: Sized, shuffle: bool = True, seed: int = 42):
+    def __init__(self, data_source: Sized, shuffle: bool = True, seed: int = 42,
+                 logger: Union[CommandLineLogger, None] = None):
         """
         ResumableRandomSampler class constructor.
         generator (Generator): Generator used in sampling.
-        :param data_source: torch.utils.data.Dataset or generally typings.Sized object of the dataset to sample from
-        :param seed: generator manual seed parameter
+        :param (Sized) data_source: torch.utils.data.Dataset or generally typings.Sized object of the dataset to draw
+                                    samples from
+        :param (int) seed: generator manual seed parameter
+        :param (optional) logger: CommandLineLogger instance
         """
         super(ResumableRandomSampler, self).__init__(data_source=data_source)
 
@@ -97,17 +101,20 @@ class ResumableRandomSampler(Sampler):
             self.perm_index = 0
             self.perm = range(0, self.n_samples)
 
+        self.logger = logger
+
     def reshuffle(self) -> None:
         self.perm_index = 0
-        self.perm = list(torch.randperm(self.n_samples, generator=self.generator).numpy())
+        if self.shuffle:
+            self.perm = list(torch.randperm(self.n_samples, generator=self.generator).numpy())
 
     def __iter__(self):
         # If reached the end of dataset, reshuffle
         if self.perm_index >= len(self.perm):
-            if self.shuffle:
-                self.reshuffle()
-            else:
-                self.perm_index = 0
+            if self.logger:
+                self.logger.debug('[SAMPLER] Reached end of epoch. Reshuffling...')
+
+            self.reshuffle()
 
         while self.perm_index < len(self.perm):
             self.perm_index += 1
@@ -120,6 +127,7 @@ class ResumableRandomSampler(Sampler):
         return {"perm": self.perm, "perm_index": self.perm_index, "generator_state": self.generator.get_state()}
 
     def set_state(self, state: dict) -> None:
+        self.shuffle = bool(state["shuffle"] or True)
         self.perm = state["perm"]
         self.perm_index = state["perm_index"]
         self.generator.set_state(state["generator_state"])

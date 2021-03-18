@@ -1,4 +1,3 @@
-from IPython.core.display import display
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import DataLoader
@@ -6,7 +5,7 @@ from torch.utils.data import DataLoader
 from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataloader
 from modules.pgpg import PGPG
 from train_setup import run_locally, exec_device, log_level, datasets_groot, models_groot
-from utils.dep_free import get_tqdm, in_notebook
+from utils.dep_free import get_tqdm
 from utils.ifaces import FilesystemDataset
 from utils.metrics import GanEvaluator
 
@@ -15,7 +14,7 @@ from utils.metrics import GanEvaluator
 ###################################
 #   - training
 n_epochs = 100
-batch_size = 48 if not run_locally else 2
+batch_size = 48 if not run_locally else 48
 train_test_splits = [90, 10]  # for a 90% training - 10% evaluation set split
 #   - evaluation
 metrics_n_samples = 1000 if not run_locally else 2
@@ -82,6 +81,7 @@ except NameError:
     pgpg_chkpt_step = None
 pgpg = PGPG(model_fs_folder_or_root=models_groot, config_id=pgpg_config_id, dataset_len=len(dataset),
             chkpt_epoch=pgpg_chkpt_step, evaluator=evaluator, device=exec_device, log_level=log_level)
+pgpg.logger.debug(f'Using device: {str(exec_device)}')
 pgpg.logger.debug(f'Model initialized. Number of params = {pgpg.nparams_hr}')
 #   - load dataloader state (from model checkpoint)
 if 'dataloader' in pgpg.other_state_dicts.keys():
@@ -102,6 +102,8 @@ for epoch in range(pgpg.epoch, n_epochs):
     image_2: Tensor
     pose_2: Tensor
     for image_1, image_2, pose_2 in get_tqdm()(dataloader, initial=pgpg.initial_step):
+        continue
+
         # Transfer image batches to GPU
         image_1 = image_1.to(exec_device)
         image_2 = image_2.to(exec_device)

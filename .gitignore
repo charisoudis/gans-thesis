@@ -9,3 +9,5 @@
 .logs
 .logs/*
 .matplotlib.rc
+other_state_dicts.pth
+*.pth
