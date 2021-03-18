@@ -110,7 +110,7 @@ for epoch in range(pgpg.epoch, n_epochs):
         'epoch_inc': pgpg.epoch_inc,
     }
     # initial_step = pgpg.initial_step % len(dataloader)
-    pgpg.logger.debug('[START OF EPOCH] ' + {str(d)})
+    pgpg.logger.debug('[START OF EPOCH] ' + str(d))
     for image_1, image_2, pose_2 in get_tqdm()(dataloader, initial=pgpg.initial_step):
         # Transfer image batches to GPU
         image_1 = image_1.to(exec_device)
