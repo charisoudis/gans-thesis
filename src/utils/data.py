@@ -112,8 +112,7 @@ class ResumableRandomSampler(Sampler):
         # If reached the end of dataset, reshuffle
         if self.perm_index >= len(self.perm):
             if self.logger:
-                self.logger.debug('[SAMPLER] Reached end of epoch. Reshuffling...')
-
+                self.logger.debug(f'[SAMPLER] Reached end of epoch. Resetting state... (shuffle = {self.shuffle})')
             self.reshuffle()
 
         while self.perm_index < len(self.perm):
@@ -124,10 +123,15 @@ class ResumableRandomSampler(Sampler):
         return self.n_samples
 
     def get_state(self) -> dict:
-        return {"perm": self.perm, "perm_index": self.perm_index, "generator_state": self.generator.get_state()}
+        return {
+            "shuffle": self.shuffle,
+            "perm": self.perm,
+            "perm_index": self.perm_index,
+            "generator_state": self.generator.get_state()
+        }
 
     def set_state(self, state: dict) -> None:
-        self.shuffle = bool(state["shuffle"] or True)
+        self.shuffle = bool(state.get("shuffle", True))
         self.perm = state["perm"]
         self.perm_index = state["perm_index"]
         self.generator.set_state(state["generator_state"])
