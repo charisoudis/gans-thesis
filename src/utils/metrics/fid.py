@@ -104,7 +104,7 @@ class FID(nn.Module):
         """
         # Create the dataloader instance
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
-        if self.device == 'cuda' and torch.cuda.is_available():
+        if self.device == 'cuda:0' and torch.cuda.is_available():
             torch.cuda.empty_cache()
         # Extract embeddings
         gen_transforms_inv = invert_transforms(gen_transforms)

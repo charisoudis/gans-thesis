@@ -134,6 +134,9 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         self.gen.to(device)
         self.disc.to(device)
         self.device = device
+        self.is_master_device = (isinstance(device, torch.device) and device.type == 'cuda' and device.index == 0) \
+                                or (isinstance(device, torch.device) and device.type == 'cpu') \
+                                or (isinstance(device, str) and device == 'cpu')
         # Check evaluator
         if not evaluator:
             try:
@@ -303,49 +306,53 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
 
         """
         # Update gdrive model state
-        self.gforward(image_1.shape[0])
+        if self.is_master_device:
+            self.gforward(image_1.shape[0])
 
         ##########################################
         ########   Update Discriminator   ########
         ##########################################
-        self.disc_opt.zero_grad()  # Zero out gradient before backprop
-        with torch.no_grad():
+        with self.gen.frozen():
+            self.disc_opt.zero_grad()  # Zero out discriminator gradient (before backprop)
             _, g_out = self.gen(image_1, pose_2)
-        disc_loss = self.disc.get_loss(real=image_2, fake=g_out, condition=image_1, criterion=self.disc_adv_criterion)
-        disc_loss.backward(retain_graph=True)  # Update discriminator gradients
-        self.disc_opt.step()  # Update discriminator weights
-        # Update LR (if needed)
-        if self.disc_opt_lr_scheduler:
-            if isinstance(self.disc_opt_lr_scheduler, ReduceLROnPlateau):
-                self.disc_opt_lr_scheduler.step(metrics=disc_loss)
-            else:
-                self.disc_opt_lr_scheduler.step()
+            disc_loss = self.disc.get_loss(real=image_2, fake=g_out, condition=image_1,
+                                           criterion=self.disc_adv_criterion)
+            disc_loss.backward(retain_graph=True)  # Update discriminator gradients
+            self.disc_opt.step()  # Update discriminator weights
+            # Update LR (if needed)
+            if self.disc_opt_lr_scheduler:
+                if isinstance(self.disc_opt_lr_scheduler, ReduceLROnPlateau):
+                    self.disc_opt_lr_scheduler.step(metrics=disc_loss)
+                else:
+                    self.disc_opt_lr_scheduler.step()
 
         ##########################################
         ########     Update Generator     ########
         ##########################################
-        self.gen_opt.zero_grad()
-        g1_loss, g2_loss, g1_out, g_out = self.gen.get_loss(x=image_1, y=image_2, y_pose=pose_2.clone(), disc=self.disc,
-                                                            adv_criterion=None, recon_criterion=None)
-        gen_loss = g1_loss + g2_loss
-        gen_loss.backward()  # Update generator gradients
-
-        self.gen_opt.step()  # Update generator optimizer
-        # Update LR (if needed)
-        if self.gen_opt_lr_scheduler:
-            if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
-                self.gen_opt_lr_scheduler.step(metrics=gen_loss)
-            else:
-                self.gen_opt_lr_scheduler.step()
+        with self.disc.frozen():
+            self.gen_opt.zero_grad()
+            g1_loss, g2_loss, g1_out, g_out = self.gen.get_loss(x=image_1, y=image_2, y_pose=pose_2.clone(),
+                                                                disc=self.disc, adv_criterion=None,
+                                                                recon_criterion=None)
+            gen_loss = g1_loss + g2_loss
+            gen_loss.backward()  # Update generator gradients
+            self.gen_opt.step()  # Update generator optimizer
+            # Update LR (if needed)
+            if self.gen_opt_lr_scheduler:
+                if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
+                    self.gen_opt_lr_scheduler.step(metrics=gen_loss)
+                else:
+                    self.gen_opt_lr_scheduler.step()
 
         # Save for visualization
-        self.g1_out = g1_out[::len(g1_out) - 1].detach().cpu()
-        self.g_out = g_out[::len(g_out) - 1].detach().cpu()
-        self.image_1 = image_1[::len(image_1) - 1].detach().cpu()
-        self.image_2 = image_2[::len(image_2) - 1].detach().cpu()
-        self.pose_2 = pose_2[::len(pose_2) - 1].detach().cpu()
-        self.gen_losses.append(gen_loss.item())
-        self.disc_losses.append(disc_loss.item())
+        if self.is_master_device:
+            self.g1_out = g1_out[::len(g1_out) - 1].detach().cpu()
+            self.g_out = g_out[::len(g_out) - 1].detach().cpu()
+            self.image_1 = image_1[::len(image_1) - 1].detach().cpu()
+            self.image_2 = image_2[::len(image_2) - 1].detach().cpu()
+            self.pose_2 = pose_2[::len(pose_2) - 1].detach().cpu()
+            self.gen_losses.append(gen_loss.item())
+            self.disc_losses.append(disc_loss.item())
 
         return disc_loss, gen_loss
 

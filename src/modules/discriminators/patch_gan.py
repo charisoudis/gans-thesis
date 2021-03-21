@@ -6,9 +6,10 @@ from torch import Tensor
 
 from modules.partial.decoding import FeatureMapLayer, ChannelsProjectLayer
 from modules.partial.encoding import ContractingBlock
+from utils.ifaces import Freezable
 
 
-class PatchGANDiscriminator(nn.Module):
+class PatchGANDiscriminator(nn.Module, Freezable):
     """
     PatchGANDiscriminator Class:
     This class implements the PatchGAN discriminator network used by many GAN architectures, such as pix2pix, pix2pixHD
@@ -65,6 +66,14 @@ class PatchGANDiscriminator(nn.Module):
         loss_on_real = criterion(predictions_on_real, torch.ones_like(predictions_on_real))
         loss_on_fake = criterion(predictions_on_fake, torch.zeros_like(predictions_on_real))
         return 0.5 * (loss_on_real + loss_on_fake)
+
+    def freeze(self) -> None:
+        for p in self.parameters():
+            p.requires_grad = False
+
+    def unfreeze(self) -> None:
+        for p in self.parameters():
+            p.requires_grad = True
 
 
 if __name__ == '__main__':

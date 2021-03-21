@@ -1,4 +1,5 @@
 import abc
+from contextlib import contextmanager
 from multiprocessing.pool import ApplyResult
 from typing import Any, Union, List, Optional, Dict, Sequence, Type
 
@@ -670,6 +671,34 @@ class Evaluable(metaclass=abc.ABCMeta):
                  is returned otherwise
         """
         raise NotImplementedError
+
+
+class Freezable(metaclass=abc.ABCMeta):
+    @abc.abstractmethod
+    def freeze(self) -> None:
+        """
+        Freezes model (sets requires_grad=False to all learnable parameters)
+        :return: None
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def unfreeze(self) -> None:
+        """
+        Unfreezes model (sets requires_grad=True to all learnable parameters)
+        :return: None
+        """
+        raise NotImplementedError
+
+    @contextmanager
+    def frozen(self):
+        """
+        Manages context by freezing model, yielding it and then unfreezing it
+        :return: None
+        """
+        self.freeze()
+        yield self
+        self.unfreeze()
 
 
 class ResumableDataLoader(metaclass=abc.ABCMeta):

@@ -2,11 +2,12 @@ from typing import Tuple, Optional
 
 import torch
 from torch import nn, Tensor
-from torchvision.transforms import transforms
 
 from datasets.deep_fashion import ICRBCrossPoseDataloader
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.unet import UNETWithSkipConnections
+from utils.filesystems.local import LocalFolder, LocalCapsule
+from utils.ifaces import Freezable
 
 
 class PGPGGenerator1(UNETWithSkipConnections):
@@ -58,7 +59,7 @@ class PGPGGenerator2(UNETWithSkipConnections):
                                              use_out_tanh=use_out_tanh)
 
 
-class PGPGGenerator(nn.Module):
+class PGPGGenerator(nn.Module, Freezable):
     """
     PGPGGenerator Class:
     This class implements the whole (2-stage) PGPG generator network similar to the one found in the PGPG paper ("Pose
@@ -127,14 +128,18 @@ class PGPGGenerator(nn.Module):
         :return: a tuple containing G1's output and G2's output (i.e. the generated image)
         """
         g1_out = self.g1(torch.cat((x, y_pose), dim=1))
-        g2_out = self.g2(torch.cat((x, g1_out), dim=1))
-        return g1_out, self.output_activation(g2_out + g1_out)
+        with self.g1.frozen():
+            g2_out = self.g2(torch.cat((x, g1_out), dim=1))
+            g2_out = self.output_activation(g2_out + g1_out)
+        return g1_out, g2_out
+
+    CHECK_POSE_TICKS = 10
 
     def get_loss(self, x: Tensor, y_pose: Tensor, y: Tensor, disc: nn.Module,
                  adv_criterion: Optional[nn.modules.Module] = None, lambda_recon: int = 10,
                  recon_criterion: Optional[nn.Module] = None) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
-        Get the loss of the generator given inputs. If the criterions are not provided they will be set using the
+        Get the loss of the generator given inputs. If the criteria are not provided they will be set using the
         instance's given (or default) configuration.
         :param x: input images
         :param y_pose: target images' pose images
@@ -149,31 +154,57 @@ class PGPGGenerator(nn.Module):
         :return: a tuple containing the G1's loss (a scalar) and G2's loss (a scalar) and the outputs (for visualization
                  purposes)
         """
+        # 1) Make a forward pass on the Generator
         g1_out, g_out = self(x, y_pose)
-        y_pose[y_pose > 0] = 1  # pose may act as a loss mask since it is a DensePose IUV map, not just skeleton points
+        #   - check pose encoding
+        if self.CHECK_POSE_TICKS == 0:
+            shape = y_pose.size()
+            values, _ = y_pose.view((1, shape[1], shape[2] * shape[2])).max(dim=2)
+            assert all([v.item() < 1.0 for v in values.view(-1)])
+            values, _ = y_pose.reshape((1, shape[1], shape[2] * shape[2])).min(dim=2)
+            assert all([v.item() == 0.0 for v in values.view(-1)])
+            self.CHECK_POSE_TICKS = 10
+        else:
+            self.CHECK_POSE_TICKS -= 1
+        #   - preview pose image
         # save_tensor_to_image_file(y_pose)
-        y_pose += 1  # how much we want to weight on non-background area (original paper weight is 1)
-        # 1) L1 loss for G1
-        recon_criterion = getattr(nn, f'{self.configuration["recon_criterion"]}Loss')() if not recon_criterion else \
-            recon_criterion
+        #   - reinforce non-background parts based on pose (DensePose has 0 in the background pixels)
+        y_pose[y_pose > 0] = 1  # pose acts as a loss mask since it is a DensePose IUV map, not just skeleton points
+        y_pose += 2             # how much we want to weight on non-background area (original paper weight is 1)
+        # 2) Compute Generator Loss
+        #   - L1 loss for G1
+        recon_criterion = getattr(nn, f'{self.configuration["recon_criterion"]}Loss')() if not recon_criterion \
+            else recon_criterion
         g1_loss = recon_criterion(g1_out * y_pose, y * y_pose)
-        # 2) L1 loss for G2
+        #   - L1 loss for G2
         g2_loss_recon = recon_criterion(g_out * y_pose, y * y_pose)
-        # 3) Adversarial loss for G2
+        #   - Adversarial loss for G2
         gen_out_predictions = disc(g_out, x)
         adv_criterion = getattr(nn, f'{self.configuration["adv_criterion"]}Loss')() if not adv_criterion else \
             adv_criterion
         g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
-        # Aggregate
+        # - Aggregated loss
         g2_loss = g2_loss_adv + lambda_recon * g2_loss_recon
         return g1_loss, g2_loss, g1_out, g_out
 
+    def freeze(self) -> None:
+        for p in self.parameters():
+            p.requires_grad = False
+
+    def unfreeze(self) -> None:
+        for p in self.parameters():
+            p.requires_grad = True
+
 
 if __name__ == '__main__':
-    __gen = PGPGGenerator(c_in=6, c_out=3, w_in=256, h_in=256)
-    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=5, use_spectral_norm=True)
-    __dl = ICRBCrossPoseDataloader(image_transforms=transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))]), batch_size=1)
+    __target_channels = 3
+    __gen = PGPGGenerator(c_in=2 * __target_channels, c_out=__target_channels, w_in=128, h_in=128).to('cpu')
+    __disc = PatchGANDiscriminator(c_in=2 * __target_channels, n_contracting_blocks=5, use_spectral_norm=True).to('cpu')
+    __datasets_folder = LocalFolder.root(
+        LocalCapsule('/home/achariso/PycharmProjects/gans-thesis/.gdrive')).subfolder_by_name('Datasets')
+    __dl = ICRBCrossPoseDataloader(
+        dataset_fs_folder_or_root=__datasets_folder,
+        batch_size=1, target_shape=128, target_channels=__target_channels, pin_memory=False)
     for _, __images in enumerate(__dl):
         __x, __y, __y_pose = __images
         print(__x.shape)

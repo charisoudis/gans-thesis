@@ -1,5 +1,7 @@
+import torch
 from IPython.core.display import display
 from torch import Tensor
+from torch.nn import DataParallel
 # noinspection PyProtectedMember
 from torch.utils.data import DataLoader
 
@@ -84,6 +86,10 @@ pgpg = PGPG(model_fs_folder_or_root=models_groot, config_id=pgpg_config_id, data
             chkpt_epoch=pgpg_chkpt_step, evaluator=evaluator, device=exec_device, log_level=log_level)
 pgpg.logger.debug(f'Using device: {str(exec_device)}')
 pgpg.logger.debug(f'Model initialized. Number of params = {pgpg.nparams_hr}')
+#   - setup multi-GPU training
+if torch.cuda.device_count() > 1:
+    pgpg.gen = DataParallel(pgpg.gen)
+    pgpg.info(f'Using {torch.cuda.device_count()} GPUs for PGPG Generator (via torch.nn.DataParallel)')
 #   - load dataloader state (from model checkpoint)
 if 'dataloader' in pgpg.other_state_dicts.keys():
     dataloader.set_state(pgpg.other_state_dicts['dataloader'])

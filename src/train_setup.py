@@ -38,7 +38,7 @@ assert os.path.exists(local_gdrive_root), f'local_gdrive_root={local_gdrive_root
 os.environ['TRAIN_EXEC_ENV'] = exec_env
 
 # Check if GPU is available
-exec_device = torch.device('cuda' if torch.cuda.is_available() and not run_locally else 'cpu')
+exec_device = torch.device('cuda:0' if torch.cuda.is_available() and not run_locally else 'cpu')
 os.environ['TRAIN_EXEC_DEV'] = str(exec_device)
 
 # Get log level

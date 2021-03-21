@@ -59,7 +59,7 @@ class IS(FID):
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
         gen_transforms_inv = invert_transforms(gen_transforms)
 
-        if self.device == 'cuda' and torch.cuda.is_available():
+        if self.device == 'cuda:0' and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         cur_samples = 0

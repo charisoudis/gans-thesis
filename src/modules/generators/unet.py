@@ -5,9 +5,10 @@ from torch import nn, Tensor
 
 from modules.partial.decoding import UNETExpandingBlock, FeatureMapLayer, ChannelsProjectLayer
 from modules.partial.encoding import UNETContractingBlock
+from utils.ifaces import Freezable
 
 
-class UNETWithSkipConnections(nn.Module):
+class UNETWithSkipConnections(nn.Module, Freezable):
     """
     UNETWithSkipConnections Class:
     A series of 4 contracting blocks followed by 4 expanding blocks to transform an input image into the corresponding
@@ -116,11 +117,24 @@ class UNETWithSkipConnections(nn.Module):
         returns a reconstruction loss (which we aim to minimize)
         :param lambda_recon: the degree to which the reconstruction loss should be weighted
         """
+        # 1) Freeze Discriminator
+        assert isinstance(disc, Freezable), 'Discriminator must implement utils.ifaces.Freezable in order to be frozen'
+        disc.freeze()
+        # 2) Forward pass through UNET
         fake_images = self(condition)
-        with torch.no_grad():
-            fake_predictions = disc(fake_images, condition)
+        fake_predictions = disc(fake_images, condition)
         recon_loss = recon_criterion(fake_images, real)
         if type(adv_criterion) == torch.nn.modules.loss.BCELoss:
             fake_predictions = nn.Sigmoid()(fake_predictions)
         adv_loss = adv_criterion(fake_predictions, torch.ones_like(fake_predictions))
+        # 3) Unfreeze Discriminator
+        disc.unfreeze()
         return adv_loss + lambda_recon * recon_loss
+
+    def freeze(self) -> None:
+        for p in self.parameters():
+            p.requires_grad = False
+
+    def unfreeze(self) -> None:
+        for p in self.parameters():
+            p.requires_grad = True

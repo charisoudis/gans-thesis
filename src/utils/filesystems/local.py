@@ -84,7 +84,13 @@ class LocalFolder(FilesystemFolder):
 
     def __init__(self, fs: 'LocalFilesystem', local_root: str, parent: Optional['LocalFolder'] = None,
                  force_create_local: bool = True):
-        """TODO documentation"""
+        """
+        LocalFolder class constructor.
+        :param (LocalFilesystem) fs: utils.filesystems.local.LocalFilesystem instance to interact with OS kernel
+        :param (str) local_root: absolute path to folder in local filesystem
+        :param (optional) parent: parent folder as utils.filesystems.local.LocalFolder instance or None if root
+        :param (bool) force_create_local: set to True to create local folder if it does not exist
+        """
         # Save args
         self.fs = fs
         self._local_root = local_root
