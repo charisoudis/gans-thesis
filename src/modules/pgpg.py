@@ -452,7 +452,16 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         epoch_metrics_dict = self.list_all_metrics()
         for epoch, epoch_metrics in epoch_metrics_dict.items():
             # Check if file is in local filesystem and is a metric file
-            _files = [_f for _f in epoch_metrics if _f.name.endswith('.json') and _f.is_downloaded]
+            _files = []
+            for _f in epoch_metrics:
+                if isinstance(_f, FilesystemFile) and _f.name.endswith('.json'):
+                    if not _f.is_downloaded and not _f.download(in_parallel=False, show_progress=False):
+                        raise FileNotFoundError('File not found in GoogleDrive or FAILed to download')
+                    _files.append(_f)
+
+            if len(_files) == 0:
+                self.logger.warning(f'Epoch #{epoch} has no metrics JSON files')
+                continue
 
             # We do not know beforehand the number of metric files inside each epoch
             x_step = 1 / len(_files)
