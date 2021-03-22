@@ -157,7 +157,7 @@ class PGPGGenerator(nn.Module, Freezable):
         # 1) Make a forward pass on the Generator
         g1_out, g_out = self(x, y_pose)
         #   - check pose encoding
-        if self.CHECK_POSE_TICKS == 0:
+        if self.CHECK_POSE_TICKS == 0 or False:
             shape = y_pose.size()
             # TODO: [FIX] RuntimeError: shape '[1, 3, 16384]' is invalid for input of size 2359296
             values, _ = y_pose.view((1, shape[1], shape[2] * shape[2])).max(dim=2)  # <-- HERE
