@@ -691,14 +691,36 @@ class Freezable(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @contextmanager
-    def frozen(self):
+    def frozen(self) -> 'Freezable':
         """
         Manages context by freezing model, yielding it and then unfreezing it
-        :return: None
+        :return: self instance
         """
         self.freeze()
         yield self
         self.unfreeze()
+
+
+class Reproducible(metaclass=abc.ABCMeta):
+    _seed = None
+
+    @staticmethod
+    @abc.abstractmethod
+    def manual_seed(seed: int) -> None:
+        """
+        Achieve reproducibility using a manual seeder.
+        :param (int) seed: seeder value
+        :return: None
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def is_seeded() -> bool:
+        """
+        Check if manual_seed() has been called before.
+        :return: True if _seed has been set else False
+        """
+        return Reproducible._seed is not None
 
 
 class ResumableDataLoader(metaclass=abc.ABCMeta):

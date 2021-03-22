@@ -19,6 +19,7 @@ from torchvision.transforms import Compose
 from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataset
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.pgpg import PGPGGenerator
+from utils.command_line_logger import CommandLineLogger
 from utils.filesystems.gdrive import GDriveModel
 from utils.filesystems.gdrive.remote import GDriveCapsule, GDriveFolder
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
@@ -100,13 +101,15 @@ class PGPG(nn.Module, GDriveModel, Configurable, Evaluable, Visualizable):
         :param evaluator_kwargs: if :attr:`evaluator` is `None` these arguments must be present to initialize a new
                                  `utils.metrics.GanEvaluator` instance
         """
+        # Initialize logger
+        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
         # Instantiate GDriveModel class
         model_name = self.__class__.__name__.lower()
         model_fs_folder = model_fs_folder_or_root if model_fs_folder_or_root.name.endswith(model_name) else \
             model_fs_folder_or_root.subfolder_by_name(folder_name=f'model_name={model_name}', recursive=True)
-        GDriveModel.__init__(self, model_fs_folder=model_fs_folder, model_name=model_name, dataset_len=dataset_len,
-                             log_level=log_level)
-        # Instantiate InceptionV3 model
+        GDriveModel.__init__(self, model_fs_folder=model_fs_folder, logger=self.logger, model_name=model_name,
+                             dataset_len=dataset_len)
+        # Instantiate torch.nn.Module class
         nn.Module.__init__(self)
         # Load model configuration from Google Drive or use default
         if config_id:
@@ -513,9 +516,10 @@ if __name__ == '__main__':
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
     _log_level = 'debug'
 
-    # # Via GoogleDrive API
+    # Via GoogleDrive API
     _groot = GDriveFolder.root(capsule_or_fs=GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True,
-                                                           update_credentials=True), update_cache=False)
+                                                           update_credentials=True, use_refresh_token=True),
+                               update_cache=False)
     ensure_matplotlib_fonts_exist(_groot, force_rebuild=False)
 
     # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
@@ -555,7 +559,7 @@ if __name__ == '__main__':
 
     _img = _pgpg.visualize()
     _img.show()
-    exit(0)
+    # exit(0)
 
     import time
 

@@ -1,14 +1,17 @@
 import json
 import os
 import os.path
+import random
 from typing import Optional, List, Sized, Union
 
+import numpy as np
 import prettytable
 import torch
 # noinspection PyProtectedMember
 from torch.utils.data import Sampler
 
 from utils.command_line_logger import CommandLineLogger
+from utils.ifaces import Reproducible
 from utils.string import to_human_readable
 
 
@@ -69,6 +72,20 @@ def deep_fashion_icrb_info(root: str = '/data/Datasets/DeepFashion/In-shop Cloth
     return json.loads(table.get_json_string()) if return_dict else None
 
 
+class ManualSeedReproducible(Reproducible):
+
+    @staticmethod
+    def manual_seed(seed: int) -> int:
+        if Reproducible.is_seeded():
+            return Reproducible._seed
+        # Set seeder value
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        Reproducible._seed = seed
+        return seed
+
+
 class ResumableRandomSampler(Sampler):
     """
     ResumableRandomSampler Class:
@@ -89,8 +106,7 @@ class ResumableRandomSampler(Sampler):
         super(ResumableRandomSampler, self).__init__(data_source=data_source)
 
         self.n_samples = len(data_source)
-        self.generator = torch.Generator()
-        self.generator.manual_seed(seed)
+        self.generator = torch.Generator().manual_seed(seed)
 
         self.shuffle = shuffle
         if self.shuffle:
@@ -102,6 +118,7 @@ class ResumableRandomSampler(Sampler):
             self.perm = range(0, self.n_samples)
 
         self.logger = logger
+        assert self.logger is not None, 'Please provide a logger instance for ResumableRandomSampler'
 
     def reshuffle(self) -> None:
         self.perm_index = 0

@@ -1,3 +1,4 @@
+import os
 from typing import Dict, Optional
 
 import torch
@@ -5,6 +6,7 @@ import torch.nn as nn
 from torch import Tensor
 from torchvision.models import inception_v3
 
+from utils.command_line_logger import CommandLineLogger
 from utils.filesystems.gdrive import GDriveModel
 from utils.ifaces import Configurable, FilesystemFolder
 
@@ -27,11 +29,13 @@ class InceptionV3(nn.Module, GDriveModel, Configurable):
                                          loaded via `nn.Module().load_state_dict()`
         :param (bool) crop_fc: set to True to crop FC layer from Inception v3 network (e.g. to get image embeddings)
         """
+        # Initialize logger
+        self.logger = CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'), name=self.__class__.__name__)
         # Instantiate GDriveModel class
         model_name = self.__class__.__name__.lower()
         model_gfolder = model_gfolder_or_groot if model_gfolder_or_groot.name.endswith(model_name) else \
             model_gfolder_or_groot.subfolder_by_name(folder_name=f'model_name={model_name}', recursive=True)
-        GDriveModel.__init__(self, model_fs_folder=model_gfolder, model_name=model_name)
+        GDriveModel.__init__(self, model_fs_folder=model_gfolder, logger=self.logger, model_name=model_name)
         # Instantiate InceptionV3 model
         nn.Module.__init__(self)
         self.inception_v3 = inception_v3(pretrained=False, init_weights=False)

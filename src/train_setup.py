@@ -9,6 +9,7 @@ from utils.filesystems.gdrive.colab import ColabFilesystem, ColabFolder, ColabCa
 from utils.filesystems.gdrive.remote import GDriveCapsule, GDriveFilesystem, GDriveFolder
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 # Flag to run first test batches locally
+from utils.ifaces import Reproducible
 from utils.plot import ensure_matplotlib_fonts_exist
 
 ##########################################
@@ -53,7 +54,10 @@ if in_notebook():
 else:
     log_level = 'info' if not run_locally else 'debug'
 os.environ['TRAIN_LOG_LEVEL'] = log_level
-print(f'log_level={log_level}')
+
+# Reproducibility
+seed = 42
+Reproducible.manual_seed(seed)
 
 ##########################################
 ###  GDrive Filesystem Initialization  ###

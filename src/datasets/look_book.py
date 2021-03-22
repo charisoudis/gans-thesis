@@ -15,7 +15,7 @@ from torchvision.transforms import transforms, Compose
 
 from datasets.deep_fashion import ICRBDataset
 from utils.command_line_logger import CommandLineLogger
-from utils.data import ResumableRandomSampler
+from utils.data import ResumableRandomSampler, ManualSeedReproducible
 from utils.dep_free import get_tqdm
 from utils.filesystems.gdrive import GDriveDataset
 from utils.filesystems.local import LocalCapsule, LocalFilesystem, LocalFolder
@@ -152,7 +152,7 @@ class PixelDTDataset(Dataset, GDriveDataset):
                                                 norm_std=norm_std if norm_std else PixelDTDataset.NormalizeStd)
 
 
-class PixelDTDataloader(DataLoader, ResumableDataLoader):
+class PixelDTDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
     """
     PixelDTDataloader Class:
     This class implement torch.utils.data.DataLoader and is used to access the underlying LookBook dataset with all the
@@ -182,6 +182,9 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
         :param splits: if not None performs training/testing sets split based on given :attr:`split` percentages
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
+        # Reproducibility
+        seed = ManualSeedReproducible.manual_seed(seed)
+        # Image transforms
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
         assert image_transforms is None or (target_channels is None and target_shape is None), \
@@ -195,13 +198,19 @@ class PixelDTDataloader(DataLoader, ResumableDataLoader):
         # Create dataset instance based on the transforms
         _dataset = PixelDTDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root,
                                   image_transforms=image_transforms, log_level=log_level)
+        # Perform train/test split
         if splits:
-            _dataset, _test_set = train_test_split(_dataset, splits=splits)
-            self.test_set = _test_set
+            _training_set, _test_set = train_test_split(_dataset, splits=splits, seed=seed)
+            _dataset.logger.debug(f'Split dataset: len(training_set)={to_human_readable(len(_training_set))}, ' +
+                                  f'len(test_set)={to_human_readable(len(_test_set))}')
+        else:
+            _training_set = _test_set = _dataset
+        self.test_set = _test_set
         # Create sample instance
-        self._sampler = ResumableRandomSampler(data_source=_dataset, shuffle=shuffle, seed=seed)
+        self._sampler = ResumableRandomSampler(data_source=_training_set, shuffle=shuffle, seed=seed,
+                                               logger=_dataset.logger)
         # Finally, instantiate dataloader
-        super(PixelDTDataloader, self).__init__(dataset=_dataset, batch_size=batch_size, sampler=self._sampler,
+        super(PixelDTDataloader, self).__init__(dataset=_training_set, batch_size=batch_size, sampler=self._sampler,
                                                 pin_memory=pin_memory)
 
     def get_state(self) -> dict:

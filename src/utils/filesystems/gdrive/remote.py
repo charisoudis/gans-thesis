@@ -47,7 +47,7 @@ class GDriveCapsule(FilesystemCapsule):
         :param (bool) update_credentials: set to True to have json file updated with new access_token/token expiry
                                           if a new token was generated
         """
-        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
+        self.logger = CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'), name=self.__class__.__name__)
         self.local_root = local_gdrive_root
         self.client_secrets_filepath = f'{local_gdrive_root}/client_secrets.json'
         self.update_credentials = update_credentials
@@ -578,7 +578,7 @@ class GDriveFilesystem(Filesystem):
         :param (GDriveCapsule) gcapsule: a `utils.gdrive.GDriveCapsule` instance to interact with GoogleDrive filesystem
         """
         self.tqdm = get_tqdm()
-        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
+        self.logger = gcapsule.logger
         # Create a thread pool for parallel uploads/downloads
         self.thread_pool = ThreadPool(processes=1)
         atexit.register(self.thread_pool.close)

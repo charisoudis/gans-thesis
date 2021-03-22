@@ -175,19 +175,19 @@ class GDriveModel(FilesystemModel):
     if a checkpoint at a given batch size/step combination is present in the local filesystem.
     """
 
-    def __init__(self, model_fs_folder: FilesystemFolder, model_name: Optional[str] = None,
-                 dataset_len: Optional[int] = None, log_level: str = 'info'):
+    def __init__(self, model_fs_folder: FilesystemFolder, logger: CommandLineLogger, model_name: Optional[str] = None,
+                 dataset_len: Optional[int] = None):
         """
         GDriveModel class constructor.
         :param (FilesystemFolder) model_fs_folder: a `utils.gdrive.GDriveFolder` instance to interact with model folder
                                                    in local or remote (Google Drive) filesystem
+        :param (CommandLineLogger) logger: a `utils.command_line_logger.CommandLineLogger` instance to log events
         :param (str) model_name: the parent model name or `None` to auto-detect from folder name in Google Drive
         :param (optional) dataset_len: number of images in the dataset used to train the generator or None to fetched
                                        from the :attr:`evaluator` dataset property (used for epoch tracking)
-        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger
         """
-        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
         # Save args
+        self.logger = logger
         self.gfolder = model_fs_folder
         self.local_chkpts_root = model_fs_folder.local_root
         # Define extra properties
@@ -646,7 +646,7 @@ class GDriveModel(FilesystemModel):
             if len(_epoch_chkpts_list) > 0:
                 _return_dict[_epoch] = _epoch_chkpts_list
         return _return_dict
-    
+
     def list_all_metrics(self, only_keys: Optional[Sequence[str]] = None) \
             -> Dict[int, List[GDriveFile or ColabFile or dict]]:
         _return_dict = {}

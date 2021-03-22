@@ -20,6 +20,7 @@ class LocalCapsule(FilesystemCapsule):
         :param (str) local_root: absolute path to the local directory where local files will be placed in
         """
         self.local_root = local_root
+        self.logger = CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'), name=self.__class__.__name__)
 
 
 class LocalFile(FilesystemFile):
@@ -237,13 +238,13 @@ class LocalFilesystem(Filesystem):
         :param (LocalCapsule) ccapsule: a `utils.filesystems.local.LocalCapsule` instance to interact with local
                                         filesystem
         """
-        self.logger = CommandLineLogger(log_level='info', name=self.__class__.__name__)
         # Create a thread pool for parallel uploads/downloads
         self.thread_pool = ThreadPool(processes=1)
         atexit.register(self.thread_pool.close)
         # Save args
         self.ccapsule = ccapsule
         self.local_root = ccapsule.local_root
+        self.logger = ccapsule.logger
 
     def create_folder(self, cloud_folder: LocalFolder, folder_name: str, force_create_local: bool = False) \
             -> Optional[LocalFolder]:

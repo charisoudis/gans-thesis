@@ -17,7 +17,7 @@ from torchvision.transforms import Compose
 from tqdm import tqdm
 
 from utils.command_line_logger import CommandLineLogger
-from utils.data import ResumableRandomSampler
+from utils.data import ResumableRandomSampler, ManualSeedReproducible
 from utils.dep_free import get_tqdm
 from utils.filesystems.gdrive import GDriveDataset
 from utils.ifaces import ResumableDataLoader, FilesystemFolder
@@ -159,7 +159,7 @@ class ICRBDataset(Dataset, GDriveDataset):
         return default_prefix.rstrip('/') if default_prefix else ''
 
 
-class ICRBDataloader(DataLoader, ResumableDataLoader):
+class ICRBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
 
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder,
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
@@ -186,6 +186,9 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
                                   percentages
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
+        # Reproducibility
+        seed = ICRBDataloader.manual_seed(seed)
+        # Image transforms
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
         assert image_transforms is None or (target_channels is None and target_shape is None), \
@@ -208,7 +211,8 @@ class ICRBDataloader(DataLoader, ResumableDataLoader):
             _training_set = _test_set = _dataset
         self.test_set = _test_set
         # Create sample instance
-        self._sampler = ResumableRandomSampler(data_source=_training_set, shuffle=shuffle, seed=seed)
+        self._sampler = ResumableRandomSampler(data_source=_training_set, shuffle=shuffle, seed=seed,
+                                               logger=_dataset.logger)
         # Finally, instantiate dataloader
         super(ICRBDataloader, self).__init__(dataset=_training_set, batch_size=batch_size, sampler=self._sampler,
                                              pin_memory=pin_memory)
@@ -370,7 +374,7 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
         return self.total_pairs_count
 
 
-class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
+class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
 
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder,
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
@@ -399,6 +403,9 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader):
                                   percentages
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
+        # Reproducibility
+        seed = ICRBCrossPoseDataloader.manual_seed(seed)
+        # Image transforms
         if image_transforms is None and target_shape is None and target_channels is None:
             image_transforms = transforms.Compose([transforms.ToTensor()])
         assert image_transforms is None or (target_channels is None and target_shape is None), \

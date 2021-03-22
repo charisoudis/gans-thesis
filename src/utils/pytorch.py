@@ -1,3 +1,4 @@
+import os
 from typing import Any
 
 import numpy as np
@@ -61,7 +62,8 @@ def enable_verbose(model: nn.Module) -> None:
     Register verbose hooks on model's forward pass to output the shape of each layer's output tensor.
     :param model: an torch.nn.Module instance
     """
-    logger = model.logger if hasattr(model, 'logger') else CommandLineLogger()
+    logger = model.logger if hasattr(model, 'logger') else \
+        CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'debug'), name='ModelVerbose')
     # Register a hook for each layer
     for _name, _layer in model.named_children():
         _layer.register_forward_hook(lambda _l, _, _out: logger.debug(f"{_name}: {_out.shape}"))
