@@ -157,9 +157,10 @@ class PGPGGenerator(nn.Module, Freezable):
         # 1) Make a forward pass on the Generator
         g1_out, g_out = self(x, y_pose)
         #   - check pose encoding
-        if self.CHECK_POSE_TICKS == 0:
+        if self.CHECK_POSE_TICKS == 0 or False:
             shape = y_pose.size()
-            values, _ = y_pose.view((1, shape[1], shape[2] * shape[2])).max(dim=2)
+            # TODO: [FIX] RuntimeError: shape '[1, 3, 16384]' is invalid for input of size 2359296
+            values, _ = y_pose.view((1, shape[1], shape[2] * shape[2])).max(dim=2)  # <-- HERE
             assert all([v.item() < 1.0 for v in values.view(-1)])
             values, _ = y_pose.reshape((1, shape[1], shape[2] * shape[2])).min(dim=2)
             assert all([v.item() == 0.0 for v in values.view(-1)])
@@ -170,7 +171,7 @@ class PGPGGenerator(nn.Module, Freezable):
         # save_tensor_to_image_file(y_pose)
         #   - reinforce non-background parts based on pose (DensePose has 0 in the background pixels)
         y_pose[y_pose > 0] = 1  # pose acts as a loss mask since it is a DensePose IUV map, not just skeleton points
-        y_pose += 2             # how much we want to weight on non-background area (original paper weight is 1)
+        y_pose += 2  # how much we want to weight on non-background area (original paper weight is 1)
         # 2) Compute Generator Loss
         #   - L1 loss for G1
         recon_criterion = getattr(nn, f'{self.configuration["recon_criterion"]}Loss')() if not recon_criterion \
