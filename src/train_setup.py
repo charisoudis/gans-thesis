@@ -23,6 +23,8 @@ parser.add_argument('--chkpt_step', type=str, default='latest',
                     help='model checkpoint to be loaded (\'latest\' or str or int)')
 parser.add_argument('--seed', type=int, default=42,
                     help='random generators seed value (default: 42)')
+parser.add_argument('-use_refresh_token', action='store_true',
+                    help='if set will use client_secrets.json to connect to Google Drive, else will ask for auth code')
 args = parser.parse_args()
 
 ##########################################
@@ -77,7 +79,7 @@ elif run_locally:
     groot = LocalFolder.root(capsule_or_fs=fs)
 else:
     # Remote filesystem. Interacts via GoogleDrive API calls.
-    global use_refresh_token
+    use_refresh_token = args.use_refresh_token
     try:
         use_refresh_token = use_refresh_token or False
     except NameError:
