@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataloader
 from modules.pgpg import PGPG
-from train_setup import run_locally, exec_device, log_level, datasets_groot, models_groot, in_notebook
+from train_setup import args, run_locally, exec_device, log_level, datasets_groot, models_groot, in_notebook
 from utils.dep_free import get_tqdm
 from utils.ifaces import FilesystemDataset
 from utils.metrics import GanEvaluator
@@ -72,7 +72,7 @@ evaluator = GanEvaluator(model_fs_folder_or_root=models_groot, gen_dataset=datas
                          condition_indices=(0, 2), n_samples=metrics_n_samples, batch_size=metrics_batch_size,
                          f1_k=f1_k)
 #   - initialize model
-global chkpt_step
+chkpt_step = args.chkpt_step
 try:
     if chkpt_step == 'latest':
         pgpg_chkpt_step = chkpt_step

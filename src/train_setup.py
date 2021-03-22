@@ -1,16 +1,29 @@
+import argparse
 import os
 import sys
 
 import torch
 from IPython import get_ipython
 
+from utils.data import ManualSeedReproducible
 from utils.dep_free import in_notebook
 from utils.filesystems.gdrive.colab import ColabFilesystem, ColabFolder, ColabCapsule
 from utils.filesystems.gdrive.remote import GDriveCapsule, GDriveFilesystem, GDriveFolder
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 # Flag to run first test batches locally
-from utils.ifaces import Reproducible
 from utils.plot import ensure_matplotlib_fonts_exist
+
+##########################################
+###         Parse CLI Arguments        ###
+##########################################
+parser = argparse.ArgumentParser(description='Trains PGPG model in PyTorch.')
+parser.add_argument('--log_level', type=str, default='debug', choices=['debug', 'info', 'warning', 'error', 'critical'],
+                    help='default log level (\'debug\', \'info\', \'warning\', \'error\' or \'critical\')')
+parser.add_argument('--chkpt_step', type=str, default='latest',
+                    help='model checkpoint to be loaded (\'latest\' or str or int)')
+parser.add_argument('--seed', type=int, default=42,
+                    help='random generators seed value (default: 42)')
+args = parser.parse_args()
 
 ##########################################
 ###     Environment Initialization     ###
@@ -43,21 +56,12 @@ exec_device = torch.device('cuda:0' if torch.cuda.is_available() and not run_loc
 os.environ['TRAIN_EXEC_DEV'] = str(exec_device)
 
 # Get log level
-global log_level
-if in_notebook():
-    try:
-        log_level = f'{log_level}'
-    except NameError:
-        print('You should define log_level variable before running this script')
-        log_level = input('log_level=')
-        assert log_level in ['debug', 'info', 'warning', 'error']
-else:
-    log_level = 'info' if not run_locally else 'debug'
+log_level = args.log_level
 os.environ['TRAIN_LOG_LEVEL'] = log_level
 
 # Reproducibility
-seed = 42
-Reproducible.manual_seed(seed)
+seed = args.seed
+ManualSeedReproducible.manual_seed(seed)
 
 ##########################################
 ###  GDrive Filesystem Initialization  ###
