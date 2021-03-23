@@ -194,7 +194,7 @@ class GDriveModel(FilesystemModel):
         self.chkpts_gfolder = model_fs_folder.subfolder_by_name_or_create(folder_name='Checkpoints')
         self.metrics_gfolder = model_fs_folder.subfolder_by_name_or_create(folder_name='Metrics')
         self.configurations_gfolder = model_fs_folder.subfolder_by_name_or_create(folder_name='Configurations')
-        self.visualizations_gfolder = model_fs_folder.subfolder_by_name_or_create(folder_name='Visualizations')
+        self.visualizations_fs_folder = model_fs_folder.subfolder_by_name_or_create(folder_name='Visualizations')
         self.model_name = model_name if model_name else \
             model_fs_folder.local_root.split(sep='=', maxsplit=1)[-1]
 
@@ -227,11 +227,11 @@ class GDriveModel(FilesystemModel):
         # ---------------
         # Get all visualizations folders (i.e. folders with names "epoch=<epoch>" under "Visualizations" folder)
         self.visualizations_epoch_gfolders = {}
-        for _sf in self.visualizations_gfolder.subfolders:
+        for _sf in self.visualizations_fs_folder.subfolders:
             if _sf.name.startswith('epoch='):
                 self.visualizations_epoch_gfolders[int(_sf.name.replace('epoch=', ''))] = _sf
         # No epoch=* subfolders found: create an epoch visualizations folder with hypothetical epoch=-1
-        self.visualizations_epoch_gfolders[-1] = self.visualizations_gfolder
+        self.visualizations_epoch_gfolders[-1] = self.visualizations_fs_folder
 
         # ----------------
         # Configurations
@@ -294,7 +294,7 @@ class GDriveModel(FilesystemModel):
             visualization_img.save(new_visualizations_path)
             # Upload new visualization file to Google Drive
             #   - ensure visualizations folder exists locally & in Google Drive
-            self.ensure_visualizations_gfolder_exists(epoch=epoch)
+            self.ensure_visualizations_fs_folder_exists(epoch=epoch)
             #   - upload local file to Google Drive
             upload_gfolder = self.visualizations_epoch_gfolders[epoch]
             _results.append(upload_gfolder.upload_file(local_filename=os.path.basename(new_visualizations_path),
@@ -475,7 +475,7 @@ class GDriveModel(FilesystemModel):
             self.metrics_epoch_gfolders[epoch] = \
                 self.metrics_gfolder.create_subfolder(folder_name=f'epoch={epoch}', force_create_local=True)
 
-    def ensure_visualizations_gfolder_exists(self, epoch: Optional[int] = None) -> None:
+    def ensure_visualizations_fs_folder_exists(self, epoch: Optional[int] = None) -> None:
         """
         Checks if visualizations folder for given batch size exists locally as well as in Google Drive.
         :param (int or None) epoch: the folder should be named "epoch=<epoch>"; this is where this parameter is used.
@@ -490,7 +490,7 @@ class GDriveModel(FilesystemModel):
             # Folder for given batch size does not exist, create a new folder now and save in instance's dict
             # This will also create folder locally
             self.visualizations_epoch_gfolders[epoch] = \
-                self.visualizations_gfolder.create_subfolder(folder_name=f'epoch={epoch}', force_create_local=True)
+                self.visualizations_fs_folder.create_subfolder(folder_name=f'epoch={epoch}', force_create_local=True)
 
     def fetch_checkpoint(self, epoch_or_id: Union[int, str], step: Optional[int] = None) -> str or False:
         # Check if latest checkpoint is requested
@@ -599,11 +599,11 @@ class GDriveModel(FilesystemModel):
             assert step is not None, f'provided epoch number (epoch_or_id={epoch}) but step=None. No way to find file'
             chkpt_id = str(step).zfill(10)
         # Find containing folder
-        self.ensure_visualizations_gfolder_exists(epoch=epoch)
-        visualizations_gfolder = self.visualizations_epoch_gfolders[epoch]
-        visualizations_gfolder.ensure_local_root_exists()
+        self.ensure_visualizations_fs_folder_exists(epoch=epoch)
+        visualizations_fs_folder = self.visualizations_epoch_gfolders[epoch]
+        visualizations_fs_folder.ensure_local_root_exists()
         # Format and return
-        return f'{visualizations_gfolder.local_root}/{chkpt_id}.jpg'
+        return f'{visualizations_fs_folder.local_root}/{chkpt_id}.jpg'
 
     def is_checkpoint_fetched(self, epoch_or_id: Union[int, str], step: Optional[int] = None) -> str or False:
         local_filepath = self._get_checkpoint_filepath(epoch_or_id=epoch_or_id, step=step)

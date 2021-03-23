@@ -425,6 +425,9 @@ class FilesystemDataset(metaclass=abc.ABCMeta):
 
 
 class FilesystemModel(metaclass=abc.ABCMeta):
+    latest_metrics = None
+    visualizations_fs_folder = None
+
     @classmethod
     def version(cls) -> str:
         """
