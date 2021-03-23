@@ -4,7 +4,7 @@ from multiprocessing.pool import ApplyResult
 from typing import Any, Union, List, Optional, Dict, Sequence, Type
 
 from PIL.Image import Image
-from torch import Tensor
+from torch import Tensor, nn
 
 
 class _IFaceTemplate(metaclass=abc.ABCMeta):
@@ -702,6 +702,38 @@ class Freezable(metaclass=abc.ABCMeta):
         self.freeze()
         yield self
         self.unfreeze()
+
+
+class BalancedFreezable(Freezable):
+    """
+    BalancedFreezable Class:
+    To be used in cases where nested calls to `with module.frozen()` may arise. Does not unfreezes the model until the
+    number of `unfreeze()` calls reaches the corresponding number of `freeze()` calls.
+    """
+
+    def __init__(self):
+        """
+        BalancedFreezable class constructor.
+        """
+        self._freeze_requests_count: int = 0
+        self._state = 'unfrozen'
+
+    def freeze(self) -> None:
+        self._freeze_requests_count += 1
+        if self._freeze_requests_count == 1:
+            assert isinstance(self, nn.Module)
+            for p in self.parameters():
+                p.requires_grad = False
+            self._state = 'frozen'
+
+    def unfreeze(self) -> None:
+        self._freeze_requests_count -= 1
+        if self._freeze_requests_count == 0:
+            assert isinstance(self, nn.Module)
+            for p in self.parameters():
+                p.requires_grad = True
+            self._state = 'unfrozen'
+        assert self._freeze_requests_count >= 0, f'self.freeze_requests_count={self._freeze_requests_count}'
 
 
 class Reproducible(metaclass=abc.ABCMeta):

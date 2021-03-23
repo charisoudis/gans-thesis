@@ -131,7 +131,7 @@ class ICRBDataset(Dataset, GDriveDataset):
         if target_channels == 1:
             transforms_list.append(transforms.Grayscale(1))
         transforms_list += [
-            ToTensorOrPass(),
+            ToTensorOrPass(renormalize=False),
             transforms.Normalize(mean=tuple(np.ones(target_channels) * norm_mean),
                                  std=tuple(np.ones(target_channels) * norm_std))
         ]

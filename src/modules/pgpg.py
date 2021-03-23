@@ -174,7 +174,7 @@ class PGPG(nn.Module, IGanGModule):
             self.disc_opt_lr_scheduler = None
 
         # Save transforms for visualizer
-        self.gen_transforms = evaluator.gen_transforms if evaluator else gen_transforms
+        self.gen_transforms = gen_transforms
 
         # Initialize params
         self.g1_out = None

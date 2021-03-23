@@ -189,12 +189,12 @@ class PGPGGenerator(nn.Module, Freezable):
         return g1_loss, g2_loss, g1_out, g_out
 
     def freeze(self) -> None:
-        for p in self.parameters():
-            p.requires_grad = False
+        self.g1.freeze()
+        self.g2.freeze()
 
     def unfreeze(self) -> None:
-        for p in self.parameters():
-            p.requires_grad = True
+        self.g2.unfreeze()
+        self.g1.unfreeze()
 
 
 if __name__ == '__main__':

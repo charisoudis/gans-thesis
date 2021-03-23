@@ -6,10 +6,10 @@ from torch import Tensor
 
 from modules.partial.decoding import FeatureMapLayer, ChannelsProjectLayer
 from modules.partial.encoding import ContractingBlock
-from utils.ifaces import Freezable
+from utils.ifaces import BalancedFreezable
 
 
-class PatchGANDiscriminator(nn.Module, Freezable):
+class PatchGANDiscriminator(nn.Module, BalancedFreezable):
     """
     PatchGANDiscriminator Class:
     This class implements the PatchGAN discriminator network used by many GAN architectures, such as pix2pix, pix2pixHD
@@ -24,7 +24,11 @@ class PatchGANDiscriminator(nn.Module, Freezable):
         :param n_contracting_blocks: number of contracting blocks
         :param use_spectral_norm: flag to use/not use Spectral Normalization in ChannelsProject layer
         """
-        super(PatchGANDiscriminator, self).__init__()
+        # Initialize utils.ifaces.BalancedFreezable
+        BalancedFreezable.__init__(self)
+
+        # Initialize torch.nn.Module
+        nn.Module.__init__(self)
         self.patch_gan_discriminator = nn.Sequential(
             FeatureMapLayer(c_in, c_hidden),
 
@@ -66,14 +70,6 @@ class PatchGANDiscriminator(nn.Module, Freezable):
         loss_on_real = criterion(predictions_on_real, torch.ones_like(predictions_on_real))
         loss_on_fake = criterion(predictions_on_fake, torch.zeros_like(predictions_on_real))
         return 0.5 * (loss_on_real + loss_on_fake)
-
-    def freeze(self) -> None:
-        for p in self.parameters():
-            p.requires_grad = False
-
-    def unfreeze(self) -> None:
-        for p in self.parameters():
-            p.requires_grad = True
 
 
 if __name__ == '__main__':

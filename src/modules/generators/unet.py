@@ -5,10 +5,10 @@ from torch import nn, Tensor
 
 from modules.partial.decoding import UNETExpandingBlock, FeatureMapLayer, ChannelsProjectLayer
 from modules.partial.encoding import UNETContractingBlock
-from utils.ifaces import Freezable
+from utils.ifaces import BalancedFreezable, Freezable
 
 
-class UNETWithSkipConnections(nn.Module, Freezable):
+class UNETWithSkipConnections(nn.Module, BalancedFreezable):
     """
     UNETWithSkipConnections Class:
     A series of 4 contracting blocks followed by 4 expanding blocks to transform an input image into the corresponding
@@ -36,7 +36,11 @@ class UNETWithSkipConnections(nn.Module, Freezable):
         :param use_out_tanh: set to True to use Tanh() activation in output layer; otherwise no output activation will
                              be used
         """
-        super(UNETWithSkipConnections, self).__init__()
+        # Initialize utils.ifaces.BalancedFreezable
+        BalancedFreezable.__init__(self)
+
+        # Initialize torch.nn.Module
+        nn.Module.__init__(self)
         self.upfeature = FeatureMapLayer(c_in, c_hidden)
         self.n_contracting_blocks = n_contracting_blocks
 
@@ -119,22 +123,12 @@ class UNETWithSkipConnections(nn.Module, Freezable):
         """
         # 1) Freeze Discriminator
         assert isinstance(disc, Freezable), 'Discriminator must implement utils.ifaces.Freezable in order to be frozen'
-        disc.freeze()
-        # 2) Forward pass through UNET
-        fake_images = self(condition)
-        fake_predictions = disc(fake_images, condition)
-        recon_loss = recon_criterion(fake_images, real)
-        if type(adv_criterion) == torch.nn.modules.loss.BCELoss:
-            fake_predictions = nn.Sigmoid()(fake_predictions)
-        adv_loss = adv_criterion(fake_predictions, torch.ones_like(fake_predictions))
-        # 3) Unfreeze Discriminator
-        disc.unfreeze()
+        with disc.frozen():
+            # 2) Forward pass through UNET
+            fake_images = self(condition)
+            fake_predictions = disc(fake_images, condition)
+            recon_loss = recon_criterion(fake_images, real)
+            if type(adv_criterion) == torch.nn.modules.loss.BCELoss:
+                fake_predictions = nn.Sigmoid()(fake_predictions)
+            adv_loss = adv_criterion(fake_predictions, torch.ones_like(fake_predictions))
         return adv_loss + lambda_recon * recon_loss
-
-    def freeze(self) -> None:
-        for p in self.parameters():
-            p.requires_grad = False
-
-    def unfreeze(self) -> None:
-        for p in self.parameters():
-            p.requires_grad = True

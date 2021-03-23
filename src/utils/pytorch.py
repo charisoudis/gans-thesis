@@ -6,7 +6,6 @@ import scipy.optimize
 import torch
 import torch.nn as nn
 import torchvision.transforms.functional as f
-from torch import Tensor
 from torch.autograd import Function
 from torch.nn import Module
 from torchvision.transforms import transforms
@@ -79,7 +78,7 @@ class MatrixSquareRoot(Function):
 
     # noinspection PyMethodOverriding
     @staticmethod
-    def forward(ctx: Any, mat: Tensor, **kwargs):
+    def forward(ctx: Any, mat: torch.Tensor, **kwargs):
         mat_np = mat.detach().cpu().numpy().astype(np.float_)
         mat_sqrt = scipy.linalg.sqrtm(mat_np).real
         mat_sqrt = torch.from_numpy(mat_sqrt).to(mat)
@@ -88,7 +87,7 @@ class MatrixSquareRoot(Function):
 
     # noinspection PyMethodOverriding
     @staticmethod
-    def backward(ctx: Any, grad_output: Tensor):
+    def backward(ctx: Any, grad_output: torch.Tensor):
         grad_input = None
         if ctx.needs_input_grad[0]:
             mat_sqrt, = ctx.saved_tensors
@@ -104,7 +103,7 @@ class MatrixSquareRoot(Function):
         return grad_input
 
 
-def matrix_sqrt(mat: Tensor) -> Tensor:
+def matrix_sqrt(mat: torch.Tensor) -> torch.Tensor:
     """
     Compute the square root of the given matrix.
     :param mat: the input matrix as a torch.Tensor object
@@ -113,7 +112,7 @@ def matrix_sqrt(mat: Tensor) -> Tensor:
     return MatrixSquareRoot.apply(mat)
 
 
-def cov(x: Tensor) -> Tensor:
+def cov(x: torch.Tensor) -> torch.Tensor:
     """
     Compute the covariance matrix of given input vector $x$ using the unbiased sample covariance estimator.
     (credits to mauricett, https://github.com/pytorch/pytorch/issues/19037#issuecomment-739002393)
@@ -125,7 +124,7 @@ def cov(x: Tensor) -> Tensor:
     return 1 / (n_samples - 1) * x.transpose(-1, -2) @ x
 
 
-def corr(x: Tensor, eps: float = 1e-08) -> Tensor:
+def corr(x: torch.Tensor, eps: float = 1e-08) -> torch.Tensor:
     """
     Compute the correlation matrix of given input vector $x$ using the unbiased sample correlation estimator.
     (credits to mauricett, https://github.com/pytorch/pytorch/issues/19037#issuecomment-739002393)
@@ -147,7 +146,7 @@ class UnNormalize(torch.nn.Module):
         self.std = std
         self.inplace = inplace
 
-    def forward(self, tensor: Tensor) -> Tensor:
+    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         tensor = f.normalize(tensor, list(np.zeros_like(self.mean)), list(np.reciprocal(self.std)), self.inplace)
         return f.normalize(tensor, list(-1 * np.asarray(self.mean)), list(np.ones_like(self.std)), self.inplace)
 
@@ -176,5 +175,24 @@ class ToTensorOrPass(transforms.ToTensor):
     ToTensorOrPass Class:
     Completes ToTensor() transform class by skipping if input is already a tensor.
     """
+
+    def __init__(self, renormalize: bool = True):
+        """
+        ToTensorOrPass class constructor.
+        :param (bool) renormalize: set to True to renormalize input tensors to [0,1], otherwise if Tensor object
+                                   encountered in input it will return it intact
+        """
+        self.renormalize = renormalize
+
     def __call__(self, pic_or_tensor):
-        return pic_or_tensor if type(pic_or_tensor) == Tensor else super(ToTensorOrPass, self).__call__(pic_or_tensor)
+        # case: PIL image
+        if type(pic_or_tensor) is not torch.Tensor:
+            return super(ToTensorOrPass, self).__call__(pic_or_tensor)
+
+        # case: torch.Tensor
+        if self.renormalize:
+            tensor_min = torch.min(pic_or_tensor)
+            tensor_max = torch.max(pic_or_tensor)
+            return (pic_or_tensor - tensor_min) / (tensor_max - tensor_min)
+
+        return pic_or_tensor

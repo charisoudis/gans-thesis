@@ -13,8 +13,8 @@ from modules.generators.pgpg import PGPGGenerator
 from modules.inception import InceptionV3
 from utils.dep_free import get_tqdm
 from utils.filesystems.local import LocalCapsule, LocalFolder
-from utils.ifaces import FilesystemFolder
-from utils.pytorch import matrix_sqrt, cov, ToTensorOrPass, invert_transforms
+from utils.ifaces import FilesystemFolder, Freezable
+from utils.pytorch import matrix_sqrt, cov, ToTensorOrPass
 
 
 def _frechet_distance(x_mean: Tensor, y_mean: Tensor, x_cov: Tensor, y_cov: Tensor) -> Tensor:
@@ -40,7 +40,7 @@ class FID(nn.Module):
     InceptionV3Transforms = transforms.Compose([
         transforms.Resize(299),
         transforms.CenterCrop(299),
-        ToTensorOrPass(),
+        ToTensorOrPass(renormalize=True),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
@@ -84,14 +84,13 @@ class FID(nn.Module):
         self.batch_size = batch_size
 
     # noinspection DuplicatedCode
-    def get_embeddings(self, dataset: Dataset, gen: nn.Module, gen_transforms: transforms.Compose,
-                       target_index: Optional[int] = None, condition_indices: Optional[Union[int, tuple]] = None,
-                       z_dim: Optional[int] = None, show_progress: bool = True) -> Tuple[Tensor, Tensor]:
+    def get_embeddings(self, dataset: Dataset, gen: nn.Module, target_index: Optional[int] = None,
+                       condition_indices: Optional[Union[int, tuple]] = None, z_dim: Optional[int] = None,
+                       show_progress: bool = True) -> Tuple[Tensor, Tensor]:
         """
         Computes ImageNet embeddings of a batch of real and fake images based on Inception v3 classifier.
         :param (Dataset) dataset: the torch.utils.data.Dataset instance to access dataset of real images
         :param gen: the Generator network
-        :param gen_transforms: the torchvision transforms on which the generator was trained
         :param target_index: index of target (real) output from the arguments that returns dataset::__getitem__() method
         :param condition_indices: indices of images that will be passed to the Generator in order to generate fake
                                   images (for image-to-image translation tasks). If set to None, the generator is fed
@@ -102,60 +101,61 @@ class FID(nn.Module):
         :return: a tuple containing one torch.Tensor object of shape (batch_size, n_features) for each of real, fake
                  images
         """
-        # Create the dataloader instance
-        dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
-        if self.device == 'cuda:0' and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        # Extract embeddings
-        gen_transforms_inv = invert_transforms(gen_transforms)
-        cur_samples = 0
-        real_embeddings_list = []
-        fake_embeddings_list = []
-        for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
-                                      disable=not show_progress):
-            if cur_samples >= self.n_samples:
-                break
+        # Freeze Generator
+        assert isinstance(gen, Freezable), 'Generator should implement utils.ifaces.Freezable'
+        with gen.frozen():
 
-            # Compute real embeddings
-            target_output = real_samples[target_index] if target_index else real_samples
-            target_output = target_output.to(self.device)
-            target_output = gen_transforms_inv(gen_transforms(target_output))
-            real_embeddings = FID.InceptionV3Cropped(FID.InceptionV3Transforms(target_output))
-            real_embeddings_list.append(real_embeddings.detach().cpu())
+            # Create the dataloader instance
+            dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
+            if self.device == 'cuda:0' and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            # Extract embeddings
+            cur_samples = 0
+            real_embeddings_list = []
+            fake_embeddings_list = []
+            for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
+                                          disable=not show_progress):
+                if cur_samples >= self.n_samples:
+                    break
 
-            cur_batch_size = len(target_output)
+                # Compute real embeddings
+                target_output = real_samples[target_index] if target_index else real_samples
+                target_output = target_output.to(self.device)
+                real_embeddings = FID.InceptionV3Cropped(FID.InceptionV3Transforms(target_output))
+                real_embeddings_list.append(real_embeddings.detach().cpu())
 
-            # Compute fake embeddings
-            gen_inputs = [real_samples[_i] for _i in condition_indices] if condition_indices else \
-                torch.randn(cur_batch_size, z_dim)
-            gen_inputs = [gen_transforms(gen_input).to(self.device) for gen_input in gen_inputs] \
-                if condition_indices is not None else gen_inputs.to(self.device)
-            fake_output = gen(*gen_inputs)
-            if type(fake_output) == tuple or type(fake_output) == list:
-                fake_output = fake_output[-1]
-            # ATTENTION: In order to pass generator's output through Inception we must re-normalize tensor stats!
-            # Generator output images in the range [-1, 1], since it uses a Tanh() activation layer, whereas Inception
-            # v3 receives tensors with its custom normalization. Solutions: Invert normalization in gen_transforms and
-            # then pass the image through the Inception transforms
-            fake_output = gen_transforms_inv(fake_output)
-            fake_embeddings = FID.InceptionV3Cropped(FID.InceptionV3Transforms(fake_output))
-            fake_embeddings_list.append(fake_embeddings.detach().cpu())
+                cur_batch_size = len(target_output)
 
-            cur_samples += cur_batch_size
+                # Compute fake embeddings
+                gen_inputs = [real_samples[_i].to(self.device) for _i in condition_indices] if condition_indices \
+                    else torch.randn(cur_batch_size, z_dim, device=self.device)
+                # gen_inputs = [gen_transforms(gen_input).to(self.device) for gen_input in gen_inputs] \
+                #     if condition_indices is not None else gen_inputs.to(self.device)
+                fake_output = gen(*gen_inputs)
+                if type(fake_output) == tuple or type(fake_output) == list:
+                    fake_output = fake_output[-1]
+                # ATTENTION: In order to pass generator's output through Inception we must re-normalize tensor stats!
+                # Generator output images in the range [-1, 1], since it uses a Tanh() activation layer, whereas
+                # Inception v3 receives tensors with its custom normalization. Solutions: 1) Invert normalization in
+                # gen_transforms and then pass the image through the Inception transforms | 2) Use the new
+                # ToTensorOrPass() transform fake_output = gen_transforms_inv(fake_output)
+                fake_embeddings = FID.InceptionV3Cropped(FID.InceptionV3Transforms(fake_output))
+                fake_embeddings_list.append(fake_embeddings.detach().cpu())
+
+                cur_samples += cur_batch_size
 
         return torch.cat(real_embeddings_list, dim=0), torch.cat(fake_embeddings_list, dim=0)
 
     # noinspection PyUnusedLocal
-    def forward(self, dataset: Dataset, gen: nn.Module, gen_transforms: transforms.Compose,
-                target_index: Optional[int] = None, condition_indices: Optional[Union[int, tuple]] = None,
-                z_dim: Optional[int] = None, show_progress: bool = True, **kwargs) -> Tensor:
+    def forward(self, dataset: Dataset, gen: nn.Module, target_index: Optional[int] = None,
+                condition_indices: Optional[Union[int, tuple]] = None, z_dim: Optional[int] = None,
+                show_progress: bool = True, **kwargs) -> Tensor:
         """
         Compute the Fréchet Inception Distance between random $self.n_samples$ images from the given dataset and same
         number of images generated by the given generator network.
         :param dataset: a torch.utils.data.Dataset object to access real images. Attention: no transforms should be
                         applied when __getitem__ is called since the transforms are different on Inception v3
         :param gen: the Generator network
-        :param gen_transforms: the torchvision transforms on which the generator was trained
         :param target_index: index of target (real) output from the arguments that returns dataset::__getitem__() method
         :param condition_indices: indices of images that will be passed to the Generator in order to generate fake
                                   images (for image-to-image translation tasks). If set to None, the generator is fed
@@ -166,8 +166,7 @@ class FID(nn.Module):
         :return: a scalar torch.Tensor object containing the computed FID value
         """
         # Extract ImageNET embeddings
-        real_embeddings, fake_embeddings = self.get_embeddings(dataset, gen=gen, gen_transforms=gen_transforms,
-                                                               target_index=target_index, z_dim=z_dim,
+        real_embeddings, fake_embeddings = self.get_embeddings(dataset, gen=gen, target_index=target_index, z_dim=z_dim,
                                                                condition_indices=condition_indices,
                                                                show_progress=show_progress)
         # Compute sample means and covariance matrices
@@ -176,18 +175,27 @@ class FID(nn.Module):
         real_embeddings_cov = cov(real_embeddings)
         fake_embeddings_cov = cov(fake_embeddings)
         # Compute Frechet distance of embedding vectors and return
-        return _frechet_distance(real_embeddings_mean, fake_embeddings_mean,
-                                 real_embeddings_cov, fake_embeddings_cov)
+        return _frechet_distance(real_embeddings_mean, fake_embeddings_mean, real_embeddings_cov, fake_embeddings_cov)
 
 
+# noinspection DuplicatedCode
 if __name__ == '__main__':
-    # Init Google Drive staff
+    # Init Google Drive stuff
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
-    _groot = LocalFolder.root(LocalCapsule(_local_gdrive_root)).subfolder_by_name('Models')
+    _groot = LocalFolder.root(LocalCapsule(_local_gdrive_root))
+    _models_groot = _groot.subfolder_by_name('Models')
+    _datasets_groot = _groot.subfolder_by_name('Datasets')
 
-    _fid = FID(model_fs_folder_or_root=_groot, n_samples=2, batch_size=1)
-    _dataset = ICRBCrossPoseDataset(image_transforms=None, pose=True)
-    _gen = PGPGGenerator(c_in=6, c_out=3, w_in=128, h_in=128)
-    _gen_transforms = ICRBDataset.get_image_transforms(target_shape=128, target_channels=3)
-    fid = _fid(_dataset, _gen, gen_transforms=_gen_transforms, target_index=1, condition_indices=(0, 2))
+    # Setup evaluation dataset
+    _target_shape = 128
+    _target_channels = 3
+    _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=_datasets_groot,
+                                    image_transforms=ICRBDataset.get_image_transforms(_target_shape, _target_channels))
+
+    # Initialize Generator
+    _gen = PGPGGenerator(c_in=2*_target_channels, c_out=_target_channels, w_in=_target_shape, h_in=_target_shape)
+
+    # Evaluate Generator using FID
+    _fid = FID(model_fs_folder_or_root=_models_groot, n_samples=2, batch_size=1)
+    fid = _fid(_dataset, _gen, target_index=1, condition_indices=(0, 2), show_progress=True)
     print(fid)

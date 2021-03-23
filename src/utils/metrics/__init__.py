@@ -7,6 +7,9 @@ from torch import nn
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, Subset
 
+from datasets.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
+from modules.generators.pgpg import PGPGGenerator
+from utils.filesystems.local import LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics.f1 import F1
 from utils.metrics.fid import FID
@@ -83,19 +86,11 @@ class GanEvaluator(object):
         gen = gen.eval()
         metrics_dict = {}
         with torch.no_grad():
-            for metric_name in self.calculators.keys() if not metric_name or 'all' == metric_name else (metric_name,):
-                # Clear dataset transforms
-                if metric_name != 'ssim':
-                    self.dataset.transforms = None
+            for metric_name in (self.calculators.keys() if not metric_name or 'all' == metric_name else (metric_name,)):
                 # Evaluate model
-                metric = self.calculators[metric_name](
-                    self.dataset, gen=gen, gen_transforms=self.gen_transforms, target_index=self.target_index,
-                    condition_indices=self.condition_indices, z_dim=self.z_dim, skip_asserts=True,
-                    show_progress=show_progress, k=self.f1_k
-                )
-                # Reset dataset transforms
-                if metric_name != 'ssim':
-                    self.dataset.transforms = self.gen_transforms
+                metric = self.calculators[metric_name](self.dataset, gen=gen, target_index=self.target_index,
+                                                       condition_indices=self.condition_indices, z_dim=self.z_dim,
+                                                       skip_asserts=True, show_progress=show_progress, k=self.f1_k)
                 # Unpack metrics
                 if 'f1' == metric_name:
                     metrics_dict['f1'], metrics_dict['precision'], metrics_dict['recall'] = \
@@ -104,3 +99,27 @@ class GanEvaluator(object):
                     metrics_dict[metric_name] = metric.item()
         # Return metrics dict
         return metrics_dict
+
+
+# noinspection DuplicatedCode
+if __name__ == '__main__':
+    # Init Google Drive stuff
+    _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
+    _groot = LocalFolder.root(LocalCapsule(_local_gdrive_root))
+    _models_groot = _groot.subfolder_by_name('Models')
+    _datasets_groot = _groot.subfolder_by_name('Datasets')
+
+    # Setup evaluation dataset
+    _target_shape = 128
+    _target_channels = 3
+    _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=_datasets_groot,
+                                    image_transforms=ICRBDataset.get_image_transforms(_target_shape, _target_channels))
+
+    # Initialize Generator
+    _gen = PGPGGenerator(c_in=2 * _target_channels, c_out=_target_channels, w_in=_target_shape, h_in=_target_shape)
+
+    # Evaluate Generator using FID
+    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_groot, gen_dataset=_dataset, n_samples=5, batch_size=1,
+                              ssim_c_img=_target_channels, target_index=1, condition_indices=(0, 2), f1_k=1)
+    _metrics = _evaluator.evaluate(gen=_gen, show_progress=True)
+    print(_metrics)

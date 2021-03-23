@@ -1,4 +1,4 @@
-__all__ = ['colab', 'remote', 'GDriveDataset', 'GDriveModel']
+__all__ = ['colab', 'remote', 'GDriveDataset', 'GDriveModel', 'GDriveFolder', 'GDriveCapsule']
 
 import datetime
 import json
