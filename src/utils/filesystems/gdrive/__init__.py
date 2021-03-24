@@ -766,7 +766,7 @@ class GDriveModel(FilesystemModel):
         # Loop through all current metric files
         _epoch: int
         for _epoch in sorted(self.metrics_epoch_gfolders.keys(), key=lambda _k: int(_k)):
-            _epoch_metrics_list = self.update_metrics(epoch=_epoch, only_keys=None)
+            _epoch_metrics_list = self.update_metrics(epoch=_epoch)
             if len(_epoch_metrics_list) > 0:
                 _return_dict[_epoch] = _epoch_metrics_list
         return _return_dict
