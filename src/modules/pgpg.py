@@ -268,7 +268,7 @@ class PGPG(nn.Module, IGanGModule):
         with self.gen.frozen():
             self.disc_opt.zero_grad()  # Zero out discriminator gradient (before backprop)
             _, g_out = self.gen(image_1, pose_2)
-            disc_loss = self.disc.get_loss(real=image_2, fake=g_out, condition=image_1,
+            disc_loss = self.disc.get_loss(real=image_2, fake=g_out.detach(), condition=image_1,
                                            criterion=self.disc_adv_criterion)
             disc_loss.backward(retain_graph=True)  # Update discriminator gradients
             self.disc_opt.step()  # Update discriminator weights
