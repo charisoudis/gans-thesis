@@ -441,7 +441,7 @@ class FilesystemModel(metaclass=abc.ABCMeta):
     #  Model Checkpoints
     # ---------------------------------
     #
-    # Below, are the methods to capture, save, upload and download model checkpoints to cloud storage.
+    # Below, are the methods to capture, save, upload and download model checkpoints from/to cloud storage.
     #
 
     @abc.abstractmethod
@@ -512,16 +512,6 @@ class FilesystemModel(metaclass=abc.ABCMeta):
         """
         raise NotImplementedError
 
-    def list_metrics(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
-            -> List[FilesystemFile or dict]:
-        """
-        Same as `utils.ifaces.FilesystemModel::list_checkpoints()` but the "Metrics" cloud folder.
-        :param epoch: see `utils.ifaces.FilesystemModel::list_checkpoints()`
-        :param only_keys: see `utils.ifaces.FilesystemModel::list_checkpoints()`
-        :return: see `utils.ifaces.FilesystemModel::list_checkpoints()`
-        """
-        raise NotImplementedError
-
     @abc.abstractmethod
     def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) \
             -> Dict[int, List[FilesystemFile or dict]]:
@@ -535,16 +525,6 @@ class FilesystemModel(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list_all_metrics(self, only_keys: Optional[Sequence[str]] = None) -> Dict[int, List[FilesystemFile or dict]]:
-        """
-        Lists all model metric files under "Metrics" folder as a {epoch: [epoch checkpoints]} dict.
-        :param (optional) only_keys: if set instead the entire file info dict for each found file, it will return just
-                                     the provided keys
-        :return: a `list` of `dict` objects if :attr:`only_keys` is set else a `list` of `utils.ifaces.FilesystemFile`
-                 objects of the found model metrics otherwise
-        """
-        raise NotImplementedError
-
     def save_and_upload_checkpoint(self, state_dict: dict, epoch_or_id: Union[int, str], step: Optional[int] = None,
                                    metrics_dict: Optional[dict] = None, delete_after: bool = False,
                                    in_parallel: bool = False, show_progress: bool = False) \
@@ -589,6 +569,53 @@ class FilesystemModel(metaclass=abc.ABCMeta):
 
     #
     # ------------------------------------
+    #  Model Metrics
+    # ---------------------------------
+    #
+    # Below, are the methods to capture, save, upload and download model metrics from/to cloud storage.
+    #
+
+    @abc.abstractmethod
+    def list_metrics(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
+            -> List[FilesystemFile or dict]:
+        """
+        Same as `utils.ifaces.FilesystemModel::list_checkpoints()` but the "Metrics" cloud folder.
+        :param epoch: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        :param only_keys: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        :return: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def list_all_metrics(self, only_keys: Optional[Sequence[str]] = None) -> Dict[int, List[FilesystemFile or dict]]:
+        """
+        Lists all model metric files under "Metrics" folder as a {epoch: [epoch checkpoints]} dict.
+        :param (optional) only_keys: if set instead the entire file info dict for each found file, it will return just
+                                     the provided keys
+        :return: a `list` of `dict` objects if :attr:`only_keys` is set else a `list` of `utils.ifaces.FilesystemFile`
+                 objects of the found model metrics otherwise
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def update_metrics(self, epoch: Optional[int] = None) -> List[FilesystemFile]:
+        """
+        Re-run evaluator for checkpoints of the given :att:`epoch`, updating existing metrics.
+        :param epoch: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        :return: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def update_all_metrics(self) -> Dict[int, List[FilesystemFile]]:
+        """
+        Re-run evaluator for all model checkpoints, updating all existing metrics.
+        :return: a `list` of `utils.ifaces.FilesystemFile` objects of the updated model metrics
+        """
+        raise NotImplementedError
+
+    #
+    # ------------------------------------
     #  Model Configurations
     # ---------------------------------
     #
@@ -616,12 +643,14 @@ class FilesystemModel(metaclass=abc.ABCMeta):
         """TODO fill documentation"""
         raise NotImplementedError
 
+    @abc.abstractmethod
     def save_and_upload_configuration(self, config: dict, config_id: Optional[str or int] = None,
                                       delete_after: bool = False, in_parallel: bool = False,
                                       show_progress: bool = False) -> Union[ApplyResult, FilesystemFile or None]:
         """TODO fill documentation"""
         raise NotImplementedError
 
+    @abc.abstractmethod
     def upload_configuration(self, config_filename: str, delete_after: bool = False, in_parallel: bool = False,
                              show_progress: bool = False) -> Union[ApplyResult, FilesystemFile or None]:
         """TODO fill documentation"""

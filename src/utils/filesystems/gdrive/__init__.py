@@ -14,7 +14,7 @@ from utils.command_line_logger import CommandLineLogger
 from utils.filesystems.gdrive.colab import ColabFolder, ColabCapsule, ColabFilesystem, ColabFile
 from utils.filesystems.gdrive.remote import GDriveFolder, GDriveCapsule, GDriveFilesystem, GDriveFile
 from utils.ifaces import FilesystemDataset, FilesystemModel, FilesystemFolder, Filesystem, FilesystemCapsule, \
-    FilesystemFile, ResumableDataLoader
+    FilesystemFile, ResumableDataLoader, Evaluable
 
 
 class GDriveDataset(FilesystemDataset):
@@ -612,7 +612,7 @@ class GDriveModel(FilesystemModel):
 
     # noinspection DuplicatedCode
     def list_checkpoints(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
-            -> List[GDriveFile or ColabFile or dict]:
+            -> List[FilesystemFile or dict]:
         # Check & correct given args
         if epoch is None:
             epoch = -1
@@ -624,20 +624,6 @@ class GDriveModel(FilesystemModel):
         return chkpt_files_list if not only_keys else \
             [dict((k, _f[k]) for k in only_keys) for _f in chkpt_files_list]
 
-    # noinspection DuplicatedCode
-    def list_metrics(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
-            -> List[GDriveFile or ColabFile or dict]:
-        # Check & correct given args
-        if epoch is None:
-            epoch = -1
-        # Get the correct GoogleDrive folder to list the metric files that are inside
-        if epoch not in self.metrics_epoch_gfolders.keys():
-            raise FileNotFoundError(f'epoch="{epoch}" not found in self.metrics_epoch_gfolders.keys()')
-        # Get metric files list and filter it if only_keys attribute is set
-        metric_files_list = self.metrics_epoch_gfolders[epoch].files
-        return metric_files_list if not only_keys else \
-            [dict((k, _f[k]) for k in only_keys) for _f in metric_files_list]
-
     def list_all_checkpoints(self, only_keys: Optional[Sequence[str]] = None) \
             -> Dict[int, List[GDriveFile or ColabFile or dict]]:
         _return_dict = {}
@@ -645,15 +631,6 @@ class GDriveModel(FilesystemModel):
             _epoch_chkpts_list = self.list_checkpoints(epoch=_epoch, only_keys=only_keys)
             if len(_epoch_chkpts_list) > 0:
                 _return_dict[_epoch] = _epoch_chkpts_list
-        return _return_dict
-
-    def list_all_metrics(self, only_keys: Optional[Sequence[str]] = None) \
-            -> Dict[int, List[GDriveFile or ColabFile or dict]]:
-        _return_dict = {}
-        for _epoch in sorted(self.metrics_epoch_gfolders.keys(), key=lambda _k: int(_k)):
-            _epoch_metrics_list = self.list_metrics(epoch=_epoch, only_keys=only_keys)
-            if len(_epoch_metrics_list) > 0:
-                _return_dict[_epoch] = _epoch_metrics_list
         return _return_dict
 
     def save_and_upload_checkpoint(self, state_dict: dict, epoch_or_id: Union[int, str], step: Optional[int] = None,
@@ -704,6 +681,91 @@ class GDriveModel(FilesystemModel):
         upload_gfolder = self.chkpts_epoch_gfolders[epoch]
         return upload_gfolder.upload_file(local_filename=os.path.basename(chkpt_filename), delete_after=delete_after,
                                           in_parallel=in_parallel, show_progress=show_progress, is_update=is_update)
+
+    #
+    # ------------------------------------
+    #  Model Metrics
+    # ---------------------------------
+    #
+    # Below, are the methods to capture, save, upload and download model metrics from/to cloud storage.
+    #
+
+    # noinspection DuplicatedCode
+    def list_metrics(self, epoch: Optional[int] = None, only_keys: Optional[Sequence[str]] = None) \
+            -> List[GDriveFile or ColabFile or dict]:
+        # Check & correct given args
+        if epoch is None:
+            epoch = -1
+        # Get the correct GoogleDrive folder to list the metric files that are inside
+        if epoch not in self.metrics_epoch_gfolders.keys():
+            raise FileNotFoundError(f'epoch="{epoch}" not found in self.metrics_epoch_gfolders.keys()')
+        # Get metric files list and filter it if only_keys attribute is set
+        metric_files_list = self.metrics_epoch_gfolders[epoch].files
+        return metric_files_list if not only_keys else \
+            [dict((k, _f[k]) for k in only_keys) for _f in metric_files_list]
+
+    def list_all_metrics(self, only_keys: Optional[Sequence[str]] = None) \
+            -> Dict[int, List[GDriveFile or ColabFile or dict]]:
+        _return_dict = {}
+        for _epoch in sorted(self.metrics_epoch_gfolders.keys(), key=lambda _k: int(_k)):
+            _epoch_metrics_list = self.list_metrics(epoch=_epoch, only_keys=only_keys)
+            if len(_epoch_metrics_list) > 0:
+                _return_dict[_epoch] = _epoch_metrics_list
+        return _return_dict
+
+    def update_metrics(self, epoch: Optional[int] = None) -> List[FilesystemFile]:
+        """
+        Re-run evaluator for checkpoints of the given :att:`epoch`, updating existing metrics.
+        :param epoch: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        :return: see `utils.ifaces.FilesystemModel::list_checkpoints()`
+        """
+        assert isinstance(self, (torch.nn.Module, Evaluable)), 'cannot update metrics if self is not a nn.Module ' + \
+                                                               'or does not implement utils.ifaces.Evaluable'
+        assert hasattr(self, 'logger') and isinstance(self.logger, CommandLineLogger), 'self.logger is necessary'
+
+        # Loop through all metric files inside epoch folder
+        _epoch_metric: FilesystemFile
+        for _epoch_metric in self.list_metrics(epoch=epoch):
+            #   - download corresponding checkpoint
+            _step = int(_epoch_metric.name.replace('.json', ''))
+            _filepath = self.fetch_checkpoint(epoch_or_id=epoch, step=_step)
+            if not _filepath:
+                self.logger.critical(f'Checkpoint NOT FOUND (epoch={epoch}, step={_step}, {_filepath})')
+                continue
+            #   - load checkpoint
+            _state_dict = torch.load(_filepath, map_location='cpu')
+            self.load_state_dict(_state_dict)
+            if 'gforward' in _state_dict.keys():
+                self.load_gforward_state(_state_dict['gforward'])
+            #   - evaluate model
+            _metrics_dict = self.evaluate('all', show_progress=True)
+            with open(_epoch_metric.path, 'w') as _json_fp:
+                json.dump(_metrics_dict, fp=_json_fp)
+            #   - overwrite file
+            _epoch_metric.folder.upload_file(local_filename=_epoch_metric.path, in_parallel=False, show_progress=True,
+                                             is_update=True)
+
+            self.logger.info(f'[update_metrics] {_epoch_metric}: [DONE]')
+
+        # Return old files
+        return self.list_metrics(self, epoch=epoch)
+
+    def update_all_metrics(self) -> Dict[int, List[FilesystemFile]]:
+        """
+        Re-run evaluator for all model checkpoints, updating all existing metrics.
+        :return: a `list` of `utils.ifaces.FilesystemFile` objects of the updated model metrics
+        """
+        assert isinstance(self, (torch.nn.Module, Evaluable)), 'cannot update metrics if self is not a nn.Module ' + \
+                                                               'or does not implement utils.ifaces.Evaluable'
+        _return_dict = {}
+
+        # Loop through all current metric files
+        _epoch: int
+        for _epoch in sorted(self.metrics_epoch_gfolders.keys(), key=lambda _k: int(_k)):
+            _epoch_metrics_list = self.update_metrics(epoch=_epoch, only_keys=None)
+            if len(_epoch_metrics_list) > 0:
+                _return_dict[_epoch] = _epoch_metrics_list
+        return _return_dict
 
     #
     # ------------------------------------
