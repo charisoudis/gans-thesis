@@ -733,10 +733,14 @@ class GDriveModel(FilesystemModel):
                 self.logger.critical(f'Checkpoint NOT FOUND (epoch={epoch}, step={_step}, {_filepath})')
                 continue
             #   - load checkpoint
-            _state_dict = torch.load(_filepath, map_location='cpu')
-            self.load_state_dict(_state_dict)
-            if 'gforward' in _state_dict.keys():
-                self.load_gforward_state(_state_dict['gforward'])
+            try:
+                _state_dict = torch.load(_filepath, map_location='cpu')
+                self.load_state_dict(_state_dict)
+                if 'gforward' in _state_dict.keys():
+                    self.load_gforward_state(_state_dict['gforward'])
+            except RuntimeError as _e:
+                self.logger.critical(f'Checkpoint NOT LOADED (epoch={epoch}, step={_step}): {str(_e)}')
+                continue
             #   - evaluate model
             _metrics_dict = self.evaluate('all', show_progress=True)
             with open(_epoch_metric.path, 'w') as _json_fp:
