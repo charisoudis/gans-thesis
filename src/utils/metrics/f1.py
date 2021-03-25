@@ -57,7 +57,7 @@ class ManifoldEstimator:
 
                 # Compute distances between batches.
                 batch_distances[:, begin2:end2] = \
-                    self.__class__._batch_pairwise_distances(row_batch, col_batch).numpy().astype(self.dtype)
+                    self.__class__._batch_pairwise_distances(row_batch, col_batch).cpu().numpy().astype(self.dtype)
 
             # Find the k-nearest neighbor from the current batch.
             self.kth_distance[begin1:end1] = np.partition(batch_distances, range(0, k + 1), axis=1)[:, k]
