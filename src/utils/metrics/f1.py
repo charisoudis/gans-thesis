@@ -162,7 +162,7 @@ class F1(FID):
         :return: a tuple containing (f1, precision, recall) as torch.Tensor objects
         """
         # Extract ImageNET embeddings
-        if not use_fid_embeddings or not FID.LastRealEmbeddings or not FID.LastFakeEmbeddings:
+        if not use_fid_embeddings or FID.LastRealEmbeddings is None or FID.LastFakeEmbeddings is None:
             real_embeddings, fake_embeddings = self.get_embeddings(dataset, gen=gen, target_index=target_index,
                                                                    z_dim=z_dim, condition_indices=condition_indices,
                                                                    show_progress=show_progress, desc="F1")
