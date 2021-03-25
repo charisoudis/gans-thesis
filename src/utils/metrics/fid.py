@@ -48,6 +48,10 @@ class FID(nn.Module):
     InceptionV3Cropped = None  # for feature embedding (e.g. for FID, Precision, Recall, F1)
     InceptionV3Classifier = None  # for classification (e.g. for IS)
 
+    # Keep embeddings in memory
+    LastRealEmbeddings = None
+    LastFakeEmbeddings = None
+
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, device: torch.device or str = 'cpu',
                  n_samples: int = 512, batch_size: int = 8):
         """
@@ -83,10 +87,6 @@ class FID(nn.Module):
         self.device = device
         self.n_samples = n_samples
         self.batch_size = batch_size
-
-        # Keep embeddings in memory
-        self.real_embeddings = None
-        self.fake_embeddings = None
 
     # noinspection DuplicatedCode
     def get_embeddings(self, dataset: Dataset, gen: nn.Module, target_index: Optional[int] = None,
@@ -175,8 +175,8 @@ class FID(nn.Module):
         real_embeddings, fake_embeddings = self.get_embeddings(dataset, gen=gen, target_index=target_index, z_dim=z_dim,
                                                                condition_indices=condition_indices,
                                                                show_progress=show_progress)
-        self.real_embeddings = real_embeddings.detach().clone().cpu()
-        self.fake_embeddings = fake_embeddings.detach().clone().cpu()
+        FID.LastRealEmbeddings = real_embeddings.detach().clone().cpu()
+        FID.LastFakeEmbeddings = fake_embeddings.detach().clone().cpu()
         # Compute sample means and covariance matrices
         real_embeddings_mean = torch.mean(real_embeddings, dim=0)
         fake_embeddings_mean = torch.mean(fake_embeddings, dim=0)

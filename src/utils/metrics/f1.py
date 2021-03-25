@@ -162,13 +162,13 @@ class F1(FID):
         :return: a tuple containing (f1, precision, recall) as torch.Tensor objects
         """
         # Extract ImageNET embeddings
-        if not use_fid_embeddings or not self.real_embeddings or not self.fake_embeddings:
+        if not use_fid_embeddings or not FID.LastRealEmbeddings or not FID.LastFakeEmbeddings:
             real_embeddings, fake_embeddings = self.get_embeddings(dataset, gen=gen, target_index=target_index,
                                                                    z_dim=z_dim, condition_indices=condition_indices,
                                                                    show_progress=show_progress, desc="F1")
         else:
-            real_embeddings = self.real_embeddings.to(self.device)
-            fake_embeddings = self.real_embeddings.to(self.device)
+            real_embeddings = FID.LastRealEmbeddings.to(self.device)
+            fake_embeddings = FID.LastFakeEmbeddings.to(self.device)
         # Initialize manifolds
         real_manifold = ManifoldEstimator(real_embeddings, row_batch_size, col_batch_size, k=k)
         fake_manifold = ManifoldEstimator(fake_embeddings, row_batch_size, col_batch_size, k=k)
