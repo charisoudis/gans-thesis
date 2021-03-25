@@ -63,7 +63,7 @@ class IS(FID):
             cur_samples = 0
             fake_predictions_list = []
             for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
-                                          disable=not show_progress):
+                                          disable=not show_progress, desc="IS"):
                 if cur_samples >= self.n_samples:
                     break
 

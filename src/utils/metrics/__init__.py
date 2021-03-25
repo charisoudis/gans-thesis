@@ -90,7 +90,8 @@ class GanEvaluator(object):
                 # Evaluate model
                 metric = self.calculators[metric_name](self.dataset, gen=gen, target_index=self.target_index,
                                                        condition_indices=self.condition_indices, z_dim=self.z_dim,
-                                                       skip_asserts=True, show_progress=show_progress, k=self.f1_k)
+                                                       skip_asserts=True, show_progress=show_progress, k=self.f1_k,
+                                                       use_fid_embeddings=True)
                 # Unpack metrics
                 if 'f1' == metric_name:
                     metrics_dict['f1'], metrics_dict['precision'], metrics_dict['recall'] = \

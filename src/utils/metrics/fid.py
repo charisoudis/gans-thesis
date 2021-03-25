@@ -78,15 +78,20 @@ class FID(nn.Module):
                 inception_fc,
                 nn.Softmax(dim=1)
             ).to(device).eval()
+
         # Save params in instance
         self.device = device
         self.n_samples = n_samples
         self.batch_size = batch_size
 
+        # Keep embeddings in memory
+        self.real_embeddings = None
+        self.fake_embeddings = None
+
     # noinspection DuplicatedCode
     def get_embeddings(self, dataset: Dataset, gen: nn.Module, target_index: Optional[int] = None,
                        condition_indices: Optional[Union[int, tuple]] = None, z_dim: Optional[int] = None,
-                       show_progress: bool = True) -> Tuple[Tensor, Tensor]:
+                       show_progress: bool = True, desc: str = "FID") -> Tuple[Tensor, Tensor]:
         """
         Computes ImageNet embeddings of a batch of real and fake images based on Inception v3 classifier.
         :param (Dataset) dataset: the torch.utils.data.Dataset instance to access dataset of real images
@@ -98,6 +103,7 @@ class FID(nn.Module):
         :param z_dim: if $condition_indices$ is None, then this is necessary to produce random noise to feed into the
                       DCGAN-like generator
         :param (bool) show_progress: set to True to display progress using `tqdm` lib
+        :param (str) desc: tqdm `desc` parameter (is printed on the left of percentage indicator)
         :return: a tuple containing one torch.Tensor object of shape (batch_size, n_features) for each of real, fake
                  images
         """
@@ -114,7 +120,7 @@ class FID(nn.Module):
             real_embeddings_list = []
             fake_embeddings_list = []
             for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
-                                          disable=not show_progress):
+                                          disable=not show_progress, desc=desc):
                 if cur_samples >= self.n_samples:
                     break
 
@@ -169,6 +175,8 @@ class FID(nn.Module):
         real_embeddings, fake_embeddings = self.get_embeddings(dataset, gen=gen, target_index=target_index, z_dim=z_dim,
                                                                condition_indices=condition_indices,
                                                                show_progress=show_progress)
+        self.real_embeddings = real_embeddings.detach().clone().cpu()
+        self.fake_embeddings = fake_embeddings.detach().clone().cpu()
         # Compute sample means and covariance matrices
         real_embeddings_mean = torch.mean(real_embeddings, dim=0)
         fake_embeddings_mean = torch.mean(fake_embeddings, dim=0)

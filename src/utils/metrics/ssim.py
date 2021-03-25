@@ -136,7 +136,7 @@ class SSIM(nn.Module):
             cur_samples = 0
             ssim_maps_list = []
             for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
-                                          disable=not show_progress):
+                                          disable=not show_progress, desc="SSIM"):
                 if cur_samples >= self.n_samples:
                     break
 
