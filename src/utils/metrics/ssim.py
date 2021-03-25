@@ -9,7 +9,6 @@ from torch import Tensor
 from torch.autograd import Variable
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
 
 from datasets.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
@@ -136,8 +135,8 @@ class SSIM(nn.Module):
         with gen.frozen():
             cur_samples = 0
             ssim_maps_list = []
-            for real_samples in tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
-                                     disable=not show_progress):
+            for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
+                                          disable=not show_progress):
                 if cur_samples >= self.n_samples:
                     break
 

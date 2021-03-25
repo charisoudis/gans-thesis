@@ -744,15 +744,16 @@ class GDriveModel(FilesystemModel):
             #   - evaluate model
             _metrics_dict = self.evaluate('all', show_progress=True)
             with open(_epoch_metric.path, 'w') as _json_fp:
-                json.dump(_metrics_dict, fp=_json_fp)
+                json.dump(_metrics_dict, fp=_json_fp, indent=4)
             #   - overwrite file
             _epoch_metric.folder.upload_file(local_filename=_epoch_metric.path, in_parallel=False, show_progress=True,
                                              is_update=True)
 
             self.logger.info(f'[update_metrics] {_epoch_metric}: [DONE]')
+            self.logger.debug(f'[update_metrics] {str(_metrics_dict)}')
 
         # Return old files
-        return self.list_metrics(self, epoch=epoch)
+        return self.list_metrics(epoch=epoch)
 
     def update_all_metrics(self) -> Dict[int, List[FilesystemFile]]:
         """
