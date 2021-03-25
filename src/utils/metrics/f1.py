@@ -103,7 +103,7 @@ class ManifoldEstimator:
                 ref_batch = self._ref_features[begin2:end2]
 
                 distance_batch[:, begin2:end2] = \
-                    self.__class__._batch_pairwise_distances(feature_batch, ref_batch).numpy().astype(self.dtype)
+                    self.__class__._batch_pairwise_distances(feature_batch, ref_batch).cpu().numpy().astype(self.dtype)
 
             # From the minibatch of new feature vectors, determine if they are in the estimated manifold.
             # If a feature vector is inside a hypersphere of some reference sample, then
@@ -167,8 +167,8 @@ class F1(FID):
                                                                    z_dim=z_dim, condition_indices=condition_indices,
                                                                    show_progress=show_progress, desc="F1")
         else:
-            real_embeddings = FID.LastRealEmbeddings.to(self.device)
-            fake_embeddings = FID.LastFakeEmbeddings.to(self.device)
+            real_embeddings = FID.LastRealEmbeddings
+            fake_embeddings = FID.LastFakeEmbeddings
         # Initialize manifolds
         real_manifold = ManifoldEstimator(real_embeddings, row_batch_size, col_batch_size, k=k)
         fake_manifold = ManifoldEstimator(fake_embeddings, row_batch_size, col_batch_size, k=k)

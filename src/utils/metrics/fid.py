@@ -175,8 +175,8 @@ class FID(nn.Module):
         real_embeddings, fake_embeddings = self.get_embeddings(dataset, gen=gen, target_index=target_index, z_dim=z_dim,
                                                                condition_indices=condition_indices,
                                                                show_progress=show_progress)
-        FID.LastRealEmbeddings = real_embeddings.detach().clone().cpu()
-        FID.LastFakeEmbeddings = fake_embeddings.detach().clone().cpu()
+        FID.LastRealEmbeddings = real_embeddings.clone()
+        FID.LastFakeEmbeddings = fake_embeddings.clone()
         # Compute sample means and covariance matrices
         real_embeddings_mean = torch.mean(real_embeddings, dim=0)
         fake_embeddings_mean = torch.mean(fake_embeddings, dim=0)
