@@ -8,20 +8,36 @@ class ContractingBlock(nn.Module):
     Performs a convolution followed by a max pool operation and an optional instance norm.
     """
 
-    def __init__(self, c_in: int, use_bn: bool = True, kernel_size: int = 3, activation: str = 'relu'):
+    def __init__(self, c_in: int, use_norm: bool = True, kernel_size: int = 3, activation: str = 'relu',
+                 c_out: int = None, stride: int = 2, padding: int = 1, padding_mode: str = 'reflect',
+                 norm_type: str = 'instance'):
         """
         ContractingBlock class constructor.
-        :param c_in: the number of channels to expect from a given input
-        :param use_bn: indicates if InstanceNormalization2d is applied or not after Conv2d layer
-        :param kernel_size: filter (kernel) size
-        :param activation: type of activation function used (supported: 'relu', 'lrelu')
+        :param (int) c_in: the number of channels to expect from a given input
+        :param (bool) use_norm: indicates if InstanceNormalization2d is applied or not after Conv2d layer
+        :param (int) kernel_size: filter (kernel) size
+        :param (str) activation: type of activation function used (supported: 'relu', 'lrelu')
+        :param (optional) c_out: set to None to output 2*c_in channels
+        :param (int) stride: stride as integer (same for W and H)
+        :param (int) padding: padding as integer (same for W and H)
+        :param (int) padding_mode: see torch.nn.Conv2d of more info on this argument
+        :param (str) norm_type: available types are 'batch', 'instance', 'pixel', 'layer'
         """
         super(ContractingBlock, self).__init__()
-        self.contracting_block = nn.Sequential(
-            nn.Conv2d(c_in, c_in * 2, kernel_size=kernel_size, padding=1, stride=2, padding_mode='reflect'),
-            nn.InstanceNorm2d(c_in * 2) if use_bn else nn.Identity(),
-            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2)
-        )
+        c_out = c_in * 2 if not c_out else c_out
+        _layers = [nn.Conv2d(c_in, c_out, kernel_size=kernel_size, padding=padding, stride=stride,
+                             padding_mode=padding_mode), ]
+        if use_norm:
+            from modules.partial.normalization import PixelNorm2d, LayerNorm2d
+            switcher = {
+                'batch': nn.BatchNorm2d(c_out),
+                'instance': nn.InstanceNorm2d(c_out),
+                'pixel': PixelNorm2d(),
+                'layer': LayerNorm2d(c_out),
+            }
+            _layers.append(switcher[norm_type])
+        _layers.append(nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2))
+        self.contracting_block = nn.Sequential(*_layers)
 
     def forward(self, x: Tensor) -> Tensor:
         """

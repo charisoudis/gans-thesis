@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -13,23 +14,44 @@ class ExpandingBlock(nn.Module):
         c_in: the number of channels to expect from a given input
     """
 
-    def __init__(self, c_in: int, use_bn: bool = True, kernel_size: int = 3, activation: str = 'relu',
-                 output_padding: int = 1):
+    def __init__(self, c_in: int, use_norm: bool = True, kernel_size: int = 3, activation: Optional[str] = 'relu',
+                 output_padding: int = 1, stride: int = 2, padding: int = 1, c_out: Optional[int] = None,
+                 norm_type: str = 'instance'):
         """
         ExpandingBlock class constructor.
-        :param c_in: number of input channels
-        :param use_bn: indicates if InstanceNormalization2d is applied or not after Conv2d layer
-        :param kernel_size: filter (kernel) size
-        :param activation: type of activation function used (supported: 'relu', 'lrelu')
-        :param output_padding: output_padding of Conv2d layer
+        :param (int) c_in: number of input channels
+        :param (bool) use_norm: indicates if InstanceNormalization2d is applied or not after Conv2d layer
+        :param (int) kernel_size: filter (kernel) size of torch.nn.Conv2d
+        :param (str) activation: type of activation function used (supported: 'relu', 'lrelu')
+        :param (int) output_padding: output_padding of torch.nn.ConvTranspose2d
+        :param (int) stride: stride of torch.nn.ConvTranspose2d (defaults to 2 for our needs)
+        :param (int) padding: padding of torch.nn.ConvTranspose2d
+        :param (str) c_out: number of output channels
+        :param (str) norm_type: available types are 'batch', 'instance', 'pixel', 'layer'
         """
         super(ExpandingBlock, self).__init__()
-        self.expanding_block = nn.Sequential(
-            nn.ConvTranspose2d(c_in, c_in // 2, kernel_size=kernel_size, stride=2, padding=1,
-                               output_padding=output_padding),
-            nn.InstanceNorm2d(c_in // 2) if use_bn else nn.Identity(),
-            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2)
-        )
+        c_out = c_in // 2 if c_out is None else c_out
+        _layers = [nn.ConvTranspose2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding,
+                                      output_padding=output_padding), ]
+        if use_norm:
+            from modules.partial.normalization import PixelNorm2d, LayerNorm2d
+            switcher = {
+                'batch': nn.BatchNorm2d(c_out),
+                'instance': nn.InstanceNorm2d(c_out),
+                'pixel': PixelNorm2d(),
+                'layer': LayerNorm2d(c_out),
+            }
+            _layers.append(switcher[norm_type])
+        if activation is not None:
+            activations_switcher = {
+                'relu': nn.ReLU(),
+                'lrelu': nn.LeakyReLU(0.2),
+                'tanh': nn.Tanh(),
+                'sigmoid': nn.Sigmoid(),
+            }
+            _layers.append(activations_switcher[activation])
+        self.expanding_block = nn.Sequential(*_layers)
+        self.c_out = c_out
 
     def forward(self, x: Tensor) -> Tensor:
         """

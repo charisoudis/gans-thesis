@@ -33,7 +33,7 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable):
             FeatureMapLayer(c_in, c_hidden),
 
             # Encoding (aka contracting) blocks
-            ContractingBlock(c_hidden, use_bn=False),
+            ContractingBlock(c_hidden, use_norm=False),
             *[ContractingBlock(c_hidden * 2 ** i) for i in range(1, n_contracting_blocks)],
 
             ChannelsProjectLayer(c_hidden * 2 ** n_contracting_blocks, 1, use_spectral_norm=use_spectral_norm)

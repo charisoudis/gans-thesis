@@ -111,7 +111,7 @@ class ModulatedConv2d(nn.Module):
     """
     ModulatedConv2d Class:
     This class implements a simpler version of the modulated convolution proposed in StyleGANv2 to fix artifacts created
-    by InstanceNorm2d in the original StyleGAN.
+    by AdaptiveInstanceNorm2d in the original StyleGAN.
     """
 
     def __init__(self, s_dim: int, c_in: int, c_out: int, kernel_size: Union[int, tuple],

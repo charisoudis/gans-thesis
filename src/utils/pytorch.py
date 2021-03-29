@@ -1,5 +1,5 @@
 import os
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import scipy.optimize
@@ -11,6 +11,7 @@ from torch.nn import Module
 from torchvision.transforms import transforms
 
 from utils.command_line_logger import CommandLineLogger
+from utils.ifaces import Verbosable
 from utils.string import to_human_readable
 
 
@@ -41,16 +42,25 @@ def cov(x: torch.Tensor) -> torch.Tensor:
     return 1 / (n_samples - 1) * x.transpose(-1, -2) @ x
 
 
-def enable_verbose(model: nn.Module) -> None:
+def enable_verbose(model: nn.Module, logger: Optional[CommandLineLogger] = None) -> None:
     """
     Register verbose hooks on model's forward pass to output the shape of each layer's output tensor.
     :param (nn.Module) model: an torch.nn.Module instance
+    :param (optional) logger: set internal logger
     """
-    logger = model.logger if hasattr(model, 'logger') else \
-        CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'debug'), name='ModelVerbose')
-    # Register a hook for each layer
-    for _name, _layer in model.named_children():
-        _layer.register_forward_hook(lambda _l, _, _out: logger.debug(f"{_name}: {_out.shape}"))
+    if logger is None:
+        logger = model.logger if hasattr(model, 'logger') else \
+            CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'debug'), name='ModelVerbose')
+    # Recursively set for submodules
+    if isinstance(model, Verbosable):
+        for attr_name in model.get_layer_attr_names():
+            enable_verbose(getattr(model, attr_name), logger=logger)
+    else:
+        # Register a hook for each layer in root module
+        for _name, _layer in model.named_children():
+            _layer.register_forward_hook(lambda _l, _, _out: logger.debug(f"{_name}: {_out.shape}"))
+    # Flag model
+    model.verbose_enabled = True
 
 
 def get_gradient(disc: nn.Module, real: torch.Tensor, fake: torch.Tensor, epsilon: torch.Tensor) -> torch.Tensor:

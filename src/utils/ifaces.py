@@ -813,6 +813,16 @@ class ResumableDataLoader(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
+class Verbosable(metaclass=abc.ABCMeta):
+    @abc.abstractmethod
+    def get_layer_attr_names(self) -> List[str]:
+        """
+        Get a list of all module attributes that are themselves nn.Module instances.
+        :return: a list object of attribute names
+        """
+        raise NotImplementedError
+
+
 class Visualizable(metaclass=abc.ABCMeta):
     @classmethod
     def version(cls) -> str:
