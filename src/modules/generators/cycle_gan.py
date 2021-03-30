@@ -22,10 +22,10 @@ class CycleGANGenerator(nn.Module):
     def __init__(self, c_in: int, c_out: int, c_hidden: int = 64, n_residual_blocks: int = 9):
         """
         CycleGANGenerator class constructor.
-        :param c_in: number of input channels
-        :param c_out: number of output channels
-        :param c_hidden: number of hidden channels (in residual blocks)
-        :param n_residual_blocks: number of residual blocks
+        :param (int) c_in: number of input channels
+        :param (int) c_out: number of output channels
+        :param (int) c_hidden: number of hidden channels (in residual blocks)
+        :param (int) n_residual_blocks: number of residual blocks
         """
         super(CycleGANGenerator, self).__init__()
         self.cycle_gan_generator = nn.Sequential(
@@ -52,7 +52,7 @@ class CycleGANGenerator(nn.Module):
         Function for completing a forward pass of Generator:
         Given an image tensor, passes it through the U-Net with residual blocks
         and returns the output.
-        :param x: image tensor of shape (N, C_in, H, W)
+        :param (torch.Tensor) x: image tensor of shape (N, C_in, H, W)
         :return: transformed image tensor of shape (N, C_out, H, W)
         """
         return self.cycle_gan_generator(x)
@@ -66,10 +66,12 @@ class CycleGANGenerator(nn.Module):
         """
         Return the adversarial loss of the generator given inputs (and the generated images for testing purposes).
         Attention: We suppose that this instance is the Generator from Domain X --> Y: gen_XY
-        :param real_x: the real images from pile X
-        :param disc_y: the discriminator for class Y; takes images and returns real/fake class Y prediction matrices
-        :param adv_criterion: the adversarial loss function; takes the discriminator predictions and the target labels
-                              and returns a adversarial loss (which we aim to minimize)
+        :param (torch.Tensor) real_x: the real images from pile X
+        :param (torch.nn.Module) disc_y: the discriminator for class Y; takes images and returns real/fake class Y
+                                         prediction matrices
+        :param (torch.nn.Module) adv_criterion: the adversarial loss function; takes the discriminator predictions and
+                                                the target labels and returns a adversarial loss (which we aim to
+                                                minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         fake_y = self(real_x)
@@ -83,9 +85,10 @@ class CycleGANGenerator(nn.Module):
         """
         Return the identity loss of the generator given inputs (and the generated images for testing purposes).
         Attention: We suppose that this instance is the Generator from Domain X --> Y: gen_XY
-        :param real_y: the real images from domain (or pile) Y
-        :param identity_criterion: the identity loss function; takes the real images from Y and those images put
-                                   through a X->Y generator and returns the identity loss (which we aim to minimize)
+        :param (torch.Tensor) real_y: the real images from domain (or pile) Y
+        :param (torch.nn.Module) identity_criterion: the identity loss function; takes the real images from Y and those
+                                                     images put through a X->Y generator and returns the identity loss
+                                                     (which we aim to minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         identity_y = self(real_y)
@@ -98,11 +101,12 @@ class CycleGANGenerator(nn.Module):
         Return the cycle consistency loss of the generator given inputs (and the generated images for testing purposes).
         Attention: We suppose that this instance is the Generator from Domain X --> Y: gen_XY
         Parameters:
-        :param real_y: the real images from domain (or pile) Y
-        :param fake_x: the generated images of domain X (generated from gen_YX with input real_y)
-        :param cycle_criterion: the cycle consistency loss function; takes the real images from Y and those images put
-                                through a Y->X generator and then X->Y generator (this one) and returns the cycle
-                                consistency loss (which we aim to minimize)
+        :param (torch.Tensor) real_y: the real images from domain (or pile) Y
+        :param (torch.Tensor) fake_x: the generated images of domain X (generated from gen_YX with input real_y)
+        :param (torch.nn.Module) cycle_criterion: the cycle consistency loss function; takes the real images from Y and
+                                                  those images put through a Y->X generator and then X->Y generator
+                                                  (this one) and returns the cycle consistency loss (which we aim to
+                                                  minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         cycle_y = self(fake_x)

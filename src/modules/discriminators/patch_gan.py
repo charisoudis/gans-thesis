@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 
 import torch
 import torch.nn as nn
@@ -6,60 +6,78 @@ from torch import Tensor
 
 from modules.partial.decoding import FeatureMapLayer, ChannelsProjectLayer
 from modules.partial.encoding import ContractingBlock
-from utils.ifaces import BalancedFreezable
+from utils.command_line_logger import CommandLineLogger
+from utils.ifaces import BalancedFreezable, Verbosable
 
 
-class PatchGANDiscriminator(nn.Module, BalancedFreezable):
+class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
     """
     PatchGANDiscriminator Class:
     This class implements the PatchGAN discriminator network used by many GAN architectures, such as pix2pix, pix2pixHD
     and CycleGAN. Outputs a map of real/fake probabilities instead of scalar per input image.
     """
 
-    def __init__(self, c_in: int, c_hidden: int = 8, n_contracting_blocks: int = 4, use_spectral_norm: bool = False):
+    def __init__(self, c_in: int, c_hidden: int = 8, n_contracting_blocks: int = 4, use_spectral_norm: bool = False,
+                 use_upfeature: bool = True, logger: Optional[CommandLineLogger] = None):
         """
         PatchGANDiscriminator class constructor.
-        :param c_in: number of input channels
-        :param c_hidden: the initial number of discriminator convolutional filters (channels)
-        :param n_contracting_blocks: number of contracting blocks
-        :param use_spectral_norm: flag to use/not use Spectral Normalization in ChannelsProject layer
+        :param (int) c_in: number of input channels
+        :param (int) c_hidden: the initial number of discriminator convolutional filters (channels)
+        :param (int) n_contracting_blocks: number of contracting blocks
+        :param (bool) use_spectral_norm: set to True to use Spectral Normalization in the ChannelsProject (last) layer
+        :param (bool) use_upfeature: set to True to initially up-channel the input before contracting blocks
+        :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
         """
         # Initialize utils.ifaces.BalancedFreezable
         BalancedFreezable.__init__(self)
 
         # Initialize torch.nn.Module
         nn.Module.__init__(self)
-        self.patch_gan_discriminator = nn.Sequential(
-            FeatureMapLayer(c_in, c_hidden),
+        if use_upfeature:
+            self.patch_gan_discriminator = nn.Sequential(
+                FeatureMapLayer(c_in, c_hidden),
 
-            # Encoding (aka contracting) blocks
-            ContractingBlock(c_hidden, use_norm=False),
-            *[ContractingBlock(c_hidden * 2 ** i) for i in range(1, n_contracting_blocks)],
+                # Encoding (aka contracting) blocks
+                ContractingBlock(c_hidden, use_norm=False),
+                *[ContractingBlock(c_hidden * 2 ** i) for i in range(1, n_contracting_blocks)],
 
-            ChannelsProjectLayer(c_hidden * 2 ** n_contracting_blocks, 1, use_spectral_norm=use_spectral_norm)
-        )
+                ChannelsProjectLayer(c_hidden * 2 ** n_contracting_blocks, 1, use_spectral_norm=use_spectral_norm)
+            )
+        else:
+            self.patch_gan_discriminator = nn.Sequential(
+                # Encoding (aka contracting) blocks
+                ContractingBlock(c_in=c_in, c_out=c_hidden, use_norm=False),
+                *[ContractingBlock(c_hidden * 2 ** i) for i in range(0, n_contracting_blocks - 1)],
+
+                ChannelsProjectLayer(c_hidden * 2 ** (n_contracting_blocks - 1), 1, use_spectral_norm=use_spectral_norm)
+            )
+
+        self.logger = CommandLineLogger(name=self.__class__.__name__) if logger is None else logger
+        self.verbose_enabled = False
 
     def forward(self, x: Tensor, y: Optional[Tensor] = None) -> Tensor:
         """
         Function for completing a forward pass of PatchGANDiscriminator:
         Given an image tensor, returns a 2D matrix of realness probabilities for each image's "patches".
-        :param x: image tensor of shape (N, C_in, H, W)
-        :param y: image tensor of shape (N, C_y, H, W) containing the condition images (e.g. for pix2pix)
+        :param (torch.Tensor) x: image tensor of shape (N, C_in, H, W)
+        :param (torch.Tensor) y: image tensor of shape (N, C_y, H, W) containing the condition images (e.g. for pix2pix)
         :return: transformed image tensor of shape (N, 1, P_h, P_w)
         """
         if y is not None:
             x = torch.cat([x, y], dim=1)  # channel-wise concatenation
+        if self.verbose_enabled:
+            self.logger.debug('_: ' + str(x.shape))
         return self.patch_gan_discriminator(x)
 
     def get_loss(self, real: Tensor, fake: Tensor, condition: Optional[Tensor] = None,
                  criterion: nn.modules.Module = nn.BCELoss()) -> Tensor:
         """
         Compute adversarial loss.
-        :param real: image tensor of shape (N, C, H, W) from real dataset
-        :param fake: image tensor of shape (N, C, H, W) produced by generator (i.e. fake images)
-        :param condition: condition image tensor of shape (N, C_in/2, H, W) that is stacked before input to PatchGAN
-                          discriminator (optional)
-        :param criterion: loss function (such as nn.BCELoss, nn.MSELoss and others)
+        :param (torch.Tensor) real: image tensor of shape (N, C, H, W) from real dataset
+        :param (torch.Tensor) fake: image tensor of shape (N, C, H, W) produced by generator (i.e. fake images)
+        :param (optional) condition: condition image tensor of shape (N, C_in/2, H, W) that is stacked before input to
+                                     PatchGAN discriminator (optional)
+        :param (torch.nn.Module) criterion: loss function (such as nn.BCELoss, nn.MSELoss and others)
         :return: torch.Tensor containing loss value(s)
         """
         predictions_on_real = self(real, condition)
@@ -70,6 +88,9 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable):
         loss_on_real = criterion(predictions_on_real, torch.ones_like(predictions_on_real))
         loss_on_fake = criterion(predictions_on_fake, torch.zeros_like(predictions_on_real))
         return 0.5 * (loss_on_real + loss_on_fake)
+
+    def get_layer_attr_names(self) -> List[str]:
+        return ['patch_gan_discriminator', ]
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ from torchvision.transforms import Compose
 
 from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataset
 from modules.discriminators.patch_gan import PatchGANDiscriminator
-from modules.generators.pgpg import PGPGGenerator
+from modules.generators.pixel_dt_gan import PixelDTGanGenerator
 from modules.ifaces import IGanGModule
 from utils.filesystems.gdrive import GDriveFolder, GDriveCapsule
 from utils.ifaces import FilesystemFolder
@@ -24,13 +24,13 @@ from utils.pytorch import invert_transforms
 from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler
 
 
-class PGPG(nn.Module, IGanGModule):
+class PixelDTGan(nn.Module, IGanGModule):
     """
-    PGPG Class:
-    This class is used to access and use the entire PGPG model (implemented according to the paper "Pose-Guided Person
-    Image Generation" as a `nn.Module` instance but with the additional functionality provided from inheriting
+    PixelDTGan Class:
+    This class is used to access and use the entire PixelDTGan model (implemented according to the paper "Pixel-Level
+    Domain Transfer") as a `nn.Module` instance but with the additional functionality provided from inheriting
     `utils.gdrive.GDriveModel` (through the `utils.ifaces.IGanGModule` interface). Inheriting GDriveModel enables easy
-    download / upload of model checkpoints to Google Drive using GoogleDrive API's python client and PyDrive.
+    download / upload of model checkpoints to Google Drive using GoogleDrive API's python client and PyDrive
     """
 
     # This is the latest model configuration that lead to SOTA results
@@ -38,28 +38,26 @@ class PGPG(nn.Module, IGanGModule):
         'shapes': {
             'c_in': 3,
             'c_out': 3,
-            'w_in': 128,
-            'h_in': 128,
+            'w_in': 64,
+            'h_in': 64,
         },
         'gen': {
-            'g1': {
-                'c_hidden': 32,
-                'n_contracting_blocks': 6,
-                'c_bottleneck_down': 256,
-                'use_out_tanh': True,
-            },
-            'g2': {
-                'c_hidden': 32,
-                'n_contracting_blocks': 5,
-                'use_out_tanh': True,
-                'use_dropout': True,
-            },
-            'recon_criterion': 'L1',
+            'c_hidden': 128,
+            'n_contracting_blocks': 5,
+            'c_bottleneck': 100,
+            'use_out_tanh': True,
+            'use_dropout': True,
             'adv_criterion': 'MSE',
         },
-        'disc': {
-            'c_hidden': 8,
-            'n_contracting_blocks': 5,
+        'disc_r': {
+            'c_hidden': 128,
+            'n_contracting_blocks': 4,
+            'use_spectral_norm': True,
+            'adv_criterion': 'MSE',
+        },
+        'disc_a': {
+            'c_hidden': 128,
+            'n_contracting_blocks': 4,
             'use_spectral_norm': True,
             'adv_criterion': 'MSE',
         },
@@ -94,6 +92,7 @@ class PGPG(nn.Module, IGanGModule):
         :param evaluator_kwargs: if :attr:`evaluator` is `None` these arguments must be present to initialize a new
                                  `utils.metrics.GanEvaluator` instance
         """
+        # TODO: [This is just a copy from PGPG] Implement the entire module
         # Initialize interface
         IGanGModule.__init__(self, model_fs_folder_or_root, config_id, device=device, log_level=log_level,
                              dataset_len=dataset_len, evaluator=evaluator, **evaluator_kwargs)
@@ -101,11 +100,11 @@ class PGPG(nn.Module, IGanGModule):
         # Instantiate torch.nn.Module class
         nn.Module.__init__(self)
 
-        # Define PGPG model
+        # Define PixelDTGan model
         # This setup leads to 237M (G1 has ~ 120M, G2 has ~117M) learnable parameters for the entire Generator network
         shapes_conf = self._configuration['shapes']
-        self.gen = PGPGGenerator(c_in=2 * shapes_conf['c_in'], c_out=shapes_conf['c_out'], w_in=shapes_conf['w_in'],
-                                 h_in=shapes_conf['h_in'], configuration=self._configuration['gen'])
+        self.gen = PixelDTGanGenerator(c_in=shapes_conf['c_in'], c_out=shapes_conf['c_out'],
+                                       w_in=shapes_conf['w_in'], configuration=self._configuration['gen'])
         # This setup leads to 396K learnable parameters for the Discriminator network
         # NOTE: for 5 contracting blocks, output is 4x4
         disc_conf = self._configuration['disc']
@@ -401,9 +400,9 @@ if __name__ == '__main__':
                               f1_k=1)
 
     # Initialize model
-    _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
-                 dataset_len=len(_dataset), chkpt_epoch=None, log_level=_log_level,
-                 evaluator=_evaluator, device='cpu')
+    _pgpg = PixelDTGan(model_fs_folder_or_root=_models_groot,
+                       config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false', dataset_len=len(_dataset),
+                       chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
 
     # # for _e in range(3):
     # #     _pgpg.logger.info(f'current epoch: {_e}')

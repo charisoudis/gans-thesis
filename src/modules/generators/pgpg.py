@@ -46,13 +46,15 @@ class PGPGGenerator2(UNETWithSkipConnections):
                  use_dropout: bool = True, use_out_tanh: bool = True):
         """
         PGPGGenerator2 class constructor.
-        :param c_in: the number of channels to expect from a given input
-        :param c_out: the number of channels to expect for a given output
-        :param c_hidden: the base number of channels multiples of which are used through-out the UNET network
-        :param n_contracting_blocks: the base number of contracting (and corresponding expanding) blocks
-        :param use_dropout: set to True to use DropOut in the 1st half of the encoder part of the network
-        :param use_out_tanh: set to True to use Tanh() activation in output layer; otherwise no output activation will
-                             be used
+        :param (int) c_in: the number of channels to expect from a given input
+        :param (int) c_out: the number of channels to expect for a given output
+        :param (int) c_hidden: the base number of channels multiples of which are used through-out the UNET network
+                               (defaults to 32)
+        :param (int) n_contracting_blocks: the base number of contracting (and corresponding expanding) blocks
+                                           (defaults to 5)
+        :param (bool) use_dropout: set to True to use DropOut in the 1st half of the encoder part of the network
+        :param (bool) use_out_tanh: set to True to use Tanh() activation in output layer; otherwise no output activation
+                                    will be used
         """
         super(PGPGGenerator2, self).__init__(c_in=c_in, c_out=c_out, c_hidden=c_hidden, use_bn=False,
                                              use_dropout=use_dropout, n_contracting_blocks=n_contracting_blocks,
