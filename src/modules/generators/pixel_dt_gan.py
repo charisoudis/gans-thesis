@@ -7,7 +7,7 @@ from modules.partial.decoding import ExpandingBlock
 from modules.partial.encoding import ContractingBlock
 from utils.command_line_logger import CommandLineLogger
 from utils.ifaces import BalancedFreezable, Verbosable
-from utils.pytorch import enable_verbose
+from utils.pytorch import enable_verbose, get_total_params
 
 
 class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
@@ -18,18 +18,25 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
 
     def __init__(self, c_in: int, c_out: int, c_hidden: int = 128, n_contracting_blocks: int = 5,
                  c_bottleneck: int = 64, w_in: int = 256, use_dropout: bool = True, use_out_tanh: bool = True,
-                 logger: Optional[CommandLineLogger] = None):
+                 adv_criterion_conf: Optional[dict] = None, logger: Optional[CommandLineLogger] = None):
         """
         PixelDTGANGenerator class constructor.
         :param (int) c_in: the number of channels to expect from a given input
         :param (int) c_out: the number of channels to expect for a given output
         :param (int) c_hidden: the base number of channels multiples of which are used through-out the UNET network
-        :param (int) c_bottleneck: (G1) the number of channels to project down to before flattening for FC layer (this is
-                             necessary since otherwise memory will be exhausted), in generator 1 network.
+        :param (int) c_bottleneck: number of channels/elements in the bottleneck layer (c_bottleneck x 1 x 1)
         :param (int) w_in: the input image width
         :param (bool) use_dropout: set to True to use DropOut in the 1st half of the encoder part of the network
         :param (bool) use_out_tanh: set to True to use Tanh() activation in output layer; otherwise no output activation
                                     will be used
+        :param (optional) adv_criterion_conf: the configuration parameters of the network. Among other parameters the
+                                              following keys are necessary to instantiate the model:
+                                                - real: type of Adversarial loss for real/fake discriminator
+                                                predictions. Supported: `nn.MSELoss()`, `nn.BCELoss()`,
+                                                `nn.BCEWithLogitsLoss()`
+                                                - associated: Adversarial loss for associated/unassociated
+                                                discriminator's predictions. Supported: `nn.MSELoss()`, `nn.BCELoss()`,
+                                                `nn.BCEWithLogitsLoss()`
         :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
         """
         # Initialize utils.ifaces.BalancedFreezable
@@ -63,6 +70,8 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                            padding=2, output_padding=1, use_norm=False),
         )
 
+        # Save arguments
+        self.adv_criterion_conf = adv_criterion_conf
         self.logger = CommandLineLogger(name=self.__class__.__name__) if logger is None else logger
         self.verbose_enabled = False
 
@@ -77,40 +86,45 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
             self.logger.debug('_: ' + str(x.shape))
         return self.gen(x)
 
-    def get_loss(self, x: torch.Tensor, y: torch.Tensor, disc_r: nn.Module, disc_a: nn.Module,
+    def get_loss(self, img_s: torch.Tensor, disc_r: nn.Module, disc_a: nn.Module,
                  adv_criterion: Optional[nn.modules.Module] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Get the loss of the generator given inputs. If the criteria are not provided they will be set using the
         instance's given (or default) configuration.
-        :param (torch.Tensor) x: input images (of people wearing the target garment)
-        :param (torch.Tensor) y: target images (garments in neutral background)
+        :param (torch.Tensor) img_s: input images (of people wearing the target garment)
         :param (torch.nn.Module) disc_r: the real/fake Discriminator network
         :param (torch.nn.Module) disc_a: the associated/unassociated Discriminator network
         :param (optional) adv_criterion: the adversarial loss function; takes the discriminator predictions and the
                                          target labels and returns a adversarial loss (which we aim to minimize)
-        :return: a tuple containing the G1's loss (a scalar) and G2's loss (a scalar) and the outputs (for visualization
-                 purposes)
+        :return: a tuple containing the aggregated Generator's loss (a scalar) and the output batch of images (for
+                 visualization purposes)
         """
         # 1) Make a forward pass on the Generator
-        y_hat = self(x)
+        img_t_hat = self(img_s)
         # 2) Compute Generator Loss
-        #   - Adversarial loss for G2
-        gen_out_predictions = disc_r(y_hat)
-        adv_criterion = getattr(nn, f'{self.configuration["adv_criterion"]}Loss')() if not adv_criterion else \
-            adv_criterion
-        g2_loss_adv = adv_criterion(gen_out_predictions, torch.ones_like(gen_out_predictions))
-        # - Aggregated loss
-        g2_loss = g2_loss_adv + lambda_recon * g2_loss_recon
-        return g1_loss, g2_loss, g1_out, g_out
+        #   - Adversarial loss from Real/Fake Discriminator
+        disc_r_predictions = disc_r(img_t_hat)
+        adv_criterion_r = self.adv_criterion_conf['real'] if not adv_criterion else adv_criterion
+        adv_loss_r = adv_criterion_r(disc_r_predictions, torch.ones_like(disc_r_predictions))
+        #   - Adversarial loss from Associated/Unassociated Discriminator
+        disc_a_predictions = disc_a(img_t_hat, img_s)
+        adv_criterion_a = self.adv_criterion_conf['associated'] if not adv_criterion else adv_criterion
+        adv_loss_a = adv_criterion_a(disc_a_predictions, torch.ones_like(disc_a_predictions))
+        #   - Aggregate losses (mean)
+        gen_loss = 0.5 * (adv_loss_r + adv_loss_a)
+        return gen_loss, img_t_hat
 
     def get_layer_attr_names(self) -> List[str]:
         return ['gen', ]
 
 
 if __name__ == '__main__':
-    _gen = PixelDTGanGenerator(c_in=3, c_out=3, c_hidden=128, n_contracting_blocks=5, c_bottleneck=100, w_in=64,
+    _w_in = 64
+    _gen = PixelDTGanGenerator(c_in=3, c_out=3, c_hidden=128, n_contracting_blocks=6, c_bottleneck=100, w_in=_w_in,
                                use_dropout=True, use_out_tanh=True)
+    get_total_params(_gen, print_table=True, sort_desc=True)
     # print(_gen)
+    print(None)
     enable_verbose(_gen)
-    _x = torch.randn(1, 3, 64, 64)
+    _x = torch.randn(1, 3, _w_in, _w_in)
     _y = _gen(_x)

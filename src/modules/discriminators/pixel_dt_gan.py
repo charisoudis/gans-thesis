@@ -4,7 +4,7 @@ import torch
 
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from utils.command_line_logger import CommandLineLogger
-from utils.pytorch import enable_verbose
+from utils.pytorch import enable_verbose, get_total_params
 
 
 class PixelDTGanDiscriminator(PatchGANDiscriminator):
@@ -42,12 +42,14 @@ if __name__ == '__main__':
     _y = _disc_r(_x)
     _disc_r.logger.info('[END]')
 
-    # Associated/Non-associated Discriminator
+    # Associated/Unassociated Discriminator
     _disc_a = PixelDTGanDiscriminator(c_in=6, c_hidden=128, n_contracting_blocks=4, logger=_disc_r.logger)
-    _disc_a.logger.info('[START] Associated/Non-associated Discriminator')
+    _disc_a.logger.info('[START] Associated/Unassociated Discriminator')
     # print(_disc)
     enable_verbose(_disc_a)
     _x = torch.randn(1, 3, 64, 64)
     _condition = torch.randn(1, 3, 64, 64)
     _ = _disc_a(_x, _condition)
     _disc_a.logger.info('[END]')
+
+    get_total_params(_disc_a, print_table=True, sort_desc=True)

@@ -6,20 +6,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from PIL.Image import Image
-from torch import nn, Tensor
+from torch import nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 # noinspection PyProtectedMember
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
-from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataset
-from modules.discriminators.patch_gan import PatchGANDiscriminator
+from datasets.look_book import PixelDTDataset
+from modules.discriminators.pixel_dt_gan import PixelDTGanDiscriminator
 from modules.generators.pixel_dt_gan import PixelDTGanGenerator
 from modules.ifaces import IGanGModule
-from utils.filesystems.gdrive import GDriveFolder, GDriveCapsule
+from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
-from utils.plot import pltfig_to_pil, ensure_matplotlib_fonts_exist
+from utils.plot import pltfig_to_pil
 from utils.pytorch import invert_transforms
 from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler
 
@@ -38,8 +38,7 @@ class PixelDTGan(nn.Module, IGanGModule):
         'shapes': {
             'c_in': 3,
             'c_out': 3,
-            'w_in': 64,
-            'h_in': 64,
+            'w_in': 128,
         },
         'gen': {
             'c_hidden': 128,
@@ -47,7 +46,11 @@ class PixelDTGan(nn.Module, IGanGModule):
             'c_bottleneck': 100,
             'use_out_tanh': True,
             'use_dropout': True,
-            'adv_criterion': 'MSE',
+        },
+        'gen_opt': {
+            'lr': 1e-4,
+            'opt': 'adam',
+            'scheduler': None
         },
         'disc_r': {
             'c_hidden': 128,
@@ -61,9 +64,10 @@ class PixelDTGan(nn.Module, IGanGModule):
             'use_spectral_norm': True,
             'adv_criterion': 'MSE',
         },
-        'opt': {
+        'disc_opt': {
             'lr': 1e-4,
-            'schedule': None
+            'opt': 'adam',
+            'scheduler': None
         }
     }
 
@@ -86,13 +90,12 @@ class PixelDTGan(nn.Module, IGanGModule):
         :param (str) device: the device used for training (supported: "cuda", "cuda:<GPU_INDEX>", "cpu")
         :param (Compose) gen_transforms: the image transforms of the dataset the generator is trained on (used in
                                          visualization)
-        :param (optional) evaluator:
+        :param (optional) evaluator: GanEvaluator instance of None to not evaluate models when taking snapshots
         :param (optional) dataset_len: number of images in the dataset used to train the generator or None to fetched
                                        from the :attr:`evaluator` dataset property (used for epoch tracking)
         :param evaluator_kwargs: if :attr:`evaluator` is `None` these arguments must be present to initialize a new
                                  `utils.metrics.GanEvaluator` instance
         """
-        # TODO: [This is just a copy from PGPG] Implement the entire module
         # Initialize interface
         IGanGModule.__init__(self, model_fs_folder_or_root, config_id, device=device, log_level=log_level,
                              dataset_len=dataset_len, evaluator=evaluator, **evaluator_kwargs)
@@ -101,20 +104,37 @@ class PixelDTGan(nn.Module, IGanGModule):
         nn.Module.__init__(self)
 
         # Define PixelDTGan model
-        # This setup leads to 237M (G1 has ~ 120M, G2 has ~117M) learnable parameters for the entire Generator network
+        # This setup leads to ~38M learnable parameters for the Generator network
         shapes_conf = self._configuration['shapes']
-        self.gen = PixelDTGanGenerator(c_in=shapes_conf['c_in'], c_out=shapes_conf['c_out'],
-                                       w_in=shapes_conf['w_in'], configuration=self._configuration['gen'])
-        # This setup leads to 396K learnable parameters for the Discriminator network
+        gen_conf = {**self._configuration['gen'], **{
+            'w_in': shapes_conf['w_in'],
+            'adv_criterion_conf': {
+                'real': getattr(nn, f'{self._configuration["disc_r"]["adv_criterion"]}Loss')(),
+                'associated': getattr(nn, f'{self._configuration["disc_a"]["adv_criterion"]}Loss')(),
+            }
+        }}
+        self.gen = PixelDTGanGenerator(c_in=shapes_conf['c_in'], c_out=shapes_conf['c_out'], **gen_conf)
+        # get_total_params(self.gen, print_table=True, sort_desc=True)
+
+        # This setup leads to ~6M learnable parameters for the Real/Fake Discriminator network
         # NOTE: for 5 contracting blocks, output is 4x4
-        disc_conf = self._configuration['disc']
-        self.disc = PatchGANDiscriminator(c_in=2 * shapes_conf['c_in'],
-                                          n_contracting_blocks=disc_conf['n_contracting_blocks'],
-                                          use_spectral_norm=bool(disc_conf['use_spectral_norm']))
-        self.disc_adv_criterion = getattr(nn, f'{disc_conf["adv_criterion"]}Loss')()
+        disc_r_conf = self._configuration['disc_r']
+        del disc_r_conf['adv_criterion']
+        self.disc_r = PixelDTGanDiscriminator(c_in=shapes_conf['c_in'], logger=self.logger, **disc_r_conf)
+        self.disc_r_adv_criterion = gen_conf['adv_criterion_conf']['real']
+
+        # This setup leads to ~6M learnable parameters for the Associated/Unassociated Discriminator network
+        # NOTE: for 5 contracting blocks, output is 4x4
+        disc_a_conf = self._configuration['disc_a']
+        del disc_a_conf['adv_criterion']
+        self.disc_a = PixelDTGanDiscriminator(c_in=2 * shapes_conf['c_in'], logger=self.logger, **disc_a_conf)
+        self.disc_a_adv_criterion = gen_conf['adv_criterion_conf']['associated']
+        # get_total_params(self.disc_a, print_table=True, sort_desc=True)
+
         # Move models to GPU
         self.gen.to(device)
-        self.disc.to(device)
+        self.disc_r.to(device)
+        self.disc_a.to(device)
         self.device = device
         self.is_master_device = (isinstance(device, torch.device) and device.type == 'cuda' and device.index == 0) \
                                 or (isinstance(device, torch.device) and device.type == 'cpu') \
@@ -125,7 +145,8 @@ class PixelDTGan(nn.Module, IGanGModule):
         gen_opt_conf = self._configuration['gen_opt']
         disc_opt_conf = self._configuration['disc_opt']
         self.gen_opt = get_adam_optimizer(self.gen, lr=gen_opt_conf['lr'])
-        self.disc_opt = get_adam_optimizer(self.disc, lr=disc_opt_conf['lr'])
+        self.disc_r_opt = get_adam_optimizer(self.disc_r, lr=disc_opt_conf['lr'])
+        self.disc_a_opt = get_adam_optimizer(self.disc_a, lr=disc_opt_conf['lr'])
 
         # Load checkpoint from Google Drive
         self.other_state_dicts = {}
@@ -143,7 +164,8 @@ class PixelDTGan(nn.Module, IGanGModule):
         if not chkpt_epoch:
             # Initialize weights with small values
             self.gen = self.gen.apply(weights_init_naive)
-            self.disc = self.disc.apply(weights_init_naive)
+            self.disc_r = self.disc_r.apply(weights_init_naive)
+            self.disc_a = self.disc_a.apply(weights_init_naive)
             chkpt_epoch = 0
 
         # Define LR schedulers (after optimizer checkpoints have been loaded)
@@ -161,29 +183,38 @@ class PixelDTGan(nn.Module, IGanGModule):
             self.gen_opt_lr_scheduler = None
         if disc_opt_conf['scheduler']:
             if disc_opt_conf['scheduler'] == 'cyclic':
-                self.disc_opt_lr_scheduler = get_optimizer_lr_scheduler(
-                    self.disc_opt, schedule_type=str(disc_opt_conf['scheduler']), base_lr=0.1 * disc_opt_conf['lr'],
-                    max_lr=disc_opt_conf['lr'], step_size_up=2 * len(_dataset) if evaluator else 1000, mode='exp_range',
+                self.disc_r_opt_lr_scheduler = get_optimizer_lr_scheduler(
+                    self.disc_r_opt, schedule_type=str(disc_opt_conf['scheduler']), base_lr=0.1 * disc_opt_conf['lr'],
+                    max_lr=disc_opt_conf['lr'], step_size_up=2 * dataset_len if evaluator else 1000, mode='exp_range',
                     gamma=0.9, cycle_momentum=False,
-                    last_epoch=chkpt_epoch if 'initial_lr' in self.disc_opt.param_groups[0].keys() else -1)
+                    last_epoch=chkpt_epoch if 'initial_lr' in self.disc_r_opt.param_groups[0].keys() else -1)
+                self.disc_a_opt_lr_scheduler = get_optimizer_lr_scheduler(
+                    self.disc_a_opt, schedule_type=str(disc_opt_conf['scheduler']), base_lr=0.1 * disc_opt_conf['lr'],
+                    max_lr=disc_opt_conf['lr'], step_size_up=2 * dataset_len if evaluator else 1000, mode='exp_range',
+                    gamma=0.9, cycle_momentum=False,
+                    last_epoch=chkpt_epoch if 'initial_lr' in self.disc_a_opt.param_groups[0].keys() else -1)
             else:
-                self.disc_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_opt,
-                                                                        schedule_type=str(disc_opt_conf['scheduler']))
+                self.disc_r_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_r_opt,
+                                                                          schedule_type=str(disc_opt_conf['scheduler']))
+                self.disc_a_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_a_opt,
+                                                                          schedule_type=str(disc_opt_conf['scheduler']))
         else:
-            self.disc_opt_lr_scheduler = None
+            self.disc_r_opt_lr_scheduler = None
+            self.disc_a_opt_lr_scheduler = None
 
         # Save transforms for visualizer
-        self.gen_transforms = gen_transforms
+        if gen_transforms is not None:
+            self.gen_transforms = gen_transforms
 
         # Initialize params
-        self.g1_out = None
-        self.g_out = None
-        self.image_1 = None
-        self.image_2 = None
-        self.pose_2 = None
+        self.img_s = None
+        self.img_t = None
+        self.img_t_hat = None
+        self.disc_r_losses = []
+        self.disc_a_losses = []
 
     def load_configuration(self, configuration: dict) -> None:
-        IGanGModule.load_configuration(self, dict())
+        IGanGModule.load_configuration(self, configuration)
 
     #
     # ------------
@@ -206,14 +237,17 @@ class PixelDTGan(nn.Module, IGanGModule):
         # Load model checkpoints
         self.gen.load_state_dict(state_dict['gen'])
         self.gen_opt.load_state_dict(state_dict['gen_opt'])
-        self.disc.load_state_dict(state_dict['disc'])
-        self.disc_opt.load_state_dict(state_dict['disc_opt'])
+        self.disc_r.load_state_dict(state_dict['disc_r'])
+        self.disc_r_opt.load_state_dict(state_dict['disc_r_opt'])
+        self.disc_a.load_state_dict(state_dict['disc_a'])
+        self.disc_a_opt.load_state_dict(state_dict['disc_a_opt'])
         self._nparams = state_dict['nparams']
         # Update latest metrics with checkpoint's metrics
         if 'metrics' in state_dict.keys():
             self.latest_metrics = state_dict['metrics']
         self.logger.debug(f'State dict loaded. Keys: {tuple(state_dict.keys())}')
-        for _k in [_k for _k in state_dict.keys() if _k not in ('gen', 'gen_opt', 'disc', 'disc_opt', 'configuration')]:
+        for _k in [_k for _k in state_dict.keys() if _k not in ('gen', 'gen_opt', 'disc_r', 'disc_r_opt', 'disc_a',
+                                                                'disc_a_opt', 'configuration')]:
             self.other_state_dicts[_k] = state_dict[_k]
 
     def state_dict(self, *args, **kwargs) -> dict:
@@ -225,88 +259,91 @@ class PixelDTGan(nn.Module, IGanGModule):
         """
         mean_gen_loss = np.mean(self.gen_losses)
         self.gen_losses.clear()
-        mean_disc_loss = np.mean(self.disc_losses)
-        self.disc_losses.clear()
+        mean_disc_r_loss = np.mean(self.disc_r_losses)
+        self.disc_r_losses.clear()
+        mean_disc_a_loss = np.mean(self.disc_a_losses)
+        self.disc_a_losses.clear()
         return {
             'gen': self.gen.state_dict(),
             'gen_loss': mean_gen_loss,
             'gen_opt': self.gen_opt.state_dict(),
-            'disc': self.disc.state_dict(),
-            'disc_loss': mean_disc_loss,
-            'disc_opt': self.disc_opt.state_dict(),
+            'disc_r': self.disc_r.state_dict(),
+            'disc_r_loss': mean_disc_r_loss,
+            'disc_r_opt': self.disc_r_opt.state_dict(),
+            'disc_a': self.disc_a.state_dict(),
+            'disc_a_loss': mean_disc_a_loss,
+            'disc_a_opt': self.disc_a_opt.state_dict(),
             'nparams': self.nparams,
             'nparams_hr': self.nparams_hr,
             'config_id': self.config_id,
             'configuration': self._configuration,
         }
 
-    def forward(self, image_1: Tensor, image_2: Tensor, pose_2: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, img_s: torch.Tensor, img_t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         This method implements the forward pass through Inception v3 network.
-        :param (Tensor) image_1: the batch of input images as a `torch.Tensor` object
-        :param (Tensor) image_2: the batch of target images as a `torch.Tensor` object
-        :param (Tensor) pose_2: the batch of target pose images as a `torch.Tensor` object
-        :return: a tuple of `torch.Tensor` objects containing (disc_loss, gen_loss)
-
-        -----------
-        FROM COLAB:
-        ----------
-
-        # Perform forward pass from generator adn discriminator
-        disc_loss, gen_loss, g1_out, g_out = pgpg(image_1, image_2, pose_2)
-
-
+        :param (torch.Tensor) img_s: the batch of input images as a `torch.Tensor` object
+        :param (torch.Tensor) img_t: the batch of target images as a `torch.Tensor` object
+        :return: a tuple of `torch.Tensor` objects containing (disc_r_loss, disc_a_loss, gen_loss)
         """
         # Update gdrive model state
         if self.is_master_device:
-            self.gforward(image_1.shape[0])
+            self.gforward(img_s.shape[0])
 
         ##########################################
-        ########   Update Discriminator   ########
+        ########  Update Discriminators   ########
         ##########################################
         with self.gen.frozen():
-            self.disc_opt.zero_grad()  # Zero out discriminator gradient (before backprop)
-            _, g_out = self.gen(image_1, pose_2)
-            disc_loss = self.disc.get_loss(real=image_2, fake=g_out.detach(), condition=image_1,
-                                           criterion=self.disc_adv_criterion)
-            disc_loss.backward(retain_graph=True)  # Update discriminator gradients
-            self.disc_opt.step()  # Update discriminator weights
-            # Update LR (if needed)
-            if self.disc_opt_lr_scheduler:
-                if isinstance(self.disc_opt_lr_scheduler, ReduceLROnPlateau):
-                    self.disc_opt_lr_scheduler.step(metrics=disc_loss)
-                else:
-                    self.disc_opt_lr_scheduler.step()
+            disc_loss = {'r': None, 'a': None}
+            for disc_i in ['r', 'a']:
+                # Get correct discriminator
+                disc = getattr(self, f'disc_{disc_i}')
+                disc_opt = getattr(self, f'disc_{disc_i}_opt')
+                disc_opt_lr_scheduler = getattr(self, f'disc_{disc_i}_opt_lr_scheduler')
+
+                # Perform optimizing step
+                disc_opt.zero_grad()  # Zero out discriminator gradient (before backprop)
+                img_t_hat = self.gen(img_s)
+                disc_loss[disc_i] = disc.get_loss(real=img_t, fake=img_t_hat.detach(),
+                                                  condition=img_s if disc_i == 'a' else None,
+                                                  criterion=getattr(self, f'disc_{disc_i}_adv_criterion'))
+                disc_loss[disc_i].backward(retain_graph=True)  # Update discriminator gradients
+                disc_opt.step()  # Update discriminator weights
+                # Update LR (if needed)
+                if disc_opt_lr_scheduler:
+                    if isinstance(disc_opt_lr_scheduler, ReduceLROnPlateau):
+                        disc_opt_lr_scheduler.step(metrics=disc_loss[disc_i])
+                    else:
+                        disc_opt_lr_scheduler.step()
 
         ##########################################
         ########     Update Generator     ########
         ##########################################
-        with self.disc.frozen():
-            self.gen_opt.zero_grad()
-            g1_loss, g2_loss, g1_out, g_out = self.gen.get_loss(x=image_1, y=image_2, y_pose=pose_2.clone(),
-                                                                disc=self.disc, adv_criterion=None,
-                                                                recon_criterion=None)
-            gen_loss = g1_loss + g2_loss
-            gen_loss.backward()  # Update generator gradients
-            self.gen_opt.step()  # Update generator optimizer
-            # Update LR (if needed)
-            if self.gen_opt_lr_scheduler:
-                if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
-                    self.gen_opt_lr_scheduler.step(metrics=gen_loss)
-                else:
-                    self.gen_opt_lr_scheduler.step()
+        with self.disc_r.frozen():
+            with self.disc_a.frozen():
+                self.gen_opt.zero_grad()
+                gen_loss, img_t_hat = self.gen.get_loss(img_s=img_s, disc_r=self.disc_r, disc_a=self.disc_a,
+                                                        adv_criterion=None)
+                gen_loss.backward()  # Update generator gradients
+                self.gen_opt.step()  # Update generator optimizer
+                # Update LR (if needed)
+                if self.gen_opt_lr_scheduler:
+                    if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
+                        self.gen_opt_lr_scheduler.step(metrics=gen_loss)
+                    else:
+                        self.gen_opt_lr_scheduler.step()
 
         # Save for visualization
         if self.is_master_device:
-            self.g1_out = g1_out[::len(g1_out) - 1].detach().cpu()
-            self.g_out = g_out[::len(g_out) - 1].detach().cpu()
-            self.image_1 = image_1[::len(image_1) - 1].detach().cpu()
-            self.image_2 = image_2[::len(image_2) - 1].detach().cpu()
-            self.pose_2 = pose_2[::len(pose_2) - 1].detach().cpu()
+            self.img_s = img_s[::len(img_s) - 1].detach().cpu()
+            self.img_t = img_t[::len(img_t) - 1].detach().cpu()
+            self.img_t_hat = img_t_hat[::len(img_t_hat) - 1].detach().cpu()
             self.gen_losses.append(gen_loss.item())
-            self.disc_losses.append(disc_loss.item())
+            for disc_i in ['r', 'a']:
+                disc_losses = getattr(self, f'disc_{disc_i}_losses')
+                disc_losses.append(disc_loss[disc_i].item())
 
-        return disc_loss, gen_loss
+        return disc_loss['r'], disc_loss['a'], gen_loss
 
     #
     # --------------
@@ -314,36 +351,39 @@ class PixelDTGan(nn.Module, IGanGModule):
     # -------------
     #
 
+    # noinspection DuplicatedCode
     def visualize(self) -> Image:
         # Inverse generator transforms
         gen_transforms_inv = invert_transforms(self.gen_transforms)
         # Apply inverse image transforms to generated images
-        g1_out_first = gen_transforms_inv(self.g1_out[0]).float()
-        g1_out_last = gen_transforms_inv(self.g1_out[-1]).float()
-        g_out_first = gen_transforms_inv(self.g_out[0]).float()
-        g_out_last = gen_transforms_inv(self.g_out[-1]).float()
-        g2_out_fist = g_out_first - g1_out_first
-        g2_out_last = g_out_last - g1_out_last
+        img_t_hat_first = gen_transforms_inv(self.img_t_hat[0]).float()
+        img_t_hat_last = gen_transforms_inv(self.img_t_hat[-1]).float()
         # Apply inverse image transforms to real images
-        image_1_first = gen_transforms_inv(self.image_1[0])
-        pose_2_first = self.pose_2[0]  # No normalization since skip_pose_norm = True
-        image_2_first = gen_transforms_inv(self.image_2[0])
-        image_1_last = gen_transforms_inv(self.image_1[-1])
-        pose_2_last = self.pose_2[-1]  # No normalization since skip_pose_norm = True
-        image_2_last = gen_transforms_inv(self.image_2[-1])
+        img_s_first = gen_transforms_inv(self.img_s[0]).float()
+        img_s_last = gen_transforms_inv(self.img_s[-1]).float()
+        img_t_first = gen_transforms_inv(self.img_t[0]).float()
+        img_t_last = gen_transforms_inv(self.img_t[-1]).float()
         # Concat images to a 2x5 grid (each row is a separate generation, the columns contain real and generated images
         # side-by-side)
         border = 2
         black = 0.5
         cat_images_1 = torch.cat((
-            black * torch.ones(3, image_1_first.shape[1], border).float(),
-            image_1_first, pose_2_first, image_2_first, g1_out_first, g2_out_fist, g_out_first,
-            black * torch.ones(3, image_1_first.shape[1], border).float()
+            black * torch.ones(3, img_s_first.shape[1], border).float(),
+            img_s_first,
+            black * torch.ones(3, img_s_first.shape[1], border).float(),
+            img_t_first,
+            black * torch.ones(3, img_s_first.shape[1], border).float(),
+            img_t_hat_first,
+            black * torch.ones(3, img_s_first.shape[1], border).float()
         ), dim=2).cpu()
         cat_images_2 = torch.cat((
-            black * torch.ones(3, image_1_first.shape[1], border).float(),
-            image_1_last, pose_2_last, image_2_last, g1_out_last, g2_out_last, g_out_last,
-            black * torch.ones(3, image_1_first.shape[1], border).float()
+            black * torch.ones(3, img_s_first.shape[1], border).float(),
+            img_s_last,
+            black * torch.ones(3, img_s_first.shape[1], border).float(),
+            img_t_last,
+            black * torch.ones(3, img_s_first.shape[1], border).float(),
+            img_t_hat_last,
+            black * torch.ones(3, img_s_first.shape[1], border).float()
         ), dim=2).cpu()
 
         cat_images = torch.cat((
@@ -363,8 +403,10 @@ class PixelDTGan(nn.Module, IGanGModule):
         # Remove annoying axes
         plt.axis('off')
         # Create image and return
-        footer_title = f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}' + ' ' * 91 + \
-                       f'gen_loss={round(np.mean(self.gen_losses), 3)}, disc_loss={round(np.mean(self.disc_losses), 3)}'
+        footer_title = f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}' + ' ' * 76 + \
+                       f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' \
+                       f'disc_loss=(r: {"{0:0.3f}".format(round(np.mean(self.disc_r_losses), 3))}, ' \
+                       f'a: {"{0:0.3f}".format(round(np.mean(self.disc_a_losses), 3))})'
         plt.suptitle(footer_title, y=0.03, fontsize=4, fontweight='light', horizontalalignment='left', x=0.001)
         plt.imshow(cat_images.permute(1, 2, 0))
         return pltfig_to_pil(plt.gcf())
@@ -375,34 +417,35 @@ if __name__ == '__main__':
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
     _log_level = 'debug'
 
-    # Via GoogleDrive API
-    _groot = GDriveFolder.root(capsule_or_fs=GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True,
-                                                           update_credentials=True, use_refresh_token=True),
-                               update_cache=True)
-    ensure_matplotlib_fonts_exist(_groot, force_rebuild=False)
+    # # Via GoogleDrive API
+    # _groot = GDriveFolder.root(capsule_or_fs=GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True,
+    #                                                        update_credentials=True, use_refresh_token=True),
+    #                            update_cache=True)
+    # ensure_matplotlib_fonts_exist(_groot, force_rebuild=False)
 
-    # # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
-    # _fs = LocalFilesystem(LocalCapsule(_local_gdrive_root))
-    # _groot = LocalFolder.root(capsule_or_fs=_fs)
+    # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
+    _fs = LocalFilesystem(LocalCapsule(_local_gdrive_root))
+    _groot = LocalFolder.root(capsule_or_fs=_fs)
 
     # Define folder roots
     _models_groot = _groot.subfolder_by_name('Models')
     _datasets_groot = _groot.subfolder_by_name('Datasets')
 
     # Initialize model evaluator
-    _gen_transforms = ICRBDataset.get_image_transforms(target_shape=128, target_channels=3)
-    _dataset = ICRBCrossPoseDataset(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
-                                    pose=True, log_level=_log_level)
+    _gen_transforms = PixelDTDataset.get_image_transforms(
+        target_shape=PixelDTGan.DefaultConfiguration['shapes']['w_in'], target_channels=3)
+    _dataset = PixelDTDataset(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
+                              log_level=_log_level)
     _bs = 2
     _dl = DataLoader(dataset=_dataset, batch_size=_bs)
     _evaluator = GanEvaluator(model_fs_folder_or_root=_models_groot, gen_dataset=_dataset, target_index=1,
-                              condition_indices=(0, 2), n_samples=2, batch_size=1,
+                              condition_indices=(0,), n_samples=2, batch_size=1,
                               f1_k=1)
 
     # Initialize model
-    _pgpg = PixelDTGan(model_fs_folder_or_root=_models_groot,
-                       config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false', dataset_len=len(_dataset),
-                       chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
+    _pxldt = PixelDTGan(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dataset),
+                        chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
+    # print(_pxldt)
 
     # # for _e in range(3):
     # #     _pgpg.logger.info(f'current epoch: {_e}')
@@ -411,14 +454,17 @@ if __name__ == '__main__':
     # #
     # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
 
-    _device = _pgpg.device
-    _x, _y, _y_pose = next(iter(_dl))
-    _disc_loss, _gen_loss = _pgpg(_x.to(_device), _y.to(_device), _y_pose.to(_device))
-    # print(_disc_loss.shape, _gen_loss.shape, _g1_out.shape, _g_out.shape)
+    _device = _pxldt.device
+    _x, _y = next(iter(_dl))
+    _disc_r_loss, _disc_a_loss, _gen_loss = _pxldt(_x.to(_device), _y.to(_device))
+    print(_disc_r_loss, _disc_a_loss, _gen_loss)
 
-    # _img = _pgpg.visualize()
+    _img = _pxldt.visualize()
     # _img.show()
-    # exit(0)
+    with open('sample.png', 'wb') as fp:
+        _img.save(fp)
+        _pxldt.logger.debug('Image saved.')
+    exit(0)
 
     # import time
     #
@@ -435,5 +481,5 @@ if __name__ == '__main__':
     # _uploaded_gfiles = [_r.get() for _r in _async_results]
     # print(json.dumps(_uploaded_gfiles, indent=4))
 
-    _imgs = _pgpg.visualize_metrics(upload=False, preview=True)
+    _imgs = _pxldt.visualize_metrics(upload=False, preview=True)
     print(_imgs)

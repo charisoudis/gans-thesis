@@ -45,14 +45,13 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
             self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
 
         # Load model configuration from local/cloud filesystem or use default
-        if config_id:
+        if config_id is None or config_id == 'default':
+            configuration = self.DefaultConfiguration
+        else:
             config_filepath = self.fetch_configuration(config_id=config_id)
             with open(config_filepath) as yaml_fp:
                 configuration = yaml.load(yaml_fp, Loader=yaml.FullLoader)
             self.config_id = config_id
-        else:
-            configuration = self.DefaultConfiguration
-            self.config_id = None
         assert configuration is not None and isinstance(configuration, dict), 'Configuration has not been initialized'
 
         # Check evaluator
@@ -60,7 +59,10 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
 
         # Initialize generator and transforms instances
         self.gen = None
+        #   - save generator transforms for visualizer
         self.gen_transforms = None
+        if evaluator is not None and hasattr(evaluator, 'gen_transforms'):
+            self.gen_transforms = evaluator.gen_transforms
 
         # Save configuration in instance
         self._configuration = configuration
@@ -228,6 +230,11 @@ class IGModule(GDriveModel, IModule, metaclass=ABCMeta):
         model_name = self.__class__.__name__.lower()
         model_fs_folder = model_fs_folder_or_root if model_fs_folder_or_root.name.endswith(model_name) else \
             model_fs_folder_or_root.subfolder_by_name(folder_name=f'model_name={model_name}', recursive=True)
+        if model_fs_folder is None:
+            self.logger.warning('Filesystem folder for model not found. Creating one now.')
+            model_fs_folder = model_fs_folder_or_root.create_subfolder(f'model_name={model_name}',
+                                                                       force_create_local=True)
+            assert model_fs_folder is not None
         GDriveModel.__init__(self, model_fs_folder=model_fs_folder, logger=self.logger,
                              model_name=model_name, dataset_len=dataset_len)
 

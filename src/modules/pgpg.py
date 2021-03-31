@@ -57,15 +57,21 @@ class PGPG(nn.Module, IGanGModule):
             'recon_criterion': 'L1',
             'adv_criterion': 'MSE',
         },
+        'gen_opt': {
+            'lr': 1e-4,
+            'opt': 'adam',
+            'scheduler': None
+        },
         'disc': {
             'c_hidden': 8,
             'n_contracting_blocks': 5,
             'use_spectral_norm': True,
             'adv_criterion': 'MSE',
         },
-        'opt': {
+        'disc_opt': {
             'lr': 1e-4,
-            'schedule': None
+            'opt': 'adam',
+            'scheduler': None
         }
     }
 
@@ -88,7 +94,7 @@ class PGPG(nn.Module, IGanGModule):
         :param (str) device: the device used for training (supported: "cuda", "cuda:<GPU_INDEX>", "cpu")
         :param (Compose) gen_transforms: the image transforms of the dataset the generator is trained on (used in
                                          visualization)
-        :param (optional) evaluator:
+        :param (optional) evaluator: GanEvaluator instance of None to not evaluate models when taking snapshots
         :param (optional) dataset_len: number of images in the dataset used to train the generator or None to fetched
                                        from the :attr:`evaluator` dataset property (used for epoch tracking)
         :param evaluator_kwargs: if :attr:`evaluator` is `None` these arguments must be present to initialize a new
@@ -174,7 +180,8 @@ class PGPG(nn.Module, IGanGModule):
             self.disc_opt_lr_scheduler = None
 
         # Save transforms for visualizer
-        self.gen_transforms = gen_transforms
+        if gen_transforms is not None:
+            self.gen_transforms = gen_transforms
 
         # Initialize params
         self.g1_out = None
@@ -184,7 +191,7 @@ class PGPG(nn.Module, IGanGModule):
         self.pose_2 = None
 
     def load_configuration(self, configuration: dict) -> None:
-        IGanGModule.load_configuration(self, dict())
+        IGanGModule.load_configuration(self, configuration)
 
     #
     # ------------
@@ -253,7 +260,7 @@ class PGPG(nn.Module, IGanGModule):
         FROM COLAB:
         ----------
 
-        # Perform forward pass from generator adn discriminator
+        # Perform forward pass from generator and discriminator
         disc_loss, gen_loss, g1_out, g_out = pgpg(image_1, image_2, pose_2)
 
 
