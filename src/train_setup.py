@@ -16,7 +16,7 @@ from utils.plot import ensure_matplotlib_fonts_exist
 ##########################################
 ###         Parse CLI Arguments        ###
 ##########################################
-parser = argparse.ArgumentParser(description='Trains PGPG model in PyTorch.')
+parser = argparse.ArgumentParser(description='Trains GAN model in PyTorch.')
 parser.add_argument('--log_level', type=str, default='debug', choices=['debug', 'info', 'warning', 'error', 'critical'],
                     help='default log level (\'debug\', \'info\', \'warning\', \'error\' or \'critical\')')
 parser.add_argument('--chkpt_step', type=str, default='latest',
