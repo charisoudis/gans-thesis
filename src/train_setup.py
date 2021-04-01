@@ -17,6 +17,8 @@ from utils.plot import ensure_matplotlib_fonts_exist
 ###         Parse CLI Arguments        ###
 ##########################################
 parser = argparse.ArgumentParser(description='Trains GAN model in PyTorch.')
+parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda',],
+                    help='execution device (\'cpu\', or \'cuda\')')
 parser.add_argument('--log_level', type=str, default='debug', choices=['debug', 'info', 'warning', 'error', 'critical'],
                     help='default log level (\'debug\', \'info\', \'warning\', \'error\' or \'critical\')')
 parser.add_argument('--chkpt_step', type=str, default='latest',
@@ -54,7 +56,7 @@ assert os.path.exists(local_gdrive_root), f'local_gdrive_root={local_gdrive_root
 os.environ['TRAIN_EXEC_ENV'] = exec_env
 
 # Check if GPU is available
-exec_device = torch.device('cuda:0' if torch.cuda.is_available() and not run_locally else 'cpu')
+exec_device = torch.device('cuda:0' if 'cuda' == args.device and torch.cuda.is_available() else 'cpu')
 os.environ['TRAIN_EXEC_DEV'] = str(exec_device)
 
 # Get log level
