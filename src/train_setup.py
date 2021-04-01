@@ -62,8 +62,7 @@ log_level = args.log_level
 os.environ['TRAIN_LOG_LEVEL'] = log_level
 
 # Reproducibility
-seed = args.seed
-ManualSeedReproducible.manual_seed(seed)
+seed = ManualSeedReproducible.manual_seed(args.seed)
 
 ##########################################
 ###  GDrive Filesystem Initialization  ###

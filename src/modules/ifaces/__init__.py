@@ -45,13 +45,13 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
             self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
 
         # Load model configuration from local/cloud filesystem or use default
+        self.config_id = config_id
         if config_id is None or config_id == 'default':
             configuration = self.DefaultConfiguration
         else:
             config_filepath = self.fetch_configuration(config_id=config_id)
             with open(config_filepath) as yaml_fp:
                 configuration = yaml.load(yaml_fp, Loader=yaml.FullLoader)
-            self.config_id = config_id
         assert configuration is not None and isinstance(configuration, dict), 'Configuration has not been initialized'
 
         # Check evaluator
