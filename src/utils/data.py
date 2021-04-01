@@ -109,12 +109,11 @@ class ResumableRandomSampler(Sampler):
         self.generator = torch.Generator().manual_seed(seed)
 
         self.shuffle = shuffle
+        self.perm_index = 0
         if self.shuffle:
-            self.perm_index = None
             self.perm = None
             self.reshuffle()
         else:
-            self.perm_index = 0
             self.perm = range(0, self.n_samples)
 
         self.logger = logger

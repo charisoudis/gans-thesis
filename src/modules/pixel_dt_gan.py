@@ -38,14 +38,14 @@ class PixelDTGan(nn.Module, IGanGModule):
         'shapes': {
             'c_in': 3,
             'c_out': 3,
-            'w_in': 128,
+            'w_in': 64,
         },
         'gen': {
             'c_hidden': 128,
             'n_contracting_blocks': 5,
             'c_bottleneck': 100,
             'use_out_tanh': True,
-            'use_dropout': True,
+            'use_dropout': False,
         },
         'gen_opt': {
             'lr': 1e-4,
