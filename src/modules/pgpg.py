@@ -289,20 +289,19 @@ class PGPG(nn.Module, IGanGModule):
         ##########################################
         ########     Update Generator     ########
         ##########################################
-        with self.disc.frozen():
-            self.gen_opt.zero_grad()
-            g1_loss, g2_loss, g1_out, g_out = self.gen.get_loss(x=image_1, y=image_2, y_pose=pose_2.clone(),
-                                                                disc=self.disc, adv_criterion=None,
-                                                                recon_criterion=None)
-            gen_loss = g1_loss + g2_loss
-            gen_loss.backward()  # Update generator gradients
-            self.gen_opt.step()  # Update generator optimizer
-            # Update LR (if needed)
-            if self.gen_opt_lr_scheduler:
-                if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
-                    self.gen_opt_lr_scheduler.step(metrics=gen_loss)
-                else:
-                    self.gen_opt_lr_scheduler.step()
+        self.gen_opt.zero_grad()
+        g1_loss, g2_loss, g1_out, g_out = self.gen.get_loss(x=image_1, y=image_2, y_pose=pose_2.clone(),
+                                                            disc=self.disc, adv_criterion=None,
+                                                            recon_criterion=None)
+        gen_loss = g1_loss + g2_loss
+        gen_loss.backward()  # Update generator gradients
+        self.gen_opt.step()  # Update generator optimizer
+        # Update LR (if needed)
+        if self.gen_opt_lr_scheduler:
+            if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
+                self.gen_opt_lr_scheduler.step(metrics=gen_loss)
+            else:
+                self.gen_opt_lr_scheduler.step()
 
         # Save for visualization
         if self.is_master_device:

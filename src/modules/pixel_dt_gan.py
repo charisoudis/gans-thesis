@@ -319,19 +319,17 @@ class PixelDTGan(nn.Module, IGanGModule):
         ##########################################
         ########     Update Generator     ########
         ##########################################
-        with self.disc_r.frozen():
-            with self.disc_a.frozen():
-                self.gen_opt.zero_grad()
-                gen_loss, img_t_hat = self.gen.get_loss(img_s=img_s, disc_r=self.disc_r, disc_a=self.disc_a,
-                                                        adv_criterion=None)
-                gen_loss.backward()  # Update generator gradients
-                self.gen_opt.step()  # Update generator optimizer
-                # Update LR (if needed)
-                if self.gen_opt_lr_scheduler:
-                    if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
-                        self.gen_opt_lr_scheduler.step(metrics=gen_loss)
-                    else:
-                        self.gen_opt_lr_scheduler.step()
+        self.gen_opt.zero_grad()
+        gen_loss, img_t_hat = self.gen.get_loss(img_s=img_s, disc_r=self.disc_r, disc_a=self.disc_a,
+                                                adv_criterion=None)
+        gen_loss.backward()  # Update generator gradients
+        self.gen_opt.step()  # Update generator optimizer
+        # Update LR (if needed)
+        if self.gen_opt_lr_scheduler:
+            if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
+                self.gen_opt_lr_scheduler.step(metrics=gen_loss)
+            else:
+                self.gen_opt_lr_scheduler.step()
 
         # Save for visualization
         if self.is_master_device:
