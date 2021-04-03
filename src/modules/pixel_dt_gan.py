@@ -212,6 +212,7 @@ class PixelDTGan(nn.Module, IGanGModule):
         self.img_t_hat = None
         self.disc_r_losses = []
         self.disc_a_losses = []
+        self.img_t_prev = None
 
     def load_configuration(self, configuration: dict) -> None:
         IGanGModule.load_configuration(self, configuration)
@@ -304,8 +305,9 @@ class PixelDTGan(nn.Module, IGanGModule):
                 # Perform optimizing step
                 disc_opt.zero_grad()  # Zero out discriminator gradient (before backprop)
                 img_t_hat = self.gen(img_s)
-                disc_loss[disc_i] = disc.get_loss(real=img_t, fake=img_t_hat.detach(),
+                disc_loss[disc_i] = disc.get_loss(real=img_t.clone(), fake=img_t_hat.detach(),
                                                   condition=img_s if disc_i == 'a' else None,
+                                                  real_unassoc=self.img_t_prev if disc_i == 'a' else None,
                                                   criterion=getattr(self, f'disc_{disc_i}_adv_criterion'))
                 disc_loss[disc_i].backward(retain_graph=True)  # Update discriminator gradients
                 disc_opt.step()  # Update discriminator weights
@@ -315,6 +317,12 @@ class PixelDTGan(nn.Module, IGanGModule):
                         disc_opt_lr_scheduler.step(metrics=disc_loss[disc_i])
                     else:
                         disc_opt_lr_scheduler.step()
+
+            # Update img_t_prev
+            if self.epoch_inc:
+                self.img_t_prev = None
+            elif np.random.choice([True, False], 1, p=[0.6, 0.4])[0]:
+                self.img_t_prev = img_t.clone()
 
         ##########################################
         ########     Update Generator     ########

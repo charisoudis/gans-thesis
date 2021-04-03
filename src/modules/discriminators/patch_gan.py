@@ -70,7 +70,7 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         return self.patch_gan_discriminator(x)
 
     def get_loss(self, real: Tensor, fake: Tensor, condition: Optional[Tensor] = None,
-                 criterion: nn.modules.Module = nn.BCELoss()) -> Tensor:
+                 criterion: nn.modules.Module = nn.BCELoss(), real_unassoc: Optional[Tensor] = None) -> Tensor:
         """
         Compute adversarial loss.
         :param (torch.Tensor) real: image tensor of shape (N, C, H, W) from real dataset
@@ -78,6 +78,7 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         :param (optional) condition: condition image tensor of shape (N, C_in/2, H, W) that is stacked before input to
                                      PatchGAN discriminator (optional)
         :param (torch.nn.Module) criterion: loss function (such as nn.BCELoss, nn.MSELoss and others)
+        :param (torch.Tensor) real_unassoc: (to use only for Associated/Unassociated discriminator (e.g. PixelDTGan))
         :return: torch.Tensor containing loss value(s)
         """
         predictions_on_real = self(real, condition)
@@ -86,14 +87,26 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
             predictions_on_real = nn.Sigmoid()(predictions_on_real)
             predictions_on_fake = nn.Sigmoid()(predictions_on_fake)
         loss_on_real = criterion(predictions_on_real, torch.ones_like(predictions_on_real))
-        loss_on_fake = criterion(predictions_on_fake, torch.zeros_like(predictions_on_real))
-        return 0.5 * (loss_on_real + loss_on_fake)
+        loss_on_fake = criterion(predictions_on_fake, torch.zeros_like(predictions_on_fake))
+        losses = [loss_on_real, loss_on_fake]
+        if real_unassoc is not None:
+            predictions_on_real_unassoc = self(real_unassoc, condition)
+            if type(criterion) == torch.nn.modules.loss.BCELoss:
+                predictions_on_real_unassoc = nn.Sigmoid()(predictions_on_real_unassoc)
+            loss_on_real_unassoc = criterion(predictions_on_real_unassoc, torch.zeros_like(predictions_on_real_unassoc))
+            losses.append(loss_on_real_unassoc)
+        return torch.mean(torch.stack(losses))
 
     def get_layer_attr_names(self) -> List[str]:
         return ['patch_gan_discriminator', ]
 
 
 if __name__ == '__main__':
-    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=6, use_spectral_norm=True)
-    print(__disc(torch.randn(1, 6, 128, 128)).shape)
-    print(__disc)
+    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=5, use_spectral_norm=True)
+    _real = torch.randn(1, 3, 64, 64)
+    _fake = torch.randn(1, 3, 64, 64)
+    _condition = torch.randn(1, 3, 64, 64)
+    _real_unassoc = torch.randn(1, 3, 64, 64)
+    # print(__disc)
+    _loss = __disc.get_loss(real=_real, fake=_fake, condition=_condition, real_unassoc=_real_unassoc)
+    print(_loss)
