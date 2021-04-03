@@ -103,7 +103,7 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         img_t_hat = self(img_s)
         # 2) Compute Generator Loss
         #   - Adversarial loss from Real/Fake Discriminator
-        disc_r_predictions = disc_r(img_t_hat)
+        disc_r_predictions = disc_r(img_t_hat.clone())
         adv_criterion_r = self.adv_criterion_conf['real'] if not adv_criterion else adv_criterion
         adv_loss_r = adv_criterion_r(disc_r_predictions, torch.ones_like(disc_r_predictions))
         #   - Adversarial loss from Associated/Unassociated Discriminator
