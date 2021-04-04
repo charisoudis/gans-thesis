@@ -119,10 +119,11 @@ class FID(nn.Module):
             cur_samples = 0
             real_embeddings_list = []
             fake_embeddings_list = []
+            break_after = False
             for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
                                           disable=not show_progress, desc=desc):
                 if cur_samples >= self.n_samples:
-                    break
+                    break_after = True
 
                 # Compute real embeddings
                 target_output = real_samples[target_index] if target_index else real_samples
@@ -149,6 +150,8 @@ class FID(nn.Module):
                 fake_embeddings_list.append(fake_embeddings.detach().cpu())
 
                 cur_samples += cur_batch_size
+                if break_after:
+                    break
 
         return torch.cat(real_embeddings_list, dim=0), torch.cat(fake_embeddings_list, dim=0)
 

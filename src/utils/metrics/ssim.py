@@ -135,10 +135,11 @@ class SSIM(nn.Module):
         with gen.frozen():
             cur_samples = 0
             ssim_maps_list = []
+            break_after = False
             for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
                                           disable=not show_progress, desc="SSIM"):
                 if cur_samples >= self.n_samples:
-                    break
+                    break_after = True
 
                 # Get target (real) images
                 target_output = real_samples[target_index] if target_index is not None else real_samples
@@ -166,6 +167,9 @@ class SSIM(nn.Module):
                 # Compute SSIM difference maps
                 ssim_maps_list.append(_ssim_map(target_output, fake_output, self.window, self.window_size, self.c_img))
                 cur_samples += cur_batch_size
+
+                if break_after:
+                    break
 
             # Compute SSIM from difference maps
             ssim_maps = torch.cat(ssim_maps_list, dim=0).cpu()

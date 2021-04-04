@@ -62,10 +62,11 @@ class IS(FID):
         with gen.frozen():
             cur_samples = 0
             fake_predictions_list = []
+            break_after = False
             for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
                                           disable=not show_progress, desc="IS"):
                 if cur_samples >= self.n_samples:
-                    break
+                    break_after = True
 
                 cur_batch_size = len(real_samples if condition_indices is None else real_samples[0])
 
@@ -84,6 +85,8 @@ class IS(FID):
                 fake_predictions_list.append(fake_predictions.detach().cpu())
 
                 cur_samples += cur_batch_size
+                if break_after:
+                    break
 
             fake_predictions = torch.cat(fake_predictions_list, dim=0)
 
