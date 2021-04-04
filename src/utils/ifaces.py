@@ -833,10 +833,12 @@ class Visualizable(metaclass=abc.ABCMeta):
         return '1.0'
 
     @abc.abstractmethod
-    def visualize(self) -> Image:
+    def visualize(self, reproducible: bool = False) -> Image:
         """
         Visualize latest model's forward pass by creating a `PIL.Image.Image` object with the model output and possible
         its forward pass's inputs.
+        :param (bool) reproducible: set to True to have the visualizer echo the same images every time the visualize()
+                                    method is called
         :return: a `PIL.Image.Image` object
         """
         raise NotImplementedError

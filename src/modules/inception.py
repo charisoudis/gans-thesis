@@ -85,7 +85,7 @@ class InceptionV3(nn.Module, IGModule):
         # Perform the actual forward pass
         return self.inception_v3(x)
 
-    def visualize(self) -> Image:
+    def visualize(self, reproducible: bool = False) -> Image:
         raise NotImplementedError('Need to implement this.')
 
 

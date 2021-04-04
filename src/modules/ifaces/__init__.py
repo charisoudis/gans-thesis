@@ -118,7 +118,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
     # -------------
     #
 
-    def visualize(self) -> Image:
+    def visualize(self, reproducible: bool = False) -> Image:
         raise NotImplementedError
 
     def visualize_metrics(self, upload: bool = False, preview: bool = False) -> List[Image]:

@@ -360,17 +360,31 @@ class PixelDTGan(nn.Module, IGanGModule):
     #
 
     # noinspection DuplicatedCode
-    def visualize(self) -> Image:
+    def visualize(self, reproducible: bool = False) -> Image:
+        if not reproducible:
+            img_s_0 = self.img_s[0]
+            img_t_0 = self.img_t[0]
+            img_t_hat_0 = self.img_t_hat[0]
+            img_s__1 = self.img_s[-1]
+            img_t__1 = self.img_t[-1]
+            img_t_hat__1 = self.img_t_hat[-1]
+        else:
+            assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
+            with self.gen.frozen():
+                img_s_0, img_t_0 = self.evaluator.dataset[0]
+                img_t_hat_0 = self.gen(img_s_0.unsqueeze(0)).squeeze(0)
+                img_s__1, img_t__1 = self.evaluator.dataset[-1]
+                img_t_hat__1 = self.gen(img_s__1.unsqueeze(0)).squeeze(0)
         # Inverse generator transforms
         gen_transforms_inv = invert_transforms(self.gen_transforms)
         # Apply inverse image transforms to generated images
-        img_t_hat_first = gen_transforms_inv(self.img_t_hat[0]).float()
-        img_t_hat_last = gen_transforms_inv(self.img_t_hat[-1]).float()
+        img_t_hat_first = gen_transforms_inv(img_t_hat_0).float()
+        img_t_hat_last = gen_transforms_inv(img_t_hat__1).float()
         # Apply inverse image transforms to real images
-        img_s_first = gen_transforms_inv(self.img_s[0]).float()
-        img_s_last = gen_transforms_inv(self.img_s[-1]).float()
-        img_t_first = gen_transforms_inv(self.img_t[0]).float()
-        img_t_last = gen_transforms_inv(self.img_t[-1]).float()
+        img_t_first = gen_transforms_inv(img_t_0).float()
+        img_t_last = gen_transforms_inv(img_t__1).float()
+        img_s_first = gen_transforms_inv(img_s_0).float()
+        img_s_last = gen_transforms_inv(img_s__1).float()
         # Concat images to a 2x5 grid (each row is a separate generation, the columns contain real and generated images
         # side-by-side)
         border = 2
@@ -462,16 +476,17 @@ if __name__ == '__main__':
     # #
     # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
 
-    _device = _pxldt.device
-    _x, _y = next(iter(_dl))
-    _disc_r_loss, _disc_a_loss, _gen_loss = _pxldt(_x.to(_device), _y.to(_device))
-    print(_disc_r_loss, _disc_a_loss, _gen_loss)
+    # _device = _pxldt.device
+    # _x, _y = next(iter(_dl))
+    # _disc_r_loss, _disc_a_loss, _gen_loss = _pxldt(_x.to(_device), _y.to(_device))
+    # print(_disc_r_loss, _disc_a_loss, _gen_loss)
 
-    _img = _pxldt.visualize()
+    _img = _pxldt.visualize(reproducible=True)
+    _img.show()
     # _img.show()
-    with open('sample.png', 'wb') as fp:
-        _img.save(fp)
-        _pxldt.logger.debug('Image saved.')
+    # with open('sample.png', 'wb') as fp:
+    #     _img.save(fp)
+    #     _pxldt.logger.debug('Image saved.')
     exit(0)
 
     # import time

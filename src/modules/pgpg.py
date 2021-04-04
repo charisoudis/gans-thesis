@@ -16,10 +16,10 @@ from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataset
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.pgpg import PGPGGenerator
 from modules.ifaces import IGanGModule
-from utils.filesystems.gdrive import GDriveFolder, GDriveCapsule
+from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
-from utils.plot import pltfig_to_pil, ensure_matplotlib_fonts_exist
+from utils.plot import pltfig_to_pil
 from utils.pytorch import invert_transforms
 from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler
 
@@ -322,23 +322,46 @@ class PGPG(nn.Module, IGanGModule):
     # -------------
     #
 
-    def visualize(self) -> Image:
+    # noinspection DuplicatedCode
+    def visualize(self, reproducible: bool = False) -> Image:
+        if not reproducible:
+            image_1_0 = self.image_1[0]
+            image_2_0 = self.image_2[0]
+            pose_2_0 = self.pose_2[0]
+            g1_out_0 = self.g1_out[0]
+            g_out_0 = self.g_out[0]
+            image_1__1 = self.image_1[-1]
+            image_2__1 = self.image_2[-1]
+            pose_2__1 = self.pose_2[-1]
+            g1_out__1 = self.g1_out[-1]
+            g_out__1 = self.g_out[-1]
+        else:
+            assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
+            with self.gen.frozen():
+                image_1_0, image_2_0, pose_2_0 = self.evaluator.dataset[0]
+                g1_out_0, g_out_0 = self.gen(image_1_0.unsqueeze(0), pose_2_0.unsqueeze(0))
+                g1_out_0 = g1_out_0.squeeze(0)
+                g_out_0 = g_out_0.squeeze(0)
+                image_1__1, image_2__1, pose_2__1 = self.evaluator.dataset[-1]
+                g1_out__1, g_out__1 = self.gen(image_1__1.unsqueeze(0), pose_2__1.unsqueeze(0))
+                g1_out__1 = g1_out__1.squeeze(0)
+                g_out__1 = g_out__1.squeeze(0)
         # Inverse generator transforms
         gen_transforms_inv = invert_transforms(self.gen_transforms)
         # Apply inverse image transforms to generated images
-        g1_out_first = gen_transforms_inv(self.g1_out[0]).float()
-        g1_out_last = gen_transforms_inv(self.g1_out[-1]).float()
-        g_out_first = gen_transforms_inv(self.g_out[0]).float()
-        g_out_last = gen_transforms_inv(self.g_out[-1]).float()
+        g1_out_first = gen_transforms_inv(g1_out_0).float()
+        g1_out_last = gen_transforms_inv(g1_out__1).float()
+        g_out_first = gen_transforms_inv(g_out_0).float()
+        g_out_last = gen_transforms_inv(g_out__1).float()
         g2_out_fist = g_out_first - g1_out_first
         g2_out_last = g_out_last - g1_out_last
         # Apply inverse image transforms to real images
-        image_1_first = gen_transforms_inv(self.image_1[0])
-        pose_2_first = self.pose_2[0]  # No normalization since skip_pose_norm = True
-        image_2_first = gen_transforms_inv(self.image_2[0])
-        image_1_last = gen_transforms_inv(self.image_1[-1])
-        pose_2_last = self.pose_2[-1]  # No normalization since skip_pose_norm = True
-        image_2_last = gen_transforms_inv(self.image_2[-1])
+        image_1_first = gen_transforms_inv(image_1_0)
+        pose_2_first = pose_2_0  # No normalization since skip_pose_norm = True
+        image_2_first = gen_transforms_inv(image_2_0)
+        image_1_last = gen_transforms_inv(image_1__1)
+        pose_2_last = pose_2__1  # No normalization since skip_pose_norm = True
+        image_2_last = gen_transforms_inv(image_2__1)
         # Concat images to a 2x5 grid (each row is a separate generation, the columns contain real and generated images
         # side-by-side)
         border = 2
@@ -383,15 +406,15 @@ if __name__ == '__main__':
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
     _log_level = 'debug'
 
-    # Via GoogleDrive API
-    _groot = GDriveFolder.root(capsule_or_fs=GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True,
-                                                           update_credentials=True, use_refresh_token=True),
-                               update_cache=True)
-    ensure_matplotlib_fonts_exist(_groot, force_rebuild=False)
+    # # Via GoogleDrive API
+    # _groot = GDriveFolder.root(capsule_or_fs=GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True,
+    #                                                        update_credentials=True, use_refresh_token=True),
+    #                            update_cache=True)
+    # ensure_matplotlib_fonts_exist(_groot, force_rebuild=False)
 
-    # # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
-    # _fs = LocalFilesystem(LocalCapsule(_local_gdrive_root))
-    # _groot = LocalFolder.root(capsule_or_fs=_fs)
+    # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
+    _fs = LocalFilesystem(LocalCapsule(_local_gdrive_root))
+    _groot = LocalFolder.root(capsule_or_fs=_fs)
 
     # Define folder roots
     _models_groot = _groot.subfolder_by_name('Models')
@@ -409,7 +432,7 @@ if __name__ == '__main__':
 
     # Initialize model
     _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
-                 dataset_len=len(_dataset), chkpt_epoch=None, log_level=_log_level,
+                 dataset_len=len(_dataset), chkpt_epoch='latest', log_level=_log_level,
                  evaluator=_evaluator, device='cpu')
 
     # # for _e in range(3):
@@ -419,14 +442,14 @@ if __name__ == '__main__':
     # #
     # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
 
-    _device = _pgpg.device
-    _x, _y, _y_pose = next(iter(_dl))
-    _disc_loss, _gen_loss = _pgpg(_x.to(_device), _y.to(_device), _y_pose.to(_device))
-    # print(_disc_loss.shape, _gen_loss.shape, _g1_out.shape, _g_out.shape)
+    # _device = _pgpg.device
+    # _x, _y, _y_pose = next(iter(_dl))
+    # _disc_loss, _gen_loss = _pgpg(_x.to(_device), _y.to(_device), _y_pose.to(_device))
+    # # print(_disc_loss.shape, _gen_loss.shape, _g1_out.shape, _g_out.shape)
 
-    # _img = _pgpg.visualize()
-    # _img.show()
-    # exit(0)
+    _img = _pgpg.visualize(reproducible=True)
+    _img.show()
+    exit(0)
 
     # import time
     #

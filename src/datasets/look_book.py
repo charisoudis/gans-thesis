@@ -111,21 +111,21 @@ class PixelDTDataset(Dataset, GDriveDataset):
         paths_tuple = self.index_to_paths(index)
         # Fetch images
         try:
-            image_1 = Image.open(paths_tuple[0])
+            img_s = Image.open(paths_tuple[0])
         except UnidentifiedImageError:
             self.logger.critical(f'Image opening failed (path: {paths_tuple[0]})')
             return self.__getitem__(index + 1)
-        image_2_path = paths_tuple[1]
+        img_t_path = paths_tuple[1]
         try:
-            image_2 = Image.open(image_2_path)
+            img_t = Image.open(img_t_path)
         except UnidentifiedImageError:
-            self.logger.critical(f'Image opening failed (path: {image_2_path})')
+            self.logger.critical(f'Image opening failed (path: {img_t_path})')
             return self.__getitem__(index + 1)
         # Apply transforms
         if self.transforms:
-            image_1 = self.transforms(image_1)
-            image_2 = self.transforms(image_2)
-        return image_1, image_2
+            img_s = self.transforms(img_s)
+            img_t = self.transforms(img_t)
+        return img_s, img_t
 
     def __len__(self) -> int:
         """
