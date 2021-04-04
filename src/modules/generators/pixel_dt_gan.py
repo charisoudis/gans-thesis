@@ -1,7 +1,8 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import torch
 from torch import nn
+from torch.nn import L1Loss
 
 from modules.partial.decoding import ExpandingBlock
 from modules.partial.encoding import ContractingBlock
@@ -75,6 +76,22 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.logger = CommandLineLogger(name=self.__class__.__name__) if logger is None else logger
         self.verbose_enabled = False
 
+        # Initiate reconstruction weight
+        self.lambda_recon = nn.Parameter(torch.tensor(10.0, requires_grad=True))
+
+    def load_state_dict(self, state_dict: Dict[str, torch.Tensor], strict: bool = True):
+        """
+        Overrides `torch.nn.Module.load_state_dict()`.
+        :param state_dict: see `torch.nn.Module.load_state_dict()`
+        :param strict: see `torch.nn.Module.load_state_dict()`
+        :return: see `torch.nn.Module.load_state_dict()`
+        """
+        # Check for lambda_recon presence in state
+        if 'lambda_recon' not in state_dict.keys():
+            state_dict['lambda_recon'] = self.lambda_recon.data
+        # Load model state
+        nn.Module.load_state_dict(self, state_dict=state_dict, strict=strict)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Function for completing a forward pass of PixelDTGanGenerator:
@@ -86,16 +103,21 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
             self.logger.debug('_: ' + str(x.shape))
         return self.gen(x)
 
-    def get_loss(self, img_s: torch.Tensor, disc_r: nn.Module, disc_a: nn.Module,
-                 adv_criterion: Optional[nn.modules.Module] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_loss(self, img_s: torch.Tensor, img_t: torch.Tensor, disc_r: nn.Module, disc_a: nn.Module,
+                 adv_criterion: Optional[nn.modules.Module] = None,
+                 recon_criterion: nn.Module = L1Loss()) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Get the loss of the generator given inputs. If the criteria are not provided they will be set using the
         instance's given (or default) configuration.
-        :param (torch.Tensor) img_s: input images (of people wearing the target garment)
+        :param (torch.Tensor) img_s: input images (of people wearing the target garments)
+        :param (torch.Tensor) img_t: target output images (of the target garments)
         :param (torch.nn.Module) disc_r: the real/fake Discriminator network
         :param (torch.nn.Module) disc_a: the associated/unassociated Discriminator network
         :param (optional) adv_criterion: the adversarial loss function; takes the discriminator predictions and the
                                          target labels and returns a adversarial loss (which we aim to minimize)
+        :param (nn.Module) recon_criterion: the reconstruction loss function; takes the generator outputs and the real
+                                            ones and returns a reconstruction loss (which we aim to minimize).
+                                            Defaults to L1 loss.
         :return: a tuple containing the aggregated Generator's loss (a scalar) and the output batch of images (for
                  visualization purposes)
         """
@@ -110,8 +132,10 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         disc_a_predictions = disc_a(img_t_hat, img_s)
         adv_criterion_a = self.adv_criterion_conf['associated'] if not adv_criterion else adv_criterion
         adv_loss_a = adv_criterion_a(disc_a_predictions, torch.ones_like(disc_a_predictions))
+        #   - Reconstruction loss
+        recon_loss = recon_criterion(img_t_hat, img_t)
         #   - Aggregate losses (mean)
-        gen_loss = 0.5 * (adv_loss_r + adv_loss_a)
+        gen_loss = torch.mean(torch.stack([adv_loss_r, adv_loss_a, self.lambda_recon * recon_loss]))
         return gen_loss, img_t_hat
 
     def get_layer_attr_names(self) -> List[str]:
@@ -128,3 +152,12 @@ if __name__ == '__main__':
     enable_verbose(_gen)
     _x = torch.randn(1, 3, _w_in, _w_in)
     _y = _gen(_x)
+
+    # State Dict
+    print(_gen.state_dict().keys())
+    print('lambda_recon' in _gen.state_dict().keys())
+
+    _state_dict = _gen.state_dict()
+    del _state_dict['lambda_recon']
+    _gen.load_state_dict(_state_dict)
+    print(_gen.lambda_recon)

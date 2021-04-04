@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from PIL.Image import Image
 from torch import nn
+from torch.nn import L1Loss
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 # noinspection PyProtectedMember
 from torch.utils.data import DataLoader
@@ -329,8 +330,8 @@ class PixelDTGan(nn.Module, IGanGModule):
         ##########################################
         with self.disc_r.frozen(), self.disc_a.frozen():
             self.gen_opt.zero_grad()
-            gen_loss, img_t_hat = self.gen.get_loss(img_s=img_s, disc_r=self.disc_r, disc_a=self.disc_a,
-                                                    adv_criterion=None)
+            gen_loss, img_t_hat = self.gen.get_loss(img_s=img_s, img_t=img_t.clone(), disc_r=self.disc_r,
+                                                    disc_a=self.disc_a, adv_criterion=None, recon_criterion=L1Loss())
             gen_loss.backward()  # Update generator gradients
             self.gen_opt.step()  # Update generator optimizer
             # Update LR (if needed)
