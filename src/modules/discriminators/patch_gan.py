@@ -90,7 +90,7 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         loss_on_fake = criterion(predictions_on_fake, torch.zeros_like(predictions_on_fake))
         losses = [loss_on_real, loss_on_fake]
         if real_unassoc is not None:
-            predictions_on_real_unassoc = self(real_unassoc, condition)
+            predictions_on_real_unassoc = self(real_unassoc[0:condition.shape[0], :, :, :], condition)
             if type(criterion) == torch.nn.modules.loss.BCELoss:
                 predictions_on_real_unassoc = nn.Sigmoid()(predictions_on_real_unassoc)
             loss_on_real_unassoc = criterion(predictions_on_real_unassoc, torch.zeros_like(predictions_on_real_unassoc))
