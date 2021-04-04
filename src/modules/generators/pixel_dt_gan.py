@@ -77,7 +77,7 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.verbose_enabled = False
 
         # Initiate reconstruction weight
-        self.lambda_recon = nn.Parameter(torch.tensor(10.0, requires_grad=True))
+        self.lambda_recon = nn.Parameter(torch.tensor(4.0, requires_grad=True))
 
     def load_state_dict(self, state_dict: Dict[str, torch.Tensor], strict: bool = True):
         """
