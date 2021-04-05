@@ -124,9 +124,7 @@ class GDriveCapsule(FilesystemCapsule):
         # Write back to json file
         if update_credentials:
             with open(self.client_secrets_filepath, 'w') as fp:
-                if 'web' not in _client_dict.keys():
-                    _client_dict = {'web': _client_dict}
-                json.dump(_client_dict, fp, indent=4)
+                json.dump({'web': _client_dict} if 'web' not in _client_dict.keys() else _client_dict, fp, indent=4)
 
         return _client_dict
 
