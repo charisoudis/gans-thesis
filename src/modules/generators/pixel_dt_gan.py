@@ -144,11 +144,10 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
 
 if __name__ == '__main__':
     _w_in = 64
-    _gen = PixelDTGanGenerator(c_in=3, c_out=3, c_hidden=128, n_contracting_blocks=6, c_bottleneck=100, w_in=_w_in,
+    _gen = PixelDTGanGenerator(c_in=3, c_out=3, c_hidden=128, n_contracting_blocks=5, c_bottleneck=100, w_in=_w_in,
                                use_dropout=True, use_out_tanh=True)
     get_total_params(_gen, print_table=True, sort_desc=True)
     # print(_gen)
-    print(None)
     enable_verbose(_gen)
     _x = torch.randn(1, 3, _w_in, _w_in)
     _y = _gen(_x)
