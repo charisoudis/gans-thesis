@@ -762,7 +762,8 @@ class GDriveFilesystem(Filesystem):
                     # Upload next chunk to Google Drive
                     progress, metadata = http_request.next_chunk(http=self.gcapsule.ghttp, num_retries=1)
                     if metadata is not None:
-                        os.remove(f'{local_filepath}.part')
+                        if os.path.exists(f'{local_filepath}.part'):
+                            os.remove(f'{local_filepath}.part')
                         progress_bar.update(http_request.resumable.size() - progress_last)
                     else:
                         # Write latest progress to part file
@@ -799,3 +800,10 @@ class GDriveFilesystem(Filesystem):
         # Refresh gfolder files cache
         cloud_folder.refresh_files_cache()
         return uploaded_gfile
+
+
+if __name__ == '__main__':
+    _gc = GDriveCapsule(local_gdrive_root='/home/achariso/PycharmProjects/gans-thesis/.gdrive', use_refresh_token=True)
+    _gfs = GDriveFilesystem(gcapsule=_gc)
+    _gf = GDriveFolder.root(_gfs, update_cache=True)
+    _gf.upload_file(local_filename='0000037800.json', show_progress=True)
