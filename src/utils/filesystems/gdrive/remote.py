@@ -763,7 +763,7 @@ class GDriveFilesystem(Filesystem):
                     progress, metadata = http_request.next_chunk(http=self.gcapsule.ghttp, num_retries=1)
                     if metadata is not None:
                         os.remove(f'{local_filepath}.part')
-                        progress_bar.update(http_request.resumable.size() - progress_last)
+                        progress_bar.update(progress.resumable_progress - progress_last)
                     else:
                         # Write latest progress to part file
                         with open(f'{local_filepath}.part', 'w') as part_fp:
