@@ -278,7 +278,7 @@ class GDriveModel(FilesystemModel):
             assert self.step is not None and self.epoch is not None, 'No forward pass has been performed'
             # Extract current model visualization
             if hasattr(self, 'visualize') and callable(getattr(self, 'visualize')):
-                visualization_img = self.visualize()
+                visualization_img = self.visualize(reproducible=True)
                 if not isinstance(visualization_img, Image):
                     raise AssertionError('visualization_img must be a PIL.Image.Image object')
             else:
