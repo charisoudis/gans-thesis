@@ -135,7 +135,7 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         #   - Reconstruction loss
         recon_loss = recon_criterion(img_t_hat, img_t)
         #   - Aggregate losses (mean)
-        gen_loss = torch.mean(torch.stack([adv_loss_r, adv_loss_a, self.lambda_recon * recon_loss]))
+        gen_loss = torch.mean(torch.stack([adv_loss_r, adv_loss_a, nn.ReLU()(self.lambda_recon) * recon_loss]))
         return gen_loss, img_t_hat
 
     def get_layer_attr_names(self) -> List[str]:
