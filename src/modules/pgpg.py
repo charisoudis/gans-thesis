@@ -1,8 +1,5 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Sequence
 
-import matplotlib
-import matplotlib.font_manager
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from PIL.Image import Image
@@ -19,8 +16,7 @@ from modules.ifaces import IGanGModule
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
-from utils.plot import pltfig_to_pil
-from utils.pytorch import invert_transforms
+from utils.plot import create_img_grid, plot_grid
 from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler
 
 
@@ -322,83 +318,60 @@ class PGPG(nn.Module, IGanGModule):
     # -------------
     #
 
-    # noinspection DuplicatedCode
+    def visualize_indices(self, indices: int or Sequence) -> Image:
+        # Fetch images
+        assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
+        images = []
+        with self.gen.frozen():
+            for index in indices:
+                image_1, image_2, pose_2 = self.evaluator.dataset[index]
+                g1_out, g_out = self.gen(image_1.unsqueeze(0), pose_2.unsqueeze(0))
+                g1_out = g1_out.squeeze(0)
+                g_out = g_out.squeeze(0)
+                images.extend([image_1, image_2, self.gen_transforms(pose_2), g1_out, g_out])
+
+        # Convert to grid of images
+        ncols = 5
+        nrows = int(len(images) / ncols)
+        grid = create_img_grid(images=torch.stack(images), nrows=nrows, ncols=ncols, gen_transforms=self.gen_transforms)
+
+        # Plot
+        return plot_grid(grid=grid, figsize=(ncols, nrows),
+                         footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)} | '
+                                    f'indices={indices}',
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, '
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+
     def visualize(self, reproducible: bool = False) -> Image:
-        if not reproducible:
-            image_1_0 = self.image_1[0]
-            image_2_0 = self.image_2[0]
-            pose_2_0 = self.pose_2[0]
-            g1_out_0 = self.g1_out[0]
-            g_out_0 = self.g_out[0]
-            image_1__1 = self.image_1[-1]
-            image_2__1 = self.image_2[-1]
-            pose_2__1 = self.pose_2[-1]
-            g1_out__1 = self.g1_out[-1]
-            g_out__1 = self.g_out[-1]
-        else:
-            assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
-            with self.gen.frozen():
-                image_1_0, image_2_0, pose_2_0 = self.evaluator.dataset[0]
-                g1_out_0, g_out_0 = self.gen(image_1_0.unsqueeze(0), pose_2_0.unsqueeze(0))
-                g1_out_0 = g1_out_0.squeeze(0)
-                g_out_0 = g_out_0.squeeze(0)
-                image_1__1, image_2__1, pose_2__1 = self.evaluator.dataset[-1]
-                g1_out__1, g_out__1 = self.gen(image_1__1.unsqueeze(0), pose_2__1.unsqueeze(0))
-                g1_out__1 = g1_out__1.squeeze(0)
-                g_out__1 = g_out__1.squeeze(0)
-        # Inverse generator transforms
-        gen_transforms_inv = invert_transforms(self.gen_transforms)
-        # Apply inverse image transforms to generated images
-        g1_out_first = gen_transforms_inv(g1_out_0).float()
-        g1_out_last = gen_transforms_inv(g1_out__1).float()
-        g_out_first = gen_transforms_inv(g_out_0).float()
-        g_out_last = gen_transforms_inv(g_out__1).float()
-        g2_out_fist = g_out_first - g1_out_first
-        g2_out_last = g_out_last - g1_out_last
-        # Apply inverse image transforms to real images
-        image_1_first = gen_transforms_inv(image_1_0)
-        pose_2_first = pose_2_0  # No normalization since skip_pose_norm = True
-        image_2_first = gen_transforms_inv(image_2_0)
-        image_1_last = gen_transforms_inv(image_1__1)
-        pose_2_last = pose_2__1  # No normalization since skip_pose_norm = True
-        image_2_last = gen_transforms_inv(image_2__1)
+        if reproducible:
+            return self.visualize_indices(indices=(0, -1))
+
+        # Get first & last sample from saved images in self
+        image_1_0 = self.image_1[0]
+        image_2_0 = self.image_2[0]
+        pose_2_0 = self.pose_2[0]
+        g1_out_0 = self.g1_out[0]
+        g_out_0 = self.g_out[0]
+        image_1__1 = self.image_1[-1]
+        image_2__1 = self.image_2[-1]
+        pose_2__1 = self.pose_2[-1]
+        g1_out__1 = self.g1_out[-1]
+        g_out__1 = self.g_out[-1]
+
         # Concat images to a 2x5 grid (each row is a separate generation, the columns contain real and generated images
         # side-by-side)
-        border = 2
-        black = 0.5
-        cat_images_1 = torch.cat((
-            black * torch.ones(3, image_1_first.shape[1], border).float(),
-            image_1_first, pose_2_first, image_2_first, g1_out_first, g2_out_fist, g_out_first,
-            black * torch.ones(3, image_1_first.shape[1], border).float()
-        ), dim=2).cpu()
-        cat_images_2 = torch.cat((
-            black * torch.ones(3, image_1_first.shape[1], border).float(),
-            image_1_last, pose_2_last, image_2_last, g1_out_last, g2_out_last, g_out_last,
-            black * torch.ones(3, image_1_first.shape[1], border).float()
-        ), dim=2).cpu()
+        ncols = 5
+        nrows = 2
+        grid = create_img_grid(images=torch.stack([
+            image_1_0, image_2_0, self.gen_transforms(pose_2_0), g1_out_0, g_out_0,
+            image_1__1, image_2__1, self.gen_transforms(pose_2__1), g1_out__1, g_out__1,
+        ]), nrows=nrows, ncols=ncols, gen_transforms=self.gen_transforms)
 
-        cat_images = torch.cat((
-            black * torch.ones(3, border, cat_images_1.shape[2]).float(),
-            cat_images_1,
-            black * torch.ones(3, border, cat_images_1.shape[2]).float(),
-            1.0 * torch.ones(3, 4 * border, cat_images_1.shape[2]).float(),
-            black * torch.ones(3, border, cat_images_1.shape[2]).float(),
-            cat_images_2,
-            black * torch.ones(3, border, cat_images_1.shape[2]).float(),
-        ), dim=1)
-
-        # Set matplotlib params
-        matplotlib.rcParams["font.family"] = 'JetBrains Mono'
-        # Create a new figure
-        plt.figure(figsize=(5, 2), dpi=300, frameon=False, clear=True)
-        # Remove annoying axes
-        plt.axis('off')
-        # Create image and return
-        footer_title = f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}' + ' ' * 91 + \
-                       f'gen_loss={round(np.mean(self.gen_losses), 3)}, disc_loss={round(np.mean(self.disc_losses), 3)}'
-        plt.suptitle(footer_title, y=0.03, fontsize=4, fontweight='light', horizontalalignment='left', x=0.001)
-        plt.imshow(cat_images.permute(1, 2, 0))
-        return pltfig_to_pil(plt.gcf())
+        # Plot
+        return plot_grid(grid=grid, figsize=(ncols, nrows),
+                         footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}',
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, '
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
 
 
 if __name__ == '__main__':
@@ -442,10 +415,10 @@ if __name__ == '__main__':
     # #
     # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
 
-    # _device = _pgpg.device
-    # _x, _y, _y_pose = next(iter(_dl))
-    # _disc_loss, _gen_loss = _pgpg(_x.to(_device), _y.to(_device), _y_pose.to(_device))
-    # # print(_disc_loss.shape, _gen_loss.shape, _g1_out.shape, _g_out.shape)
+    _device = _pgpg.device
+    _x, _y, _y_pose = next(iter(_dl))
+    _disc_loss, _gen_loss = _pgpg(_x.to(_device), _y.to(_device), _y_pose.to(_device))
+    # print(_disc_loss.shape, _gen_loss.shape, _g1_out.shape, _g_out.shape)
 
     _img = _pgpg.visualize(reproducible=True)
     _img.show()

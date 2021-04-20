@@ -121,6 +121,9 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
     def visualize(self, reproducible: bool = False) -> Image:
         raise NotImplementedError
 
+    def visualize_indices(self, indices: int) -> Image:
+        raise NotImplementedError
+
     def visualize_metrics(self, upload: bool = False, preview: bool = False) -> List[Image]:
         assert isinstance(self, FilesystemModel), 'Model must implement utils.ifaces.FilesystemFolder to visualize' + \
                                                   'metrics and upload produced images to cloud'

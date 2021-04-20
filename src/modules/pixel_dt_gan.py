@@ -1,8 +1,5 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Sequence
 
-import matplotlib
-import matplotlib.font_manager
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from PIL.Image import Image
@@ -20,8 +17,7 @@ from modules.ifaces import IGanGModule
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
-from utils.plot import pltfig_to_pil
-from utils.pytorch import invert_transforms
+from utils.plot import create_img_grid, plot_grid
 from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler
 
 
@@ -359,79 +355,58 @@ class PixelDTGan(nn.Module, IGanGModule):
     # -------------
     #
 
-    # noinspection DuplicatedCode
+    def visualize_indices(self, indices: int or Sequence) -> Image:
+        # Fetch images
+        assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
+        images = []
+        with self.gen.frozen():
+            for index in indices:
+                _s, _t = self.evaluator.dataset[index]
+                _t_hat = self.gen(_s.unsqueeze(0)).squeeze(0)
+                images.append(_s)
+                images.append(_t)
+                images.append(_t_hat)
+
+        # Convert to grid of images
+        ncols = 3
+        nrows = int(len(images) / ncols)
+        grid = create_img_grid(images=torch.stack(images), nrows=nrows, ncols=ncols, gen_transforms=self.gen_transforms)
+
+        # Plot
+        return plot_grid(grid=grid, figsize=(ncols, nrows),
+                         footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)} | '
+                                    f'i={indices}',
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
+                                    f'disc_loss=(r: {"{0:0.3f}".format(round(np.mean(self.disc_r_losses), 3))}, ' +
+                                    f'a: {"{0:0.3f}".format(round(np.mean(self.disc_a_losses), 3))})')
+
     def visualize(self, reproducible: bool = False) -> Image:
-        if not reproducible:
-            img_s_0 = self.img_s[0]
-            img_t_0 = self.img_t[0]
-            img_t_hat_0 = self.img_t_hat[0]
-            img_s__1 = self.img_s[-1]
-            img_t__1 = self.img_t[-1]
-            img_t_hat__1 = self.img_t_hat[-1]
-        else:
-            assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
-            with self.gen.frozen():
-                img_s_0, img_t_0 = self.evaluator.dataset[0]
-                img_t_hat_0 = self.gen(img_s_0.unsqueeze(0)).squeeze(0)
-                img_s__1, img_t__1 = self.evaluator.dataset[-1]
-                img_t_hat__1 = self.gen(img_s__1.unsqueeze(0)).squeeze(0)
-        # Inverse generator transforms
-        gen_transforms_inv = invert_transforms(self.gen_transforms)
-        # Apply inverse image transforms to generated images
-        img_t_hat_first = gen_transforms_inv(img_t_hat_0).float()
-        img_t_hat_last = gen_transforms_inv(img_t_hat__1).float()
-        # Apply inverse image transforms to real images
-        img_t_first = gen_transforms_inv(img_t_0).float()
-        img_t_last = gen_transforms_inv(img_t__1).float()
-        img_s_first = gen_transforms_inv(img_s_0).float()
-        img_s_last = gen_transforms_inv(img_s__1).float()
+        if reproducible:
+            return self.visualize_indices(indices=(0, -1))
+
+        # Get first & last sample from saved images in self
+        img_s_0 = self.img_s[0]
+        img_t_0 = self.img_t[0]
+        img_t_hat_0 = self.img_t_hat[0]
+        img_s__1 = self.img_s[-1]
+        img_t__1 = self.img_t[-1]
+        img_t_hat__1 = self.img_t_hat[-1]
+
         # Concat images to a 2x5 grid (each row is a separate generation, the columns contain real and generated images
         # side-by-side)
-        border = 2
-        black = 0.5
-        cat_images_1 = torch.cat((
-            black * torch.ones(3, img_s_first.shape[1], border).float(),
-            img_s_first,
-            black * torch.ones(3, img_s_first.shape[1], border).float(),
-            img_t_first,
-            black * torch.ones(3, img_s_first.shape[1], border).float(),
-            img_t_hat_first,
-            black * torch.ones(3, img_s_first.shape[1], border).float()
-        ), dim=2).cpu()
-        cat_images_2 = torch.cat((
-            black * torch.ones(3, img_s_first.shape[1], border).float(),
-            img_s_last,
-            black * torch.ones(3, img_s_first.shape[1], border).float(),
-            img_t_last,
-            black * torch.ones(3, img_s_first.shape[1], border).float(),
-            img_t_hat_last,
-            black * torch.ones(3, img_s_first.shape[1], border).float()
-        ), dim=2).cpu()
+        ncols = 3
+        nrows = 2
+        grid = create_img_grid(images=torch.stack([
+            img_s_0, img_t_0, img_t_hat_0,
+            img_s__1, img_t__1, img_t_hat__1,
+        ]), ncols=3, gen_transforms=self.gen_transforms)
 
-        cat_images = torch.cat((
-            black * torch.ones(3, border, cat_images_1.shape[2]).float(),
-            cat_images_1,
-            black * torch.ones(3, border, cat_images_1.shape[2]).float(),
-            1.0 * torch.ones(3, 4 * border, cat_images_1.shape[2]).float(),
-            black * torch.ones(3, border, cat_images_1.shape[2]).float(),
-            cat_images_2,
-            black * torch.ones(3, border, cat_images_1.shape[2]).float(),
-        ), dim=1)
-
-        # Set matplotlib params
-        matplotlib.rcParams["font.family"] = 'JetBrains Mono'
-        # Create a new figure
-        plt.figure(figsize=(5, 2), dpi=300, frameon=False, clear=True)
-        # Remove annoying axes
-        plt.axis('off')
-        # Create image and return
-        footer_title = f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}' + ' ' * 76 + \
-                       f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' \
-                       f'disc_loss=(r: {"{0:0.3f}".format(round(np.mean(self.disc_r_losses), 3))}, ' \
-                       f'a: {"{0:0.3f}".format(round(np.mean(self.disc_a_losses), 3))})'
-        plt.suptitle(footer_title, y=0.03, fontsize=4, fontweight='light', horizontalalignment='left', x=0.001)
-        plt.imshow(cat_images.permute(1, 2, 0))
-        return pltfig_to_pil(plt.gcf())
+        # Plot
+        return plot_grid(grid=grid.numpy(), figsize=(ncols, nrows),
+                         footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}',
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
+                                    f'disc_loss=(r: {"{0:0.3f}".format(round(np.mean(self.disc_r_losses), 3))}, ' +
+                                    f'a: {"{0:0.3f}".format(round(np.mean(self.disc_a_losses), 3))})')
 
 
 if __name__ == '__main__':
@@ -476,10 +451,10 @@ if __name__ == '__main__':
     # #
     # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
 
-    # _device = _pxldt.device
-    # _x, _y = next(iter(_dl))
-    # _disc_r_loss, _disc_a_loss, _gen_loss = _pxldt(_x.to(_device), _y.to(_device))
-    # print(_disc_r_loss, _disc_a_loss, _gen_loss)
+    _device = _pxldt.device
+    _x, _y = next(iter(_dl))
+    _disc_r_loss, _disc_a_loss, _gen_loss = _pxldt(_x.to(_device), _y.to(_device))
+    print(_disc_r_loss, _disc_a_loss, _gen_loss)
 
     _img = _pxldt.visualize(reproducible=True)
     _img.show()
