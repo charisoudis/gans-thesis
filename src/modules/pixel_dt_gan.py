@@ -363,9 +363,9 @@ class PixelDTGan(nn.Module, IGanGModule):
             for index in indices:
                 _s, _t = self.evaluator.dataset[index]
                 _t_hat = self.gen(_s.unsqueeze(0).to(self.device)).squeeze(0)
-                images.append(_s)
-                images.append(_t)
-                images.append(_t_hat)
+                images.append(_s.cpu())
+                images.append(_t.cpu())
+                images.append(_t_hat.cpu())
 
         # Convert to grid of images
         ncols = 3
