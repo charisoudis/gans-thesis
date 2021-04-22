@@ -362,7 +362,7 @@ class PixelDTGan(nn.Module, IGanGModule):
         with self.gen.frozen():
             for index in indices:
                 _s, _t = self.evaluator.dataset[index]
-                _t_hat = self.gen(_s.unsqueeze(0)).squeeze(0)
+                _t_hat = self.gen(_s.unsqueeze(0).to(self.device)).squeeze(0)
                 images.append(_s)
                 images.append(_t)
                 images.append(_t_hat)

@@ -68,9 +68,9 @@ assert tuple(_dense_pose_2.shape) == (batch_size, target_channels, target_shape,
 ###    Models Initialization    ###
 ###################################
 #   - initialize evaluator instance (used to run GAN evaluation metrics: FID, IS, PRECISION, RECALL, F1 and SSIM)
-evaluator = GanEvaluator(model_fs_folder_or_root=models_groot, gen_dataset=dataset, target_index=1, device=exec_device,
-                         condition_indices=(0, 2), n_samples=metrics_n_samples, batch_size=metrics_batch_size,
-                         f1_k=f1_k)
+evaluator = GanEvaluator(model_fs_folder_or_root=models_groot, gen_dataset=dataloader.test_set, target_index=1,
+                         condition_indices=(0, 2), n_samples=10000, batch_size=metrics_batch_size,
+                         device=exec_device, f1_k=f1_k, ssim_c_img=target_channels)
 #   - initialize model
 chkpt_step = args.chkpt_step
 try:
