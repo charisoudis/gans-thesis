@@ -74,7 +74,8 @@ class PGPG(nn.Module, IGanGModule):
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, config_id: Optional[str] = None,
                  chkpt_epoch: Optional[int or str] = None, chkpt_step: Optional[int] = None,
                  device: torch.device or str = 'cpu', gen_transforms: Optional[Compose] = None, log_level: str = 'info',
-                 dataset_len: Optional[int] = None, evaluator: Optional[GanEvaluator] = None, **evaluator_kwargs):
+                 dataset_len: Optional[int] = None, reproducible_indices: Sequence = (0, -1),
+                 evaluator: Optional[GanEvaluator] = None, **evaluator_kwargs):
         """
         PGPG class constructor.
         :param (FilesystemFolder) model_fs_folder_or_root: a `utils.gdrive.GDriveFolder` object to download /
@@ -90,15 +91,18 @@ class PGPG(nn.Module, IGanGModule):
         :param (str) device: the device used for training (supported: "cuda", "cuda:<GPU_INDEX>", "cpu")
         :param (Compose) gen_transforms: the image transforms of the dataset the generator is trained on (used in
                                          visualization)
-        :param (optional) evaluator: GanEvaluator instance of None to not evaluate models when taking snapshots
         :param (optional) dataset_len: number of images in the dataset used to train the generator or None to fetched
                                        from the :attr:`evaluator` dataset property (used for epoch tracking)
+        :param (Sequence) reproducible_indices: dataset indices to be fetched and visualized each time
+                                                `PixelDTGan::visualize(reproducible=True)` is called
+        :param (optional) evaluator: GanEvaluator instance of None to not evaluate models when taking snapshots
         :param evaluator_kwargs: if :attr:`evaluator` is `None` these arguments must be present to initialize a new
                                  `utils.metrics.GanEvaluator` instance
         """
         # Initialize interface
         IGanGModule.__init__(self, model_fs_folder_or_root, config_id, device=device, log_level=log_level,
-                             dataset_len=dataset_len, evaluator=evaluator, **evaluator_kwargs)
+                             dataset_len=dataset_len, reproducible_indices=reproducible_indices,
+                             evaluator=evaluator, **evaluator_kwargs)
 
         # Instantiate torch.nn.Module class
         nn.Module.__init__(self)
@@ -344,7 +348,7 @@ class PGPG(nn.Module, IGanGModule):
 
     def visualize(self, reproducible: bool = False) -> Image:
         if reproducible:
-            return self.visualize_indices(indices=(0, -1))
+            return self.visualize_indices(indices=self.reproducible_indices)
 
         # Get first & last sample from saved images in self
         image_1_0 = self.image_1[0]

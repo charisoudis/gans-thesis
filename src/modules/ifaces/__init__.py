@@ -2,7 +2,7 @@ import abc
 import json
 import os
 from abc import ABCMeta
-from typing import Optional, Union, Dict, List
+from typing import Optional, Union, Dict, List, Sequence
 
 import matplotlib
 import matplotlib.font_manager
@@ -32,14 +32,19 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
 
     DefaultConfiguration = None
 
-    def __init__(self, config_id: Optional[str] = None, log_level: Optional[str] = None, evaluator: Optional = None):
+    def __init__(self, config_id: Optional[str] = None, log_level: Optional[str] = None,
+                 evaluator: Optional = None, reproducible_indices: Sequence = (0, -1)):
         """
         IGanModule class constructor.
         :param (str or None) config_id: if not `None` then the model configuration matching the given identifier will be
                                         used to initialize the model
         :param (str) log_level: CommandLineLogger's log level
-        :param (optional) evaluator:
+        :param (optional) evaluator: GANEvaluator instance or similar
+        :param (Sequence) reproducible_indices: indices tuple or list, defaults to (0, -1)
         """
+        # Initialize Visualizable
+        Visualizable.__init__(self, indices=reproducible_indices)
+
         # Initialize logger
         if log_level is not None:
             self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
@@ -121,7 +126,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
     def visualize(self, reproducible: bool = False) -> Image:
         raise NotImplementedError
 
-    def visualize_indices(self, indices: int) -> Image:
+    def visualize_indices(self, indices: int or Sequence) -> Image:
         raise NotImplementedError
 
     def visualize_metrics(self, upload: bool = False, preview: bool = False) -> List[Image]:
@@ -213,7 +218,8 @@ class IGModule(GDriveModel, IModule, metaclass=ABCMeta):
     """
 
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, config_id: Optional[str] = None,
-                 log_level: str = 'info', dataset_len: Optional[int] = None, evaluator: Optional = None):
+                 log_level: str = 'info', dataset_len: Optional[int] = None, evaluator: Optional = None,
+                 reproducible_indices: Sequence = (0, -1)):
         """
         IGModule class constructor.
         :param (FilesystemFolder) model_fs_folder_or_root: a `utils.gdrive.GDriveFolder` object to download /
@@ -225,6 +231,7 @@ class IGModule(GDriveModel, IModule, metaclass=ABCMeta):
         :param (optional) evaluator:
         :param (optional) dataset_len: number of images in the dataset used to train the generator or None to fetched
                                        from the :attr:`evaluator` dataset property (used for epoch tracking)
+        :param (Sequence) reproducible_indices: indices tuple or list, defaults to (0, -1)
         """
         # Initialize logger
         self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
@@ -242,7 +249,7 @@ class IGModule(GDriveModel, IModule, metaclass=ABCMeta):
                              model_name=model_name, dataset_len=dataset_len)
 
         # Initialize IModule
-        IModule.__init__(self, config_id=config_id, evaluator=evaluator)
+        IModule.__init__(self, config_id=config_id, evaluator=evaluator, reproducible_indices=reproducible_indices)
 
 
 class IGanGModule(IGModule, metaclass=abc.ABCMeta):
@@ -254,7 +261,8 @@ class IGanGModule(IGModule, metaclass=abc.ABCMeta):
 
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, config_id: Optional[str] = None,
                  device: Optional[Union[torch.device, str]] = None, log_level: str = 'info',
-                 dataset_len: Optional[int] = None, evaluator: Optional = None, **evaluator_kwargs):
+                 dataset_len: Optional[int] = None, reproducible_indices: Sequence = (0, -1),
+                 evaluator: Optional = None, **evaluator_kwargs):
         """
         IGanModule class constructor.
         :param (FilesystemFolder) model_fs_folder_or_root: a `utils.gdrive.GDriveFolder` object to download /
@@ -264,9 +272,10 @@ class IGanGModule(IGModule, metaclass=abc.ABCMeta):
                                         used to initialize the model
         :param (str) device: the device used for training (supported: "cuda", "cuda:<GPU_INDEX>", "cpu")
         :param (str) log_level: CommandLineLogger's log level
-        :param (optional) evaluator: utils.metrics.GanEvaluator instance
         :param (optional) dataset_len: number of images in the dataset used to train the generator or None to fetched
                                        from the :attr:`evaluator` dataset property (used for epoch tracking)
+        :param (Sequence) reproducible_indices: indices tuple or list, defaults to (0, -1)
+        :param (optional) evaluator: utils.metrics.GanEvaluator instance
         :param evaluator_kwargs: if :attr:`evaluator` is `None` these arguments must be present to initialize a new
                                  `utils.metrics.GanEvaluator` instance
         """
@@ -285,7 +294,8 @@ class IGanGModule(IGModule, metaclass=abc.ABCMeta):
 
         # Initialize parent
         IGModule.__init__(self, model_fs_folder_or_root=model_fs_folder_or_root, config_id=config_id,
-                          log_level=log_level, dataset_len=dataset_len, evaluator=evaluator)
+                          log_level=log_level, dataset_len=dataset_len, evaluator=evaluator,
+                          reproducible_indices=reproducible_indices)
 
     def load_configuration(self, configuration: dict) -> None:
         raise NotImplementedError("Found no practical way to change configuration in an online manner")
