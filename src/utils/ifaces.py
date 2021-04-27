@@ -824,6 +824,17 @@ class Verbosable(metaclass=abc.ABCMeta):
 
 
 class Visualizable(metaclass=abc.ABCMeta):
+    """
+    Visualizable Abstract Class (aka Interface)
+    """
+
+    def __init__(self, indices: Sequence = (0, -1)):
+        """
+        Visualizable abstract class constructor.
+        :param (Sequence) indices:
+        """
+        self._reproducible_indices = indices
+
     @classmethod
     def version(cls) -> str:
         """
@@ -832,13 +843,29 @@ class Visualizable(metaclass=abc.ABCMeta):
         """
         return '1.0'
 
+    @property
+    def reproducible_indices(self) -> Sequence:
+        """
+        Get indices list to visualize reproducible images.
+        :return: a tuple object (defaults to (0, -1))
+        """
+        return self._reproducible_indices
+
+    @reproducible_indices.setter
+    def reproducible_indices(self, indices: Sequence) -> None:
+        """
+        Set indices list to visualize reproducible images.
+        :param (Sequence) indices: a tuple object (defaults to (0, -1))
+        """
+        self._reproducible_indices = indices
+
     @abc.abstractmethod
     def visualize(self, reproducible: bool = False) -> Image:
         """
         Visualize latest model's forward pass by creating a `PIL.Image.Image` object with the model output and possible
         its forward pass's inputs.
-        :param (bool) reproducible: set to True to have the visualizer echo the same images every time the visualize()
-                                    method is called
+        :param (bool) reproducible: set to True to have the visualizer echo the same images every time the
+                                    visualize() method is called
         :return: a `PIL.Image.Image` object
         """
         raise NotImplementedError
