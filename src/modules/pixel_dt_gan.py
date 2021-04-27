@@ -356,7 +356,7 @@ class PixelDTGan(nn.Module, IGanGModule):
 
     #
     # --------------
-    # Visualizable (TEST GPG)
+    # Visualizable
     # -------------
     #
 
