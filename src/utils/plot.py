@@ -114,8 +114,11 @@ def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = Fal
         # Rebuild matplotlib font cache
         os.system('rm ~/.cache/matplotlib -rf')
         os.system('mkdir -p ~/.cache/matplotlib')
-        # noinspection PyProtectedMember
-        matplotlib.font_manager._rebuild()
+        try:
+            # noinspection PyProtectedMember
+            matplotlib.font_manager._rebuild()
+        except AttributeError as e:
+            print('[ensure_matplotlib_fonts_exist]: ' + str(e))
     return rebuild
 
 
