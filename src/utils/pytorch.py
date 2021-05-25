@@ -112,8 +112,8 @@ def get_gradient_penalty_from_gradient(gradient: torch.Tensor) -> torch.Tensor:
 def get_gradient_penalty(disc: nn.Module, real: torch.Tensor, fake: torch.Tensor, epsilon: torch.Tensor) \
         -> torch.Tensor:
     """
-    Get the gradient penalty regularization term, given the discriminator (critic) model, a set of real and fake and
-    images and the parameter :attr:`epsilon` to mix the two set of images (approximating an average input to critic).
+    Get the gradient penalty regularization term, given the discriminator (critic) model, a set of real and fake images
+    and the parameter :attr:`epsilon` to mix the two set of images (approximating an average input to critic).
     :param (nn.Module) disc: the critic model
     :param (torch.Tensor) real: a batch of real images
     :param (torch.Tensor) fake: a batch of fake images
@@ -199,7 +199,7 @@ class MatrixSquareRoot(Function):
     """
     MatrixSquareRoot Class:
     This class is used to compute square root of a positive definite matrix given as torch.Tensor object.
-    NOTE: matrix square root is not differentiable for matrices with zero eigenvalues.
+    NOTE: matrix square root is NOT differentiable for matrices with zero eigenvalues.
     Source: https://github.com/steveli/pytorch-sqrtm
     """
 

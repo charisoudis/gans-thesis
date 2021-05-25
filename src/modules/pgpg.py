@@ -17,7 +17,7 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import create_img_grid, plot_grid
-from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler
+from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
 
 
 class PGPG(nn.Module, IGanGModule):
@@ -315,6 +315,17 @@ class PGPG(nn.Module, IGanGModule):
             self.disc_losses.append(disc_loss.item())
 
         return disc_loss, gen_loss
+
+    def update_lr(self, gen_new_lr: Optional[float] = None, disc_new_lr: Optional[float] = None) -> None:
+        """
+        Updates learning-rate of model optimizers, for the non-None give arguments.
+        :param (float|None) gen_new_lr: new LR for generator's optimizer (or None to leave as is)
+        :param (float|None) disc_new_lr: new LR for real/fake discriminator's optimizer (or None to leave as is)
+        """
+        if gen_new_lr:
+            set_optimizer_lr(self.gen_opt, new_lr=gen_new_lr)
+        if disc_new_lr:
+            set_optimizer_lr(self.disc_opt, new_lr=disc_new_lr)
 
     #
     # --------------
