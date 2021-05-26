@@ -7,9 +7,11 @@ from torch import Tensor
 from modules.partial.decoding import ExpandingBlock, FeatureMapLayer
 from modules.partial.encoding import ContractingBlock
 from modules.partial.residual import ResidualBlock
+from utils.ifaces import BalancedFreezable
+from utils.pytorch import enable_verbose, get_total_params
 
 
-class CycleGANGenerator(nn.Module):
+class CycleGANGenerator(nn.Module, BalancedFreezable):
     """
      CycleGAN's Generator Class:
      A series of 2 contracting blocks, 9 residual blocks, and 2 expanding blocks to transform an input image into an
@@ -19,33 +21,62 @@ class CycleGANGenerator(nn.Module):
         c_out: the number of channels to expect for a given output
      """
 
-    def __init__(self, c_in: int, c_out: int, c_hidden: int = 64, n_residual_blocks: int = 9):
+    def __init__(self, c_in: int, c_out: int, c_hidden: int = 64, n_contracting_blocks: int = 2,
+                 n_residual_blocks: int = 9, output_padding: int = 1):
         """
         CycleGANGenerator class constructor.
         :param (int) c_in: number of input channels
         :param (int) c_out: number of output channels
         :param (int) c_hidden: number of hidden channels (in residual blocks)
+        :param (int) n_contracting_blocks: number of contracting (and expanding) blocks
         :param (int) n_residual_blocks: number of residual blocks
+        :param (int) output_padding: :attr:`output_padding` of `nn.Conv2d()`
         """
-        super(CycleGANGenerator, self).__init__()
-        self.cycle_gan_generator = nn.Sequential(
-            FeatureMapLayer(c_in, c_hidden),
+        # Initialize utils.ifaces.BalancedFreezable
+        BalancedFreezable.__init__(self)
 
-            # Encoding (aka contracting) blocks (2)
-            ContractingBlock(c_hidden),
-            ContractingBlock(c_hidden * 2),
+        # Initialize torch.nn.Module
+        nn.Module.__init__(self)
+        self.upfeature = FeatureMapLayer(c_in, c_hidden)
+        self.n_contracting_blocks = n_contracting_blocks
 
-            # Residual Blocks
-            *[ResidualBlock(c_hidden * 4, norm_type='IN') for _ in range(0, n_residual_blocks)],
+        # Register contracting blocks
+        for i in range(n_contracting_blocks):
+            setattr(self, f'contract{(i + 1)}', ContractingBlock(c_in=c_hidden * 2 ** i))
 
-            # Decoding (aka expanding) blocks (2)
-            ExpandingBlock(c_hidden * 4, output_padding=1),
-            ExpandingBlock(c_hidden * 2, output_padding=1),
+        # Register residual blocks
+        c_res = c_hidden * 2 ** n_contracting_blocks
+        self.res_blocks = nn.Sequential(
+            *[ResidualBlock(c_res, norm_type='IN') for _ in range(0, n_residual_blocks)]
+        )
 
-            # Final layers
+        # Register expanding blocks
+        for i in range(n_contracting_blocks):
+            setattr(self, f'expand{i}', ExpandingBlock(c_res // 2 ** i, output_padding=output_padding, use_skip=True))
+
+        # Register output block
+        self.out = nn.Sequential(
             FeatureMapLayer(c_hidden, c_out),
             nn.Tanh()
         )
+        # self.cycle_gan_generator = nn.Sequential(
+        #     FeatureMapLayer(c_in, c_hidden),
+        #
+        #     # Encoding (aka contracting) blocks (2)
+        #     ContractingBlock(c_hidden),
+        #     ContractingBlock(c_hidden * 2),
+        #
+        #     # Residual Blocks
+        #     *[ResidualBlock(c_hidden * 4, norm_type='IN') for _ in range(0, n_residual_blocks)],
+        #
+        #     # Decoding (aka expanding) blocks (2)
+        #     ExpandingBlock(c_hidden * 4, output_padding=1),
+        #     ExpandingBlock(c_hidden * 2, output_padding=1),
+        #
+        #     # Final layers
+        #     FeatureMapLayer(c_hidden, c_out),
+        #     nn.Tanh()
+        # )
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -55,7 +86,26 @@ class CycleGANGenerator(nn.Module):
         :param (torch.Tensor) x: image tensor of shape (N, C_in, H, W)
         :return: transformed image tensor of shape (N, C_out, H, W)
         """
-        return self.cycle_gan_generator(x)
+        x0 = self.upfeature(x)
+
+        # Pass through contracting blocks
+        out = None
+        contracting_block_outs = [x0]
+        for i in range(self.n_contracting_blocks):
+            contracting_block = getattr(self, f'contract{(i + 1)}')
+            out = contracting_block(contracting_block_outs[-1])
+            contracting_block_outs.append(out)
+
+        # Pass through residual blocks
+        out = self.res_blocks(out)
+
+        # Pass through expanding blocks
+        for i in range(self.n_contracting_blocks):
+            expanding_block = getattr(self, f'expand{i}')
+            out = expanding_block(out, contracting_block_outs[self.n_contracting_blocks - (i + 1)])
+
+        return self.out(out)
+        # return self.cycle_gan_generator(x)
 
     ########################################
     # --------> Generator Losses <-------- #
@@ -75,8 +125,7 @@ class CycleGANGenerator(nn.Module):
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         fake_y = self(real_x)
-        with torch.no_grad():
-            fake_y_predictions = disc_y(fake_y)
+        fake_y_predictions = disc_y(fake_y)
         adversarial_loss = adv_criterion(fake_y_predictions, torch.ones_like(fake_y_predictions))
         return adversarial_loss, fake_y
 
@@ -112,3 +161,12 @@ class CycleGANGenerator(nn.Module):
         cycle_y = self(fake_x)
         cycle_loss = cycle_criterion(cycle_y, real_y)
         return cycle_loss, cycle_y
+
+
+if __name__ == '__main__':
+    _cycle_gan = CycleGANGenerator(c_in=3, c_out=3)
+    enable_verbose(_cycle_gan)
+    _x = torch.rand(1, 3, 64, 64)
+    _cycle_gan(_x)
+
+    get_total_params(_cycle_gan, print_table=True, sort_desc=True)

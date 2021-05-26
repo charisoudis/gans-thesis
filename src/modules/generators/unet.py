@@ -6,6 +6,7 @@ from torch import nn, Tensor
 from modules.partial.decoding import UNETExpandingBlock, FeatureMapLayer, ChannelsProjectLayer
 from modules.partial.encoding import UNETContractingBlock
 from utils.ifaces import BalancedFreezable, Freezable
+from utils.pytorch import enable_verbose
 
 
 class UNETWithSkipConnections(nn.Module, BalancedFreezable):
@@ -102,7 +103,7 @@ class UNETWithSkipConnections(nn.Module, BalancedFreezable):
         # Pass through expanding blocks
         for i in range(self.n_contracting_blocks):
             expanding_block = getattr(self, f'expand{i}')
-            out = expanding_block(out, contracting_block_outs[-(i + 2)])
+            out = expanding_block(out, contracting_block_outs[self.n_contracting_blocks - (i + 1)])
 
         return self.out(out)
 
@@ -132,3 +133,10 @@ class UNETWithSkipConnections(nn.Module, BalancedFreezable):
                 fake_predictions = nn.Sigmoid()(fake_predictions)
             adv_loss = adv_criterion(fake_predictions, torch.ones_like(fake_predictions))
         return adv_loss + lambda_recon * recon_loss
+
+
+if __name__ == '__main__':
+    _unet = UNETWithSkipConnections(c_in=3, c_out=3)
+    enable_verbose(_unet)
+    _x = torch.rand(1, 3, 64, 64)
+    _unet(_x)

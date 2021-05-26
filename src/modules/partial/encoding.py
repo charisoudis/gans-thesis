@@ -81,16 +81,12 @@ class UNETContractingBlock(nn.Module):
         """
         super(UNETContractingBlock, self).__init__()
         self.unet_contracting_block = nn.Sequential(
-            # 1st convolution layer
-            nn.Conv2d(c_in, c_in * 2, kernel_size=kernel_size, stride=1, padding=1),
-            nn.BatchNorm2d(c_in * 2) if use_bn else nn.Identity(),
-            nn.Dropout(p=0.2)if use_dropout else nn.Identity(),
-            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
-            # 2nd convolution layer
-            nn.Conv2d(c_in * 2, c_in * 2, kernel_size=kernel_size, stride=1, padding=1),
-            nn.BatchNorm2d(c_in * 2) if use_bn else nn.Identity(),
-            nn.Dropout() if use_dropout else nn.Identity(),
-            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
+            # 1st convolutional layer
+            ContractingBlock(c_in=c_in, c_out=c_in * 2, kernel_size=kernel_size, stride=1, padding=1,
+                             use_norm=use_bn, norm_type='batch', use_dropout=use_dropout, activation=activation),
+            # 2nd convolutional layer
+            ContractingBlock(c_in=c_in * 2, c_out=c_in * 2, kernel_size=kernel_size, stride=1, padding=1,
+                             use_norm=use_bn, norm_type='batch', use_dropout=use_dropout, activation=activation),
             # Downsampling (using MaxPool) layer (preparing for next block)
             nn.MaxPool2d(kernel_size=2, stride=2)
         )

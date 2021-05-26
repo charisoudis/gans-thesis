@@ -16,7 +16,7 @@ class ExpandingBlock(nn.Module):
 
     def __init__(self, c_in: int, use_norm: bool = True, kernel_size: int = 3, activation: Optional[str] = 'relu',
                  output_padding: int = 1, stride: int = 2, padding: int = 1, c_out: Optional[int] = None,
-                 norm_type: str = 'instance'):
+                 norm_type: str = 'instance', use_dropout: bool = False, use_skip: bool = False):
         """
         ExpandingBlock class constructor.
         :param (int) c_in: number of input channels
@@ -28,11 +28,19 @@ class ExpandingBlock(nn.Module):
         :param (int) padding: padding of torch.nn.ConvTranspose2d
         :param (str) c_out: number of output channels
         :param (str) norm_type: available types are 'batch', 'instance', 'pixel', 'layer'
+        :param (bool) use_dropout: set to True to add a `nn.Dropout()` layer with probability of 0.2
+        :param (bool) use_skip: set to True to enable UNET-like behaviour
         """
         super(ExpandingBlock, self).__init__()
         c_out = c_in // 2 if c_out is None else c_out
-        _layers = [nn.ConvTranspose2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding,
-                                      output_padding=output_padding), ]
+
+        # Upscaling layer using transposed convolution
+        self.upscale = nn.ConvTranspose2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding,
+                                          output_padding=output_padding)
+        _layers = []
+        if use_skip:
+            _layers.append(nn.Conv2d(c_in, c_out, kernel_size=3, padding=1))
+
         if use_norm:
             from modules.partial.normalization import PixelNorm2d, LayerNorm2d
             switcher = {
@@ -42,6 +50,8 @@ class ExpandingBlock(nn.Module):
                 'layer': LayerNorm2d(c_out),
             }
             _layers.append(switcher[norm_type])
+        if use_dropout:
+            _layers.append(nn.Dropout2d(p=0.2))
         if activation is not None:
             activations_switcher = {
                 'relu': nn.ReLU(),
@@ -51,15 +61,26 @@ class ExpandingBlock(nn.Module):
             }
             _layers.append(activations_switcher[activation])
         self.expanding_block = nn.Sequential(*_layers)
-        self.c_out = c_out
 
-    def forward(self, x: Tensor) -> Tensor:
+        self.c_out = c_out
+        self.use_skip = use_skip
+
+    def forward(self, x: Tensor, skip_conn_at_x: Optional[Tensor] = None) -> Tensor:
         """
         Function for completing a forward pass of ExpandingBlock:
         Given an image tensor, completes an expanding block and returns the transformed tensor.
-        :param x: image tensor of shape (N, C, H, W)
+        :param (Tensor) x: image tensor of shape (N, C, H, W)
+        :param (Tensor) skip_conn_at_x: the image tensor from the contracting path (from the opposing block of x)
+                                        for the skip connection
         :return: transformed image tensor of shape (N, C/2, H*2, W*2)
         """
+        # Check if skip connection is present
+        assert self.use_skip is False or skip_conn_at_x is not None, 'use_skip was set, but skip_conn_at_x is None!'
+        if self.use_skip:
+            # Upscale current input
+            x = self.upscale(x)
+            # Specify cat()'s dim to be 1 (aka channels), since we want a channel-wise concatenation of the two tensors
+            x = torch.cat([x, UNETExpandingBlock.crop_skip_connection(skip_conn_at_x, x.shape)], dim=1)
         return self.expanding_block(x)
 
 
@@ -104,11 +125,12 @@ class UNETExpandingBlock(nn.Module):
         """
         Function for completing a forward pass of ExpandingBlock:
         Given an image tensor, completes an expanding block and returns the transformed tensor.
-        :param x: image tensor of shape (N, C, H, W)
-        :param skip_conn_at_x: the image tensor from the contracting path (from the opposing block of x) for the skip
-                               connection
-        :return: transformed image tensor of shape (N, C/2, H*2, W*2)
+        :param (Tensor) x: image tensor of shape (N, C, H, W)
+        :param (Tensor) skip_conn_at_x: the image tensor from the contracting path (from the opposing block of x)
+                                        for the skip connection
+        :return: the transformed image tensor of shape (N, C/2, H*2, W*2)
         """
+        print(x.shape, skip_conn_at_x.shape)
         x = self.upsample_and_1st_conv(x)
         # Specify cat()'s dim to be 1 (aka channels), since we want a channel-wise concatenation of the two tensors
         x = torch.cat([x, UNETExpandingBlock.crop_skip_connection(skip_conn_at_x, x.shape)], dim=1)
