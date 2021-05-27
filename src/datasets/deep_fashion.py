@@ -160,6 +160,11 @@ class ICRBDataset(Dataset, GDriveDataset):
 
 
 class ICRBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
+    """
+    ICRBDataloader Class:
+    This class is used to load and access DeepFashion's In-Shop Clothes Retrieval Benchmark's dataset using PyTorch's
+    DataLoader interface.
+    """
 
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder,
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,

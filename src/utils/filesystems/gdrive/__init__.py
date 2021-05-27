@@ -45,6 +45,10 @@ class GDriveDataset(FilesystemDataset):
 
     def is_fetched_and_unzipped(self) -> bool:
         zip_local_filepath = f'{self.dataset_gfolder.local_root}/{self.zip_filename}'
+        # If is hdf5 file, then it just needs to exist in FS
+        if zip_local_filepath.endswith('.hdf5'):
+            return os.path.exists(zip_local_filepath) and os.path.isfile(zip_local_filepath)
+        # Else, check if folder with the same filename as the .zip (without the extension) exists in FS
         dataset_local_path = zip_local_filepath.replace('.zip', '')
         return os.path.exists(zip_local_filepath) and os.path.exists(dataset_local_path) and \
                os.path.isfile(zip_local_filepath) and os.path.isdir(dataset_local_path)
