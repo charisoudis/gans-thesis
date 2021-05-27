@@ -90,6 +90,13 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         # Check for lambda_recon presence in state
         if 'lambda_recon' not in state_dict.keys():
             state_dict['lambda_recon'] = self.lambda_recon.data
+        # FIX: Update keys for expanding block
+        s_r_dict = ExpandingBlock.STATE_DICT_REPLACE_DICT
+        for key in list(state_dict.keys()):
+            for search_key in list(s_r_dict.keys()):
+                if search_key in key:
+                    state_dict[key.replace(search_key, s_r_dict[search_key])] = state_dict[key]
+                    del state_dict[key]
         # Load model state
         nn.Module.load_state_dict(self, state_dict=state_dict, strict=strict)
 

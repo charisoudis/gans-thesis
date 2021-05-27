@@ -130,7 +130,11 @@ class PGPG(nn.Module, IGanGModule):
         # Define optimizers
         # Note: Both generators, G1 & G2, are trained using a joint optimizer
         gen_opt_conf = self._configuration['gen_opt']
+        if 'scheduler_type' not in gen_opt_conf.keys():
+            gen_opt_conf['scheduler_type'] = gen_opt_conf['scheduler']
         disc_opt_conf = self._configuration['disc_opt']
+        if 'scheduler_type' not in disc_opt_conf.keys():
+            disc_opt_conf['scheduler_type'] = disc_opt_conf['scheduler']
         self.gen_opt, _ = get_optimizer(self.gen, lr=gen_opt_conf['lr'])
         self.disc_opt, _ = get_optimizer(self.disc, lr=disc_opt_conf['lr'])
 
@@ -425,6 +429,8 @@ if __name__ == '__main__':
     _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
                  dataset_len=len(_dataset), chkpt_epoch='latest', log_level=_log_level,
                  evaluator=_evaluator, device='cpu')
+    print(_pgpg)
+    exit(0)
 
     # # for _e in range(3):
     # #     _pgpg.logger.info(f'current epoch: {_e}')

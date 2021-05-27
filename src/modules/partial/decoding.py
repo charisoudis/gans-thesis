@@ -14,6 +14,11 @@ class ExpandingBlock(nn.Module):
         c_in: the number of channels to expect from a given input
     """
 
+    STATE_DICT_REPLACE_DICT = {
+        '.expanding_block.0.': '.upscale.',
+        '.expanding_block.1.': '.expanding_block.0.',
+    }
+
     def __init__(self, c_in: int, use_norm: bool = True, kernel_size: int = 3, activation: Optional[str] = 'relu',
                  output_padding: int = 1, stride: int = 2, padding: int = 1, c_out: Optional[int] = None,
                  norm_type: str = 'instance', use_dropout: bool = False, use_skip: bool = False):
