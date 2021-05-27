@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from PIL.Image import Image
+from matplotlib import pyplot as plt
 from torch import Tensor
 from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -407,20 +408,40 @@ class CycleGAN(nn.Module, IGanGModule):
     def visualize_indices(self, indices: int or Sequence) -> Image:
         # Fetch images
         assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
-        images = []
+        real_a_images = []
+        real_b_images = []
+        fake_a_images = []
+        fake_b_images = []
         with self.gen_a_to_b.frozen():
             with self.gen_b_to_a.frozen():
                 for index in indices:
                     _real_a, _real_b = self.evaluator.dataset[index]
                     _fake_b = self.gen_a_to_b(_real_a.unsqueeze(0).to(self.device)).squeeze(0)
                     _fake_a = self.gen_b_to_a(_real_b.unsqueeze(0).to(self.device)).squeeze(0)
-                    images.append(_real_a.cpu())
-                    images.append(_fake_b.cpu())
-                    images.append(_real_b.cpu())
-                    images.append(_fake_a.cpu())
+                    real_a_images.append(_real_a.cpu())
+                    fake_a_images.append(_fake_b.cpu())
+                    real_b_images.append(_real_b.cpu())
+                    fake_b_images.append(_fake_a.cpu())
+
+        real_images = real_a_images + real_b_images
+        fake_images = fake_a_images + fake_b_images
+
+        if len(real_images) <= 4:
+            images = real_images + fake_images
+        else:
+            images = []
+            for i in range(0, len(real_images) - 4):
+                images.append(real_images[i])
+                images.append(real_images[i+1])
+                images.append(real_images[i+2])
+                images.append(real_images[i+3])
+                images.append(fake_images[i])
+                images.append(fake_images[i+1])
+                images.append(fake_images[i+2])
+                images.append(fake_images[i+3])
 
         # Convert to grid of images
-        ncols = 2
+        ncols = 4
         nrows = int(len(images) / ncols)
         grid = create_img_grid(images=torch.stack(images), nrows=nrows, ncols=ncols,
                                gen_transforms=self.gen_transforms)
@@ -448,12 +469,12 @@ class CycleGAN(nn.Module, IGanGModule):
 
         # Concat images to a 4x2 grid (each row is a separate generation, the columns contain real and generated images
         # side-by-side)
-        ncols = 2
-        nrows = 4
+        ncols = 4
+        nrows = 2
         grid = create_img_grid(images=torch.stack([
-            real_a_0, fake_b_0, real_b_0, fake_a_0,
-            real_a__1, fake_b__1, real_b__1, fake_a__1,
-        ]), ncols=2, gen_transforms=self.gen_transforms)
+            real_a_0, real_a__1, real_b_0, real_b__1,
+            fake_b_0, fake_b__1, fake_a_0, fake_a__1,
+        ]), ncols=ncols, gen_transforms=self.gen_transforms)
 
         # Plot
         return plot_grid(grid=grid.numpy(), figsize=(ncols, nrows),
@@ -489,7 +510,7 @@ if __name__ == '__main__':
     # Initialize model
     _ccgan = CycleGAN(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dl.dataset),
                       chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
-    print(_ccgan)
+    # print(_ccgan)
 
     _device = _ccgan.device
     _x, _y = next(iter(_dl))
@@ -501,9 +522,9 @@ if __name__ == '__main__':
     print('Number of parameters: disc_b=' + _ccgan.disc_b.nparams_hr)
     print('Number of parameters: TOTAL=' + _ccgan.nparams_hr)
 
-    # _img = _pxldt.visualize(reproducible=(300, 1001))
-    # plt.imshow(_img)
-    # plt.show()
+    _img = _ccgan.visualize(reproducible=(300, 1001))
+    plt.imshow(_img)
+    plt.show()
     # _img.show()
     # _img.show()
     # with open('sample.png', 'wb') as fp:
