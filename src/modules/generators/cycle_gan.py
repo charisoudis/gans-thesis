@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 
 import torch
 import torch.nn as nn
@@ -7,8 +7,10 @@ from torch import Tensor
 from modules.partial.decoding import ExpandingBlock, FeatureMapLayer
 from modules.partial.encoding import ContractingBlock
 from modules.partial.residual import ResidualBlock
+from utils.command_line_logger import CommandLineLogger
 from utils.ifaces import BalancedFreezable
 from utils.pytorch import enable_verbose, get_total_params
+from utils.string import to_human_readable
 
 
 class CycleGANGenerator(nn.Module, BalancedFreezable):
@@ -22,7 +24,8 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
      """
 
     def __init__(self, c_in: int, c_out: int, c_hidden: int = 64, n_contracting_blocks: int = 2,
-                 n_residual_blocks: int = 9, output_padding: int = 1):
+                 n_residual_blocks: int = 9, output_padding: int = 1,
+                 criteria_conf: Optional[dict] = None, logger: Optional[CommandLineLogger] = None):
         """
         CycleGANGenerator class constructor.
         :param (int) c_in: number of input channels
@@ -31,6 +34,15 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
         :param (int) n_contracting_blocks: number of contracting (and expanding) blocks
         :param (int) n_residual_blocks: number of residual blocks
         :param (int) output_padding: :attr:`output_padding` of `nn.Conv2d()`
+        :param (optional) criteria_conf: the configuration parameters of the network. Among other parameters the
+                                          following keys are necessary to instantiate the model:
+                                            - real: type of Adversarial loss for real/fake discriminator
+                                            predictions. Supported: `nn.MSELoss()`, `nn.BCELoss()`,
+                                            `nn.BCEWithLogitsLoss()`
+                                            - associated: Adversarial loss for associated/unassociated
+                                            discriminator's predictions. Supported: `nn.MSELoss()`, `nn.BCELoss()`,
+                                            `nn.BCEWithLogitsLoss()`
+        :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
         """
         # Initialize utils.ifaces.BalancedFreezable
         BalancedFreezable.__init__(self)
@@ -76,13 +88,21 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
         #     # Final layers
         #     FeatureMapLayer(c_hidden, c_out),
         #     nn.Tanh()
-        # )
+        #
+
+        # Save args
+        self.criteria_conf = criteria_conf
+        self.logger = CommandLineLogger(name=self.__class__.__name__) if logger is None else logger
+        self.verbose_enabled = False
+
+    @property
+    def nparams_hr(self):
+        return to_human_readable(get_total_params(self))
 
     def forward(self, x: Tensor) -> Tensor:
         """
         Function for completing a forward pass of Generator:
-        Given an image tensor, passes it through the U-Net with residual blocks
-        and returns the output.
+        Given an image tensor, passes it through the U-Net with residual blocks and returns the output.
         :param (torch.Tensor) x: image tensor of shape (N, C_in, H, W)
         :return: transformed image tensor of shape (N, C_out, H, W)
         """
@@ -111,7 +131,7 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
     # --------> Generator Losses <-------- #
     ########################################
 
-    def get_adv_loss(self, real_x: Tensor, disc_y: nn.Module(), adv_criterion: nn.modules.Module = nn.MSELoss()) \
+    def get_adv_loss(self, real_x: Tensor, disc_y: nn.Module(), adv_criterion: Optional[nn.modules.Module] = None) \
             -> Tuple[Tensor, Tensor]:
         """
         Return the adversarial loss of the generator given inputs (and the generated images for testing purposes).
@@ -119,46 +139,46 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
         :param (torch.Tensor) real_x: the real images from pile X
         :param (torch.nn.Module) disc_y: the discriminator for class Y; takes images and returns real/fake class Y
                                          prediction matrices
-        :param (torch.nn.Module) adv_criterion: the adversarial loss function; takes the discriminator predictions and
-                                                the target labels and returns a adversarial loss (which we aim to
-                                                minimize)
+        :param (optional) adv_criterion: the adversarial loss function; takes the discriminator predictions and
+                                         the target labels and returns a adversarial loss (which we aim to minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         fake_y = self(real_x)
         fake_y_predictions = disc_y(fake_y)
+        adv_criterion = self.criteria_conf['adv'] if not adv_criterion else adv_criterion
         adversarial_loss = adv_criterion(fake_y_predictions, torch.ones_like(fake_y_predictions))
         return adversarial_loss, fake_y
 
-    def get_identity_loss(self, real_y: Tensor, identity_criterion: nn.modules.Module = nn.L1Loss()) \
+    def get_identity_loss(self, real_y: Tensor, identity_criterion: Optional[nn.modules.Module] = None) \
             -> Tuple[Tensor, Tensor]:
         """
         Return the identity loss of the generator given inputs (and the generated images for testing purposes).
         Attention: We suppose that this instance is the Generator from Domain X --> Y: gen_XY
         :param (torch.Tensor) real_y: the real images from domain (or pile) Y
-        :param (torch.nn.Module) identity_criterion: the identity loss function; takes the real images from Y and those
+        :param (optional) identity_criterion: the identity loss function; takes the real images from Y and those
                                                      images put through a X->Y generator and returns the identity loss
                                                      (which we aim to minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         identity_y = self(real_y)
+        identity_criterion = self.criteria_conf['identity'] if not identity_criterion else identity_criterion
         identity_loss = identity_criterion(identity_y, real_y)
         return identity_loss, identity_y
 
     def get_cycle_consistency_loss(self, real_y: Tensor, fake_x: Tensor,
-                                   cycle_criterion: nn.modules.Module = nn.L1Loss()) -> Tuple[Tensor, Tensor]:
+                                   cycle_criterion: Optional[nn.modules.Module] = None) -> Tuple[Tensor, Tensor]:
         """
         Return the cycle consistency loss of the generator given inputs (and the generated images for testing purposes).
         Attention: We suppose that this instance is the Generator from Domain X --> Y: gen_XY
-        Parameters:
         :param (torch.Tensor) real_y: the real images from domain (or pile) Y
         :param (torch.Tensor) fake_x: the generated images of domain X (generated from gen_YX with input real_y)
-        :param (torch.nn.Module) cycle_criterion: the cycle consistency loss function; takes the real images from Y and
-                                                  those images put through a Y->X generator and then X->Y generator
-                                                  (this one) and returns the cycle consistency loss (which we aim to
-                                                  minimize)
+        :param (optional) cycle_criterion: the cycle consistency loss function; takes the real images from Y and those
+                                           images put through a Y->X generator and then X->Y generator (this one) and
+                                           returns the cycle consistency loss (which we aim to minimize)
         :return: a tuple containing the loss (a scalar) and the outputs from generator's forward pass
         """
         cycle_y = self(fake_x)
+        cycle_criterion = self.criteria_conf['cycle'] if not cycle_criterion else cycle_criterion
         cycle_loss = cycle_criterion(cycle_y, real_y)
         return cycle_loss, cycle_y
 

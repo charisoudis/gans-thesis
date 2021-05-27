@@ -19,7 +19,7 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import create_img_grid, plot_grid
-from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
+from utils.train import weights_init_naive, get_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
 
 
 class PixelDTGan(nn.Module, IGanGModule):
@@ -47,8 +47,8 @@ class PixelDTGan(nn.Module, IGanGModule):
         },
         'gen_opt': {
             'lr': 1e-4,
-            'opt': 'adam',
-            'scheduler': None
+            'optim_type': 'Adam',
+            'scheduler_type': None
         },
         'disc_r': {
             'c_hidden': 128,
@@ -64,12 +64,12 @@ class PixelDTGan(nn.Module, IGanGModule):
         },
         'disc_opt': {
             'lr': 1e-4,
-            'opt': 'adam',
-            'scheduler': None
+            'optim_type': 'Adam',
+            'scheduler_type': None
         }
     }
 
-    def __init__(self, model_fs_folder_or_root: FilesystemFolder, config_id: Optional[str] = None,
+    def __init__(self, model_fs_folder_or_root: FilesystemFolder, config_id: Optional[str] = 'default',
                  chkpt_epoch: Optional[int or str] = None, chkpt_step: Optional[int] = None,
                  device: torch.device or str = 'cpu', gen_transforms: Optional[Compose] = None, log_level: str = 'info',
                  dataset_len: Optional[int] = None, reproducible_indices: Sequence = (0, -1),
@@ -98,7 +98,7 @@ class PixelDTGan(nn.Module, IGanGModule):
                                  `utils.metrics.GanEvaluator` instance
         """
         # Initialize interface
-        IGanGModule.__init__(self, model_fs_folder_or_root, config_id, device=device, log_level=log_level,
+        IGanGModule.__init__(self, model_fs_folder_or_root, config_id=config_id, device=device, log_level=log_level,
                              dataset_len=dataset_len, reproducible_indices=reproducible_indices,
                              evaluator=evaluator, **evaluator_kwargs)
 
@@ -106,7 +106,7 @@ class PixelDTGan(nn.Module, IGanGModule):
         nn.Module.__init__(self)
 
         # Define PixelDTGan model
-        # This setup leads to ~38M learnable parameters for the Generator network
+        # The default setup leads to ~38M learnable parameters for the Generator network
         shapes_conf = self._configuration['shapes']
         gen_conf = {**self._configuration['gen'], **{
             'w_in': shapes_conf['w_in'],
@@ -118,22 +118,20 @@ class PixelDTGan(nn.Module, IGanGModule):
         self.gen = PixelDTGanGenerator(c_in=shapes_conf['c_in'], c_out=shapes_conf['c_out'], **gen_conf)
         # get_total_params(self.gen, print_table=True, sort_desc=True)
 
-        # This setup leads to ~6M learnable parameters for the Real/Fake Discriminator network
+        # The default setup leads to ~6M learnable parameters for the Real/Fake Discriminator network
         # NOTE: for 5 contracting blocks, output is 4x4
         disc_r_conf = self._configuration['disc_r']
-        del disc_r_conf['adv_criterion']
         self.disc_r = PixelDTGanDiscriminator(c_in=shapes_conf['c_in'], logger=self.logger, **disc_r_conf)
         self.disc_r_adv_criterion = gen_conf['adv_criterion_conf']['real']
 
-        # This setup leads to ~6M learnable parameters for the Associated/Unassociated Discriminator network
+        # The default setup leads to ~6M learnable parameters for the Associated/Unassociated Discriminator network
         # NOTE: for 5 contracting blocks, output is 4x4
         disc_a_conf = self._configuration['disc_a']
-        del disc_a_conf['adv_criterion']
         self.disc_a = PixelDTGanDiscriminator(c_in=2 * shapes_conf['c_in'], logger=self.logger, **disc_a_conf)
         self.disc_a_adv_criterion = gen_conf['adv_criterion_conf']['associated']
         # get_total_params(self.disc_a, print_table=True, sort_desc=True)
 
-        # Move models to GPU
+        # Move models to {C,G,T}PU
         self.gen.to(device)
         self.disc_r.to(device)
         self.disc_a.to(device)
@@ -146,9 +144,9 @@ class PixelDTGan(nn.Module, IGanGModule):
         # Note: Both generators, G1 & G2, are trained using a joint optimizer
         gen_opt_conf = self._configuration['gen_opt']
         disc_opt_conf = self._configuration['disc_opt']
-        self.gen_opt, _ = get_adam_optimizer(self.gen, lr=gen_opt_conf['lr'])
-        self.disc_r_opt, _ = get_adam_optimizer(self.disc_r, lr=disc_opt_conf['lr'])
-        self.disc_a_opt, _ = get_adam_optimizer(self.disc_a, lr=disc_opt_conf['lr'])
+        self.gen_opt, _ = get_optimizer(self.gen, **self._configuration['gen_opt'])
+        self.disc_r_opt, _ = get_optimizer(self.disc_r, **self._configuration['disc_opt'])
+        self.disc_a_opt, _ = get_optimizer(self.disc_a, **self._configuration['disc_opt'])
 
         # Load checkpoint from Google Drive
         self.other_state_dicts = {}
@@ -171,35 +169,40 @@ class PixelDTGan(nn.Module, IGanGModule):
             chkpt_epoch = 0
 
         # Define LR schedulers (after optimizer checkpoints have been loaded)
-        if gen_opt_conf['scheduler']:
-            if gen_opt_conf['scheduler'] == 'cyclic':
+        if gen_opt_conf['scheduler_type']:
+            if gen_opt_conf['scheduler_type'] == 'cyclic':
                 self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(
-                    self.gen_opt, schedule_type=str(gen_opt_conf['scheduler']), base_lr=0.1 * gen_opt_conf['lr'],
+                    self.gen_opt, schedule_type=str(gen_opt_conf['scheduler_type']), base_lr=0.1 * gen_opt_conf['lr'],
                     max_lr=gen_opt_conf['lr'], step_size_up=2 * dataset_len if evaluator else 1000, mode='exp_range',
                     gamma=0.9, cycle_momentum=False,
                     last_epoch=chkpt_epoch if 'initial_lr' in self.gen_opt.param_groups[0].keys() else -1)
             else:
                 self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt,
-                                                                       schedule_type=str(gen_opt_conf['scheduler']))
+                                                                       schedule_type=str(
+                                                                           gen_opt_conf['scheduler_type']))
         else:
             self.gen_opt_lr_scheduler = None
-        if disc_opt_conf['scheduler']:
-            if disc_opt_conf['scheduler'] == 'cyclic':
+        if disc_opt_conf['scheduler_type']:
+            if disc_opt_conf['scheduler_type'] == 'cyclic':
                 self.disc_r_opt_lr_scheduler = get_optimizer_lr_scheduler(
-                    self.disc_r_opt, schedule_type=str(disc_opt_conf['scheduler']), base_lr=0.1 * disc_opt_conf['lr'],
+                    self.disc_r_opt, schedule_type=str(disc_opt_conf['scheduler_type']),
+                    base_lr=0.1 * disc_opt_conf['lr'],
                     max_lr=disc_opt_conf['lr'], step_size_up=2 * dataset_len if evaluator else 1000, mode='exp_range',
                     gamma=0.9, cycle_momentum=False,
                     last_epoch=chkpt_epoch if 'initial_lr' in self.disc_r_opt.param_groups[0].keys() else -1)
                 self.disc_a_opt_lr_scheduler = get_optimizer_lr_scheduler(
-                    self.disc_a_opt, schedule_type=str(disc_opt_conf['scheduler']), base_lr=0.1 * disc_opt_conf['lr'],
+                    self.disc_a_opt, schedule_type=str(disc_opt_conf['scheduler_type']),
+                    base_lr=0.1 * disc_opt_conf['lr'],
                     max_lr=disc_opt_conf['lr'], step_size_up=2 * dataset_len if evaluator else 1000, mode='exp_range',
                     gamma=0.9, cycle_momentum=False,
                     last_epoch=chkpt_epoch if 'initial_lr' in self.disc_a_opt.param_groups[0].keys() else -1)
             else:
                 self.disc_r_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_r_opt,
-                                                                          schedule_type=str(disc_opt_conf['scheduler']))
+                                                                          schedule_type=str(
+                                                                              disc_opt_conf['scheduler_type']))
                 self.disc_a_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_a_opt,
-                                                                          schedule_type=str(disc_opt_conf['scheduler']))
+                                                                          schedule_type=str(
+                                                                              disc_opt_conf['scheduler_type']))
         else:
             self.disc_r_opt_lr_scheduler = None
             self.disc_a_opt_lr_scheduler = None
@@ -462,7 +465,7 @@ if __name__ == '__main__':
 
     # Initialize model
     _pxldt = PixelDTGan(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dataset),
-                        chkpt_epoch='latest', log_level=_log_level, evaluator=_evaluator, device='cpu')
+                        chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
     # print(_pxldt)
 
     # # for _e in range(3):

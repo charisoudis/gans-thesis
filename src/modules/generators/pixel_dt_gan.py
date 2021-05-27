@@ -38,6 +38,7 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                                                 - associated: Adversarial loss for associated/unassociated
                                                 discriminator's predictions. Supported: `nn.MSELoss()`, `nn.BCELoss()`,
                                                 `nn.BCEWithLogitsLoss()`
+                                                , logger: Optional[CommandLineLogger] = None
         :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
         """
         # Initialize utils.ifaces.BalancedFreezable

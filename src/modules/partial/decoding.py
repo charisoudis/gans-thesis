@@ -76,9 +76,10 @@ class ExpandingBlock(nn.Module):
         """
         # Check if skip connection is present
         assert self.use_skip is False or skip_conn_at_x is not None, 'use_skip was set, but skip_conn_at_x is None!'
+        # Upscale current input
+        x = self.upscale(x)
+        # Append skip connection (if one exists)
         if self.use_skip:
-            # Upscale current input
-            x = self.upscale(x)
             # Specify cat()'s dim to be 1 (aka channels), since we want a channel-wise concatenation of the two tensors
             x = torch.cat([x, UNETExpandingBlock.crop_skip_connection(skip_conn_at_x, x.shape)], dim=1)
         return self.expanding_block(x)

@@ -1,15 +1,23 @@
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Sequence
 
+import numpy as np
 import torch
 import torch.nn as nn
+from PIL.Image import Image
 from torch import Tensor
 from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torchvision.transforms import Compose
 
+from datasets.bags2shoes import Bags2ShoesDataset, Bags2ShoesDataloader
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
 from modules.ifaces import IGanGModule
-from utils.train import get_adam_optimizer
+from utils.filesystems.local import LocalCapsule, LocalFolder
+from utils.ifaces import FilesystemFolder
+from utils.metrics import GanEvaluator
+from utils.plot import plot_grid, create_img_grid
+from utils.train import get_optimizer, weights_init_naive
 
 
 class CycleGAN(nn.Module, IGanGModule):
@@ -32,99 +40,219 @@ class CycleGAN(nn.Module, IGanGModule):
                 'c_hidden': 64,
                 'n_contracting_blocks': 2,
                 'n_residual_blocks': 9,
+                'output_padding': 1,
             },
             'gen_b_to_a': {
                 'c_hidden': 64,
                 'n_contracting_blocks': 2,
                 'n_residual_blocks': 9,
+                'output_padding': 1,
             },
-            'recon_criterion': 'L1',
             'adv_criterion': 'MSE',
+            'cycle_criterion': 'L1',
+            'identity_criterion': 'L1',
         },
         'gen_opt': {
+            'optim_type': 'Adam',
             'lr': 1e-4,
-            'opt': 'adam',
-            'scheduler': None
+            'weight_decay': 1e-4,
+            'scheduler_type': None
         },
         'disc': {
             'disc_a': {
-                'c_hidden': 8,
+                'c_hidden': 64,
                 'n_contracting_blocks': 4,
-                'n_residual_blocks': 9,
+                'use_spectral_norm': False,
+                'adv_criterion': 'MSE',
             },
             'disc_b': {
-                'c_hidden': 8,
+                'c_hidden': 64,
                 'n_contracting_blocks': 4,
-                'n_residual_blocks': 9,
+                'use_spectral_norm': False,
+                'adv_criterion': 'MSE',
             },
-            'use_spectral_norm': True,
-            'recon_criterion': 'L1',
-            'adv_criterion': 'MSE',
         },
         'disc_opt': {
+            'optim_type': 'Adam',
             'lr': 1e-4,
-            'opt': 'adam',
-            'scheduler': None
+            'weight_decay': 1e-4,
+            'scheduler_type': None
         }
     }
 
-    def __init__(self, c_in: int = 3, c_out: int = 3, c_hidden_gen: int = 64, n_residual_blocks_gen: int = 9,
-                 c_hidden_disc: int = 8, n_contracting_blocks_disc: int = 4, use_spectral_norm_disc: bool = False,
-                 lr_scheduler_type: Optional[str] = None):
+    def __init__(self, model_fs_folder_or_root: FilesystemFolder, config_id: Optional[str] = 'default',
+                 chkpt_epoch: Optional[int or str] = None, chkpt_step: Optional[int] = None,
+                 device: torch.device or str = 'cpu', gen_transforms: Optional[Compose] = None, log_level: str = 'info',
+                 dataset_len: Optional[int] = None, reproducible_indices: Sequence = (0, -1),
+                 evaluator: Optional[GanEvaluator] = None, **evaluator_kwargs):
         """
-        CycleGAN class constructor.
-        :param c_in: the number of channels to expect from a given input
-        :param c_out: the number of channels to expect for a given output
-        :param c_hidden_gen: the number of hidden channels in generators (e.g. in Residual blocks)
-        :param n_residual_blocks_gen: the number of Residual blocks used in each generator
-        :param c_hidden_disc: the number of hidden channels in discriminators
-        :param n_contracting_blocks_disc: the number of contracting blocks in discriminators
-        :param use_spectral_norm_disc: if use spectral_norm (to penalize weight gradients) in discriminators
-        :param lr_scheduler_type: if specified, optimizers use LR scheduling of given type (supported: 'on_plateau',
-                                  'cyclic', )
+        PGPG class constructor.
+        :param (FilesystemFolder) model_fs_folder_or_root: a `utils.gdrive.GDriveFolder` object to download /
+                                                           upload model checkpoints and metrics from / to local or
+                                                           remote (Google Drive) filesystem
+        :param (str or None) config_id: if not `None` then the model configuration matching the given identifier will be
+                                        used to initialize the model
+        :param (int or str or None) chkpt_epoch: if not `None` then the model checkpoint at the given :attr:`step` will
+                                                 be loaded via `nn.Module().load_state_dict()`
+        :param (int or None) chkpt_step: if not `None` then the model checkpoint at the given :attr:`step` and at
+                                         the given :attr:`batch_size` will be loaded via `nn.Module().load_state_dict()`
+                                         call
+        :param (str) device: the device used for training (supported: "cuda", "cuda:<GPU_INDEX>", "cpu")
+        :param (Compose) gen_transforms: the image transforms of the dataset the generator is trained on (used in
+                                         visualization)
+        :param (optional) dataset_len: number of images in the dataset used to train the generator or None to fetched
+                                       from the :attr:`evaluator` dataset property (used for epoch tracking)
+        :param (Sequence) reproducible_indices: dataset indices to be fetched and visualized each time
+                                                `PixelDTGan::visualize(reproducible=True)` is called
+        :param (optional) evaluator: GanEvaluator instance of None to not evaluate models when taking snapshots
+        :param evaluator_kwargs: if :attr:`evaluator` is `None` these arguments must be present to initialize a new
+                                 `utils.metrics.GanEvaluator` instance
         """
-        super(CycleGAN, self).__init__()
-        # Domain Generators
-        self.gen_a_to_b = CycleGANGenerator(c_in=c_in, c_out=c_out, c_hidden=c_hidden_gen,
-                                            n_residual_blocks=n_residual_blocks_gen, n_contracting_blocks=2)
-        self.gen_b_to_a = CycleGANGenerator(c_in=c_in, c_out=c_out, c_hidden=c_hidden_gen,
-                                            n_residual_blocks=n_residual_blocks_gen)
-        # Domain Discriminators
-        self.disc_a = PatchGANDiscriminator(c_in=c_in, c_hidden=c_hidden_disc,
-                                            n_contracting_blocks=n_contracting_blocks_disc,
-                                            use_spectral_norm=use_spectral_norm_disc)
-        self.disc_b = PatchGANDiscriminator(c_in=c_in, c_hidden=c_hidden_disc,
-                                            n_contracting_blocks=n_contracting_blocks_disc,
-                                            use_spectral_norm=use_spectral_norm_disc)
+        # Initialize interface
+        IGanGModule.__init__(self, model_fs_folder_or_root, config_id=config_id, device=device, log_level=log_level,
+                             dataset_len=dataset_len, reproducible_indices=reproducible_indices,
+                             evaluator=evaluator, **evaluator_kwargs)
 
-        # Optimizers & LR Schedulers
-        self.gen_opt, self.gen_opt_lr_scheduler = get_adam_optimizer(self.gen_a_to_b, self.gen_b_to_a, lr=1e-4,
-                                                                     weight_decay=1e-4,
-                                                                     lr_scheduler_type=lr_scheduler_type)
-        self.disc_opt, self.disc_opt_lr_scheduler = get_adam_optimizer(self.disc_a, self.disc_b, lr=1e-4,
-                                                                       weight_decay=1e-4,
-                                                                       lr_scheduler_type=lr_scheduler_type)
-        self.lr_scheduler_type = lr_scheduler_type
+        # Instantiate torch.nn.Module class
+        nn.Module.__init__(self)
 
+        # Define CycleGAN model
+        shapes_conf = self._configuration['shapes']
+        criteria_conf = {
+            'adv': getattr(nn, f'{self._configuration["gen"]["adv_criterion"]}Loss')(),
+            'cycle': getattr(nn, f'{self._configuration["gen"]["cycle_criterion"]}Loss')(),
+            'identity': getattr(nn, f'{self._configuration["gen"]["identity_criterion"]}Loss')(),
+        }
+        #   - Domain Generators
+        self.gen_a_to_b = CycleGANGenerator(c_in=shapes_conf['c_in'], c_out=shapes_conf['c_out'],
+                                            logger=self.logger, criteria_conf=criteria_conf,
+                                            **self._configuration['gen']['gen_a_to_b'])
+        self.gen_b_to_a = CycleGANGenerator(c_in=shapes_conf['c_in'], c_out=shapes_conf['c_out'],
+                                            logger=self.logger, criteria_conf=criteria_conf,
+                                            **self._configuration['gen']['gen_b_to_a'])
+        #   - Domain Discriminators
+        self.disc_a = PatchGANDiscriminator(c_in=shapes_conf['c_in'], logger=self.logger,
+                                            **self._configuration['disc']['disc_a'])
+        self.disc_b = PatchGANDiscriminator(c_in=shapes_conf['c_in'], logger=self.logger,
+                                            **self._configuration['disc']['disc_b'])
+        # Move models to {C,G,T}PU
+        self.gen_a_to_b.to(device)
+        self.gen_b_to_a.to(device)
+        self.disc_a.to(device)
+        self.disc_b.to(device)
+        self.device = device
+        self.is_master_device = (isinstance(device, torch.device) and device.type == 'cuda' and device.index == 0) \
+                                or (isinstance(device, torch.device) and device.type == 'cpu') \
+                                or (isinstance(device, str) and device == 'cpu')
+        #   - Optimizers & LR Schedulers
+        self.gen_opt, self.gen_opt_lr_scheduler = get_optimizer(self.gen_a_to_b, self.gen_b_to_a,
+                                                                **self._configuration['gen_opt'])
+        self.disc_opt, self.disc_opt_lr_scheduler = get_optimizer(self.disc_a, self.disc_b,
+                                                                  **self._configuration['disc_opt'])
+        # Load checkpoint from Google Drive
+        self.other_state_dicts = {}
+        if chkpt_epoch:
+            try:
+                chkpt_filepath = self.fetch_checkpoint(epoch_or_id=chkpt_epoch, step=chkpt_step)
+                self.logger.debug(f'Loading checkpoint file: {chkpt_filepath}')
+                _state_dict = torch.load(chkpt_filepath, map_location='cpu')
+                self.load_state_dict(_state_dict)
+                if 'gforward' in _state_dict.keys():
+                    self.load_gforward_state(_state_dict['gforward'])
+            except FileNotFoundError as e:
+                self.logger.critical(str(e))
+                chkpt_epoch = None
+        if not chkpt_epoch:
+            # Initialize weights with small values
+            self.gen_a_to_b = self.gen_a_to_b.apply(weights_init_naive)
+            self.gen_b_to_a = self.gen_b_to_a.apply(weights_init_naive)
+            self.disc_a = self.disc_a.apply(weights_init_naive)
+            self.disc_b = self.disc_b.apply(weights_init_naive)
         # For visualizations
         self.fake_a = None
         self.fake_b = None
         self.real_a = None
         self.real_b = None
+        self.gen_transforms = gen_transforms
 
-        # Creates a GradScaler (for float16 forward/backward passes) once
+        # Create a GradScaler (for float16 forward/backward passes) once
         self.grad_scaler = GradScaler()
 
+        # Save arguments
+        self.device = device
+
+    def load_configuration(self, configuration: dict) -> None:
+        IGanGModule.load_configuration(self, configuration)
+
+    #
+    # ------------
+    # nn.Module
+    # -----------
+    #
+
+    def load_state_dict(self, state_dict: dict, strict: bool = True):
+        """
+        This method overrides parent method of `nn.Module` and is used to apply checkpoint dict to model.
+        :param state_dict: see `nn.Module.load_state_dict()`
+        :param strict: see `nn.Module.load_state_dict()`
+        :return: see `nn.Module.load_state_dict()`
+        """
+        # Check if checkpoint is for different config
+        if 'config_id' in state_dict.keys() and state_dict['config_id'] != self.config_id:
+            self.logger.critical(f'Config IDs mismatch (self: "{self.config_id}", state_dict: '
+                                 f'"{state_dict["config_id"]}"). NOT applying checkpoint.')
+            return
+        # Load model checkpoints
+        self.gen_a_to_b.load_state_dict(state_dict['gen_a_to_b'])
+        self.gen_b_to_a.load_state_dict(state_dict['gen_b_to_a'])
+        self.gen_opt.load_state_dict(state_dict['gen_opt'])
+        self.disc_a.load_state_dict(state_dict['disc_a'])
+        self.disc_b.load_state_dict(state_dict['disc_b'])
+        self.disc_opt.load_state_dict(state_dict['disc_opt'])
+        self._nparams = state_dict['nparams']
+        # Update latest metrics with checkpoint's metrics
+        if 'metrics' in state_dict.keys():
+            self.latest_metrics = state_dict['metrics']
+        self.logger.debug(f'State dict loaded. Keys: {tuple(state_dict.keys())}')
+        for _k in [_k for _k in state_dict.keys() if _k not in ('gen_a_to_b', 'gen_b_to_a', 'gen_opt', 'disc_a',
+                                                                'disc_b', 'disc_opt', 'configuration')]:
+            self.other_state_dicts[_k] = state_dict[_k]
+
+    def state_dict(self, *args, **kwargs) -> dict:
+        """
+        In this method we define the state dict, i.e. the model checkpoint that will be saved to the .pth file.
+        :param args: see `nn.Module.state_dict()`
+        :param kwargs: see `nn.Module.state_dict()`
+        :return: see `nn.Module.state_dict()`
+        """
+        mean_gen_loss = np.mean(self.gen_losses)
+        self.gen_losses.clear()
+        mean_disc_loss = np.mean(self.disc_losses)
+        self.disc_losses.clear()
+        return {
+            'gen_a_to_b': self.gen_a_to_b.state_dict(),
+            'gen_b_to_a': self.gen_b_to_a.state_dict(),
+            'gen_loss': mean_gen_loss,
+            'gen_opt': self.gen_opt.state_dict(),
+            'disc_a': self.disc_a.state_dict(),
+            'disc_b': self.disc_b.state_dict(),
+            'disc_loss': mean_disc_loss,
+            'disc_opt': self.disc_opt.state_dict(),
+            'nparams': self.nparams,
+            'nparams_hr': self.nparams_hr,
+            'config_id': self.config_id,
+            'configuration': self._configuration,
+        }
+
     def forward(self, real_a: Tensor, real_b: Tensor, lambda_identity: float = 0.1, lambda_cycle: float = 10) \
-            -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+            -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Forward pass through the whole CycleGAN model.
         :param real_a: batch of images from real dataset of domain A
         :param real_b: batch of images from real dataset of domain B
         :param lambda_identity: weight for identity loss in total generator loss
         :param lambda_cycle: weight for cycle-consistency loss in total generator loss
-        :return: a tuple containing: 1) discriminator of domain A loss, 2) discriminator of domain B loss, 3) Joint
-                 generators loss, 4) fake images from generator B --> A and 5) fake images from generator A --> B
+        :return: a tuple containing: 1) joint discriminator loss and 2) joint generators loss
         """
         # Update gdrive model state
         if self.is_master_device:
@@ -147,10 +275,12 @@ class CycleGAN(nn.Module, IGanGModule):
                     disc_b_loss = self.disc_b.get_loss(real=real_b, fake=fake_b, criterion=nn.MSELoss())
                     disc_loss = 0.5 * (disc_a_loss + disc_b_loss)
                 #   - backprop & update weights
-                # disc_loss.backward(retain_graph=True)
-                # self.disc_opt.step()
-                self.grad_scaler.scale(disc_loss).backward()
-                self.grad_scaler.step(self.disc_opt)
+                if self.device == 'cuda':
+                    self.grad_scaler.scale(disc_loss).backward()
+                    self.grad_scaler.step(self.disc_opt)
+                else:
+                    disc_loss.backward(retain_graph=True)
+                    self.disc_opt.step()
                 #   - update LR (if needed)
                 if self.disc_opt_lr_scheduler:
                     if isinstance(self.disc_opt_lr_scheduler, ReduceLROnPlateau):
@@ -172,10 +302,12 @@ class CycleGAN(nn.Module, IGanGModule):
                                                                  lambda_identity=lambda_identity,
                                                                  lambda_cycle=lambda_cycle)
                 #   - backprop & update weights
-                # gen_loss.backward()
-                # self.gen_opt.step()
-                self.grad_scaler.scale(gen_loss).backward()
-                self.grad_scaler.step(self.gen_opt)
+                if self.device == 'cuda':
+                    self.grad_scaler.scale(gen_loss).backward()
+                    self.grad_scaler.step(self.gen_opt)
+                else:
+                    gen_loss.backward()
+                    self.gen_opt.step()
                 #   - update LR (if needed)
                 if self.gen_opt_lr_scheduler:
                     if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
@@ -184,7 +316,8 @@ class CycleGAN(nn.Module, IGanGModule):
                         self.gen_opt_lr_scheduler.step()
 
         # Update grad scaler
-        self.grad_scaler.update()
+        if self.device == 'cuda':
+            self.grad_scaler.update()
 
         # Save for visualization
         if self.is_master_device:
@@ -264,3 +397,116 @@ class CycleGAN(nn.Module, IGanGModule):
                    + lambda_identity * (identity_loss_ab + identity_loss_ba) \
                    + lambda_cycle * (cycle_consistency_loss_aba + cycle_consistency_loss_bab)
         return gen_loss, fake_a, fake_b
+
+    #
+    # --------------
+    # Visualizable
+    # -------------
+    #
+
+    def visualize_indices(self, indices: int or Sequence) -> Image:
+        # Fetch images
+        assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
+        images = []
+        with self.gen_a_to_b.frozen():
+            with self.gen_b_to_a.frozen():
+                for index in indices:
+                    _real_a, _real_b = self.evaluator.dataset[index]
+                    _fake_b = self.gen_a_to_b(_real_a.unsqueeze(0).to(self.device)).squeeze(0)
+                    _fake_a = self.gen_b_to_a(_real_b.unsqueeze(0).to(self.device)).squeeze(0)
+                    images.append(_real_a.cpu())
+                    images.append(_fake_b.cpu())
+                    images.append(_real_b.cpu())
+                    images.append(_fake_a.cpu())
+
+        # Convert to grid of images
+        ncols = 2
+        nrows = int(len(images) / ncols)
+        grid = create_img_grid(images=torch.stack(images), nrows=nrows, ncols=ncols,
+                               gen_transforms=self.gen_transforms)
+
+        # Plot
+        return plot_grid(grid=grid, figsize=(ncols, nrows),
+                         footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)} | '
+                                    f'i={indices}',
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+
+    def visualize(self, reproducible: bool = False) -> Image:
+        if reproducible:
+            return self.visualize_indices(indices=self.reproducible_indices)
+
+        # Get first & last sample from saved images in self
+        real_a_0 = self.real_a[0]
+        fake_b_0 = self.fake_b[0]
+        real_b_0 = self.real_b[0]
+        fake_a_0 = self.fake_a[0]
+        real_a__1 = self.real_a[-1]
+        fake_b__1 = self.fake_b[-1]
+        real_b__1 = self.real_b[-1]
+        fake_a__1 = self.fake_a[-1]
+
+        # Concat images to a 4x2 grid (each row is a separate generation, the columns contain real and generated images
+        # side-by-side)
+        ncols = 2
+        nrows = 4
+        grid = create_img_grid(images=torch.stack([
+            real_a_0, fake_b_0, real_b_0, fake_a_0,
+            real_a__1, fake_b__1, real_b__1, fake_a__1,
+        ]), ncols=2, gen_transforms=self.gen_transforms)
+
+        # Plot
+        return plot_grid(grid=grid.numpy(), figsize=(ncols, nrows),
+                         footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}',
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+
+
+if __name__ == '__main__':
+    # Get GoogleDrive root folder
+    _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
+    _log_level = 'debug'
+
+    # Via locally-mounted Google Drive (when running from inside Google Colaboratory)
+    _groot = LocalFolder.root(capsule_or_fs=LocalCapsule(_local_gdrive_root))
+
+    # Define folder roots
+    _models_groot = _groot.subfolder_by_name('Models')
+    _datasets_groot = _groot.subfolder_by_name('Datasets')
+
+    # Initialize model evaluator
+    _gen_transforms = Bags2ShoesDataset.get_image_transforms(
+        target_shape=CycleGAN.DefaultConfiguration['shapes']['w_in'],
+        target_channels=CycleGAN.DefaultConfiguration['shapes']['c_in']
+    )
+
+    _bs = 2
+    _dl = Bags2ShoesDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
+                               log_level=_log_level, batch_size=_bs, pin_memory=False)
+    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_groot, gen_dataset=_dl.dataset, target_index=1,
+                              condition_indices=(0,), n_samples=2, batch_size=1, f1_k=1, device='cpu')
+
+    # Initialize model
+    _ccgan = CycleGAN(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dl.dataset),
+                      chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
+    print(_ccgan)
+
+    _device = _ccgan.device
+    _x, _y = next(iter(_dl))
+    _disc_loss, _gen_loss = _ccgan(_x.to(_device), _y.to(_device))
+    print(_disc_loss, _gen_loss)
+    print('Number of parameters: gen_a_to_b=' + _ccgan.gen_a_to_b.nparams_hr)
+    print('Number of parameters: gen_b_to_a=' + _ccgan.gen_b_to_a.nparams_hr)
+    print('Number of parameters: disc_a=' + _ccgan.disc_a.nparams_hr)
+    print('Number of parameters: disc_b=' + _ccgan.disc_b.nparams_hr)
+    print('Number of parameters: TOTAL=' + _ccgan.nparams_hr)
+
+    # _img = _pxldt.visualize(reproducible=(300, 1001))
+    # plt.imshow(_img)
+    # plt.show()
+    # _img.show()
+    # _img.show()
+    # with open('sample.png', 'wb') as fp:
+    #     _img.save(fp)
+    #     _pxldt.logger.debug('Image saved.')
+    exit(0)

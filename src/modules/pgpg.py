@@ -17,7 +17,7 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import create_img_grid, plot_grid
-from utils.train import weights_init_naive, get_adam_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
+from utils.train import weights_init_naive, get_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
 
 
 class PGPG(nn.Module, IGanGModule):
@@ -55,8 +55,8 @@ class PGPG(nn.Module, IGanGModule):
         },
         'gen_opt': {
             'lr': 1e-4,
-            'opt': 'adam',
-            'scheduler': None
+            'optim_type': 'Adam',
+            'scheduler_type': None
         },
         'disc': {
             'c_hidden': 8,
@@ -66,8 +66,8 @@ class PGPG(nn.Module, IGanGModule):
         },
         'disc_opt': {
             'lr': 1e-4,
-            'opt': 'adam',
-            'scheduler': None
+            'optim_type': 'Adam',
+            'scheduler_type': None
         }
     }
 
@@ -131,8 +131,8 @@ class PGPG(nn.Module, IGanGModule):
         # Note: Both generators, G1 & G2, are trained using a joint optimizer
         gen_opt_conf = self._configuration['gen_opt']
         disc_opt_conf = self._configuration['disc_opt']
-        self.gen_opt, _ = get_adam_optimizer(self.gen, lr=gen_opt_conf['lr'])
-        self.disc_opt, _ = get_adam_optimizer(self.disc, lr=disc_opt_conf['lr'])
+        self.gen_opt, _ = get_optimizer(self.gen, lr=gen_opt_conf['lr'])
+        self.disc_opt, _ = get_optimizer(self.disc, lr=disc_opt_conf['lr'])
 
         # Load checkpoint from Google Drive
         self.other_state_dicts = {}
@@ -154,28 +154,31 @@ class PGPG(nn.Module, IGanGModule):
             chkpt_epoch = 0
 
         # Define LR schedulers (after optimizer checkpoints have been loaded)
-        if gen_opt_conf['scheduler']:
-            if gen_opt_conf['scheduler'] == 'cyclic':
+        if gen_opt_conf['scheduler_type']:
+            if gen_opt_conf['scheduler_type'] == 'cyclic':
                 self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(
-                    self.gen_opt, schedule_type=str(gen_opt_conf['scheduler']), base_lr=0.1 * gen_opt_conf['lr'],
+                    self.gen_opt, schedule_type=str(gen_opt_conf['scheduler_type']), base_lr=0.1 * gen_opt_conf['lr'],
                     max_lr=gen_opt_conf['lr'], step_size_up=2 * dataset_len if evaluator else 1000, mode='exp_range',
                     gamma=0.9, cycle_momentum=False,
                     last_epoch=chkpt_epoch if 'initial_lr' in self.gen_opt.param_groups[0].keys() else -1)
             else:
                 self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt,
-                                                                       schedule_type=str(gen_opt_conf['scheduler']))
+                                                                       schedule_type=str(
+                                                                           gen_opt_conf['scheduler_type']))
         else:
             self.gen_opt_lr_scheduler = None
-        if disc_opt_conf['scheduler']:
-            if disc_opt_conf['scheduler'] == 'cyclic':
+        if disc_opt_conf['scheduler_type']:
+            if disc_opt_conf['scheduler_type'] == 'cyclic':
                 self.disc_opt_lr_scheduler = get_optimizer_lr_scheduler(
-                    self.disc_opt, schedule_type=str(disc_opt_conf['scheduler']), base_lr=0.1 * disc_opt_conf['lr'],
+                    self.disc_opt, schedule_type=str(disc_opt_conf['scheduler_type']),
+                    base_lr=0.1 * disc_opt_conf['lr'],
                     max_lr=disc_opt_conf['lr'], step_size_up=2 * len(_dataset) if evaluator else 1000, mode='exp_range',
                     gamma=0.9, cycle_momentum=False,
                     last_epoch=chkpt_epoch if 'initial_lr' in self.disc_opt.param_groups[0].keys() else -1)
             else:
                 self.disc_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_opt,
-                                                                        schedule_type=str(disc_opt_conf['scheduler']))
+                                                                        schedule_type=str(
+                                                                            disc_opt_conf['scheduler_type']))
         else:
             self.disc_opt_lr_scheduler = None
 

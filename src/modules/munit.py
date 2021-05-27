@@ -6,7 +6,7 @@ from torch import Tensor
 
 from modules.discriminators.munit import MUNITDiscriminator
 from modules.generators.munit import MUNITGenerator
-from utils.train import get_adam_optimizer, get_optimizer_lr_scheduler
+from utils.train import get_optimizer, get_optimizer_lr_scheduler
 
 
 class MUNIT(nn.Module):
@@ -48,8 +48,8 @@ class MUNIT(nn.Module):
 
         # Optimizers
         # Attention: In this version of MUNIT we jointly train both generators and jointly train both discriminators
-        self.gen_opt, _ = get_adam_optimizer(self.gen_a, self.gen_b, lr=1e-2)
-        self.disc_opt, _ = get_adam_optimizer(self.disc_a, self.disc_b, lr=1e-2)
+        self.gen_opt, _ = get_optimizer(self.gen_a, self.gen_b, lr=1e-2)
+        self.disc_opt, _ = get_optimizer(self.disc_a, self.disc_b, lr=1e-2)
         # Optimizer LR Schedulers
         self.lr_scheduler_type = lr_scheduler_type
         if lr_scheduler_type is not None:

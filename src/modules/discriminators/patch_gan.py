@@ -8,6 +8,8 @@ from modules.partial.decoding import FeatureMapLayer, ChannelsProjectLayer
 from modules.partial.encoding import ContractingBlock
 from utils.command_line_logger import CommandLineLogger
 from utils.ifaces import BalancedFreezable, Verbosable
+from utils.pytorch import get_total_params
+from utils.string import to_human_readable
 
 
 class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
@@ -18,7 +20,8 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
     """
 
     def __init__(self, c_in: int, c_hidden: int = 8, n_contracting_blocks: int = 4, use_spectral_norm: bool = False,
-                 use_upfeature: bool = True, logger: Optional[CommandLineLogger] = None):
+                 use_upfeature: bool = True, logger: Optional[CommandLineLogger] = None,
+                 adv_criterion: Optional[str] = None):
         """
         PatchGANDiscriminator class constructor.
         :param (int) c_in: number of input channels
@@ -27,6 +30,9 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         :param (bool) use_spectral_norm: set to True to use Spectral Normalization in the ChannelsProject (last) layer
         :param (bool) use_upfeature: set to True to initially up-channel the input before contracting blocks
         :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
+        :param (optional) adv_criterion: str description of desired default adversarial criterion (e.g. 'MSE', 'BCE',
+                                         'BCEWithLogits', etc.). If None, then it must be set in the respective function
+                                         call.
         """
         # Initialize utils.ifaces.BalancedFreezable
         BalancedFreezable.__init__(self)
@@ -53,7 +59,12 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
             )
 
         self.logger = CommandLineLogger(name=self.__class__.__name__) if logger is None else logger
+        self.adv_criterion = getattr(nn, f'{adv_criterion}Loss')() if adv_criterion is not None else None
         self.verbose_enabled = False
+
+    @property
+    def nparams_hr(self):
+        return to_human_readable(get_total_params(self))
 
     def forward(self, x: Tensor, y: Optional[Tensor] = None) -> Tensor:
         """
@@ -70,17 +81,20 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         return self.patch_gan_discriminator(x)
 
     def get_loss(self, real: Tensor, fake: Tensor, condition: Optional[Tensor] = None,
-                 criterion: nn.modules.Module = nn.BCELoss(), real_unassoc: Optional[Tensor] = None) -> Tensor:
+                 criterion: Optional[nn.modules.Module] = None, real_unassoc: Optional[Tensor] = None) -> Tensor:
         """
         Compute adversarial loss.
         :param (torch.Tensor) real: image tensor of shape (N, C, H, W) from real dataset
         :param (torch.Tensor) fake: image tensor of shape (N, C, H, W) produced by generator (i.e. fake images)
         :param (optional) condition: condition image tensor of shape (N, C_in/2, H, W) that is stacked before input to
                                      PatchGAN discriminator (optional)
-        :param (torch.nn.Module) criterion: loss function (such as nn.BCELoss, nn.MSELoss and others)
+        :param (optional) criterion: loss function (such as nn.BCELoss, nn.MSELoss and others)
         :param (torch.Tensor) real_unassoc: (to use only for Associated/Unassociated discriminator (e.g. PixelDTGan))
         :return: torch.Tensor containing loss value(s)
         """
+        # Setup criterion
+        criterion = self.adv_criterion if criterion is None else criterion
+        # Proceed with loss calculation
         predictions_on_real = self(real, condition)
         predictions_on_fake = self(fake, condition)
         if type(criterion) == torch.nn.modules.loss.BCELoss:

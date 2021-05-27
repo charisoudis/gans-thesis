@@ -19,17 +19,20 @@ class PixelDTGanDiscriminator(PatchGANDiscriminator):
     """
 
     def __init__(self, c_in: int, c_hidden: int = 128, n_contracting_blocks: int = 4, use_spectral_norm: bool = False,
-                 logger: Optional[CommandLineLogger] = None):
+                 logger: Optional[CommandLineLogger] = None, adv_criterion: Optional[str] = None):
         """
         PixelDTGanDiscriminator class constructor.
         :param (int) c_in: number of input channels
         :param (int) c_hidden: number of hidden channels
         :param (int) n_contracting_blocks: number of contracting blocks (defaults to 4 as presented in original paper)
         :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
+        :param (optional) adv_criterion: str description of desired default adversarial criterion (e.g. 'MSE', 'BCE',
+                                         'BCEWithLogits', etc.). If None, then it must be set in the respective function
+                                         call.
         """
         super(PixelDTGanDiscriminator, self).__init__(c_in, c_hidden, n_contracting_blocks=n_contracting_blocks,
                                                       use_upfeature=False, use_spectral_norm=use_spectral_norm,
-                                                      logger=logger)
+                                                      logger=logger, adv_criterion=adv_criterion)
 
 
 if __name__ == '__main__':

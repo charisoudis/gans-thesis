@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from IPython import get_ipython
 from torch import nn
-from torch.optim import Optimizer, Adam
+from torch.optim import Optimizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
 # noinspection PyProtectedMember
 from torch.utils.data import random_split, Dataset, DataLoader
@@ -16,32 +16,29 @@ from utils.gdrive_bak import GDriveModelCheckpoints
 from utils.ifaces import ResumableDataLoader
 
 
-def get_adam_optimizer(*models, lr: float = 1e-4, lr_scheduler_type: Optional[str] = None,
-                       betas: tuple = (0.5, 0.999), delta: float = 1e-8, weight_decay: float = 0,
-                       **lr_scheduler_kwargs) -> Tuple[Optimizer, Optional[CyclicLR or ReduceLROnPlateau]]:
+def get_optimizer(*models, optim_type: str = 'Adam',
+                  scheduler_type: Optional[str] = None, scheduler_kwargs: Optional[dict] = None,
+                  **optim_args) -> Tuple[Optimizer, Optional[CyclicLR or ReduceLROnPlateau]]:
     """
     Get Adam optimizer for jointly training ${models} argument.
     :param models: one or more models to apply optimizer on
-    :param (float) lr: learning rate
-    :param (str|None) lr_scheduler_type: if set, then it is the type of LR Scheduler user
-    :param (tuple) betas: (p_1, p_2) exponential decay parameters for Adam optimiser's moment estimates.
-                          According to Goodfellow, good defaults are (0.9, 0.999).
-    :param (float) delta: small constant that's used for numerical stability.
-                          According to Goodfellow, good default is 1e-8.
-    :param (float) weight_decay: small constant that's used for numerical stability.
-                          According to Goodfellow, good default is 1e-8.
+    :param (float) optim_type: type of optimizer to use (all of PyTorch's optimizers are supported)
+    :param (str|None) scheduler_type: if set, then it is the type of LR Scheduler user
+    :param (optional) scheduler_kwargs: scheduler kwargs as a dict object (NOT **KWARGS-LIKE PASSING)
+    :param (dict) optim_args: optimizer class's arguments
     :return: a tuple containing an instance of `torch.optim.Adam` optimizer, the LR scheduler instance or None
     """
     # Initialize optimizer
     joint_params = []
     for model in models:
         joint_params += list(model.parameters())
-    optim = Adam(joint_params, lr=lr, betas=betas, eps=delta, weight_decay=weight_decay)
+    optim_class = getattr(torch.optim, optim_type)
+    optim = optim_class(joint_params, **optim_args)
     # If no LR scheduler requested, return None as the 2nd parameter
-    if lr_scheduler_type is None:
+    if scheduler_type is None:
         return optim, None
     # Initiate the LR Scheduler and return it as well
-    lr_scheduler = get_optimizer_lr_scheduler(optimizer=optim, schedule_type=lr_scheduler_type, **lr_scheduler_kwargs)
+    lr_scheduler = get_optimizer_lr_scheduler(optimizer=optim, schedule_type=scheduler_type, **scheduler_kwargs)
     return optim, lr_scheduler
 
 

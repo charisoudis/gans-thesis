@@ -86,12 +86,6 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
         self._transforms = None
         self.transforms = image_transforms
 
-    def __del__(self):
-        if self.handbags_file:
-            self.handbags_file.id.close()
-        if self.shoes_file:
-            self.shoes_file.id.close()
-
     @property
     def transforms(self):
         return self._transforms
