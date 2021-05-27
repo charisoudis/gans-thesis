@@ -146,9 +146,9 @@ class PixelDTGan(nn.Module, IGanGModule):
         # Note: Both generators, G1 & G2, are trained using a joint optimizer
         gen_opt_conf = self._configuration['gen_opt']
         disc_opt_conf = self._configuration['disc_opt']
-        self.gen_opt = get_adam_optimizer(self.gen, lr=gen_opt_conf['lr'])
-        self.disc_r_opt = get_adam_optimizer(self.disc_r, lr=disc_opt_conf['lr'])
-        self.disc_a_opt = get_adam_optimizer(self.disc_a, lr=disc_opt_conf['lr'])
+        self.gen_opt, _ = get_adam_optimizer(self.gen, lr=gen_opt_conf['lr'])
+        self.disc_r_opt, _ = get_adam_optimizer(self.disc_r, lr=disc_opt_conf['lr'])
+        self.disc_a_opt, _ = get_adam_optimizer(self.disc_a, lr=disc_opt_conf['lr'])
 
         # Load checkpoint from Google Drive
         self.other_state_dicts = {}

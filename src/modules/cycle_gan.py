@@ -1,19 +1,72 @@
 from typing import Tuple, Optional
 
+import torch
 import torch.nn as nn
-from torch import Tensor, no_grad
+from torch import Tensor
+from torch.cuda.amp import GradScaler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
-from utils.train import get_adam_optimizer, get_optimizer_lr_scheduler
+from modules.ifaces import IGanGModule
+from utils.train import get_adam_optimizer
 
 
-class CycleGAN(nn.Module):
+class CycleGAN(nn.Module, IGanGModule):
     """
     CycleGAN Class:
     This is the whole CycleGAN model consisting of two pix2pixHD-like Generators and two PatchGAN Discriminators each
     for its respective domain.
     """
+
+    # This is the latest model configuration that lead to SOTA results
+    DefaultConfiguration = {
+        'shapes': {
+            'c_in': 3,
+            'c_out': 3,
+            'w_in': 64,
+            'h_in': 64,
+        },
+        'gen': {
+            'gen_a_to_b': {
+                'c_hidden': 64,
+                'n_contracting_blocks': 2,
+                'n_residual_blocks': 9,
+            },
+            'gen_b_to_a': {
+                'c_hidden': 64,
+                'n_contracting_blocks': 2,
+                'n_residual_blocks': 9,
+            },
+            'recon_criterion': 'L1',
+            'adv_criterion': 'MSE',
+        },
+        'gen_opt': {
+            'lr': 1e-4,
+            'opt': 'adam',
+            'scheduler': None
+        },
+        'disc': {
+            'disc_a': {
+                'c_hidden': 8,
+                'n_contracting_blocks': 4,
+                'n_residual_blocks': 9,
+            },
+            'disc_b': {
+                'c_hidden': 8,
+                'n_contracting_blocks': 4,
+                'n_residual_blocks': 9,
+            },
+            'use_spectral_norm': True,
+            'recon_criterion': 'L1',
+            'adv_criterion': 'MSE',
+        },
+        'disc_opt': {
+            'lr': 1e-4,
+            'opt': 'adam',
+            'scheduler': None
+        }
+    }
 
     def __init__(self, c_in: int = 3, c_out: int = 3, c_hidden_gen: int = 64, n_residual_blocks_gen: int = 9,
                  c_hidden_disc: int = 8, n_contracting_blocks_disc: int = 4, use_spectral_norm_disc: bool = False,
@@ -33,7 +86,7 @@ class CycleGAN(nn.Module):
         super(CycleGAN, self).__init__()
         # Domain Generators
         self.gen_a_to_b = CycleGANGenerator(c_in=c_in, c_out=c_out, c_hidden=c_hidden_gen,
-                                            n_residual_blocks=n_residual_blocks_gen)
+                                            n_residual_blocks=n_residual_blocks_gen, n_contracting_blocks=2)
         self.gen_b_to_a = CycleGANGenerator(c_in=c_in, c_out=c_out, c_hidden=c_hidden_gen,
                                             n_residual_blocks=n_residual_blocks_gen)
         # Domain Discriminators
@@ -44,24 +97,23 @@ class CycleGAN(nn.Module):
                                             n_contracting_blocks=n_contracting_blocks_disc,
                                             use_spectral_norm=use_spectral_norm_disc)
 
-        # Optimizers
-        self.gen_opt = get_adam_optimizer(self.gen_a_to_b, self.gen_b_to_a, lr=1e-2)
-        self.disc_a_opt = get_adam_optimizer(self.disc_a, lr=1e-2)
-        self.disc_b_opt = get_adam_optimizer(self.disc_b, lr=1e-2)
-        # Optimizer LR Schedulers
+        # Optimizers & LR Schedulers
+        self.gen_opt, self.gen_opt_lr_scheduler = get_adam_optimizer(self.gen_a_to_b, self.gen_b_to_a, lr=1e-4,
+                                                                     weight_decay=1e-4,
+                                                                     lr_scheduler_type=lr_scheduler_type)
+        self.disc_opt, self.disc_opt_lr_scheduler = get_adam_optimizer(self.disc_a, self.disc_b, lr=1e-4,
+                                                                       weight_decay=1e-4,
+                                                                       lr_scheduler_type=lr_scheduler_type)
         self.lr_scheduler_type = lr_scheduler_type
-        if lr_scheduler_type is not None:
-            self.gen_opt_lr_scheduler = get_optimizer_lr_scheduler(self.gen_opt, schedule_type=lr_scheduler_type)
-            self.disc_a_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_a_opt, schedule_type=lr_scheduler_type)
-            self.disc_b_opt_lr_scheduler = get_optimizer_lr_scheduler(self.disc_b_opt, schedule_type=lr_scheduler_type)
 
-    def opt_zero_grad(self) -> None:
-        """
-        Erases previous gradients for all optimizers defined in this model.
-        """
-        self.disc_a_opt.zero_grad()
-        self.disc_b_opt.zero_grad()
-        self.gen_opt.zero_grad()
+        # For visualizations
+        self.fake_a = None
+        self.fake_b = None
+        self.real_a = None
+        self.real_b = None
+
+        # Creates a GradScaler (for float16 forward/backward passes) once
+        self.grad_scaler = GradScaler()
 
     def forward(self, real_a: Tensor, real_b: Tensor, lambda_identity: float = 0.1, lambda_cycle: float = 10) \
             -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
@@ -74,34 +126,106 @@ class CycleGAN(nn.Module):
         :return: a tuple containing: 1) discriminator of domain A loss, 2) discriminator of domain B loss, 3) Joint
                  generators loss, 4) fake images from generator B --> A and 5) fake images from generator A --> B
         """
-        # Erase previous gradients
-        self.opt_zero_grad()
-        # Produce fake images for discriminators
-        with no_grad():
-            fake_a = self.gen_b_to_a(real_b)
-            fake_b = self.gen_a_to_b(real_a)
-        # Update discriminator A
-        disc_a_loss = self.disc_a.get_loss(real=real_a, fake=fake_a, criterion=nn.MSELoss())
-        disc_a_loss.backward(retain_graph=True)
-        self.disc_a_opt.step()
-        # Update discriminator B
-        disc_b_loss = self.disc_b.get_loss(real=real_b, fake=fake_b, criterion=nn.MSELoss())
-        disc_b_loss.backward(retain_graph=True)
-        self.disc_b_opt.step()
-        # Update generators
-        gen_loss, fake_a, fake_b = self.get_gen_loss(real_a, real_b, lambda_identity=lambda_identity,
-                                                     lambda_cycle=lambda_cycle)
-        gen_loss.backward()
-        self.gen_opt.step()
-        # Update LR (if needed)
-        if self.lr_scheduler_type is not None:
-            self.disc_a_opt_lr_scheduler.step(metrics=disc_a_loss) if self.lr_scheduler_type == 'on_plateau' \
-                else self.disc_a_opt_lr_scheduler.step()
-            self.disc_b_opt_lr_scheduler.step(metrics=disc_b_loss) if self.lr_scheduler_type == 'on_plateau' \
-                else self.disc_b_opt_lr_scheduler.step()
-            self.gen_opt_lr_scheduler.step(metrics=gen_loss) if self.lr_scheduler_type == 'on_plateau' \
-                else self.gen_opt_lr_scheduler.step()
-        return disc_a_loss, disc_b_loss, gen_loss, fake_a, fake_b
+        # Update gdrive model state
+        if self.is_master_device:
+            self.gforward(real_a.shape[0])
+
+        #############################################
+        ########   Update Discriminator(s)   ########
+        #############################################
+        with self.gen_a_to_b.frozen():
+            with self.gen_b_to_a.frozen():
+                # Update discriminators
+                #   - zero-out discriminators' gradients (before backprop)
+                self.disc_opt.zero_grad()
+                #   - produce fake images & loss using half-precision (float16)
+                with torch.cuda.amp.autocast():
+                    fake_b = self.gen_a_to_b(real_a)
+                    fake_a = self.gen_b_to_a(real_b)
+                    #   - compute joint discriminator loss
+                    disc_a_loss = self.disc_a.get_loss(real=real_a, fake=fake_a, criterion=nn.MSELoss())
+                    disc_b_loss = self.disc_b.get_loss(real=real_b, fake=fake_b, criterion=nn.MSELoss())
+                    disc_loss = 0.5 * (disc_a_loss + disc_b_loss)
+                #   - backprop & update weights
+                # disc_loss.backward(retain_graph=True)
+                # self.disc_opt.step()
+                self.grad_scaler.scale(disc_loss).backward()
+                self.grad_scaler.step(self.disc_opt)
+                #   - update LR (if needed)
+                if self.disc_opt_lr_scheduler:
+                    if isinstance(self.disc_opt_lr_scheduler, ReduceLROnPlateau):
+                        self.disc_opt_lr_scheduler.step(metrics=disc_loss)
+                    else:
+                        self.disc_opt_lr_scheduler.step()
+
+        #############################################
+        ########     Update Generator(s)     ########
+        #############################################
+        with self.disc_a.frozen():
+            with self.disc_b.frozen():
+                #   - zero-out generators' gradients
+                self.gen_opt.zero_grad()
+                #   - produce fake images & generator loss using half-precision (float16)
+                with torch.cuda.amp.autocast():
+                    gen_loss, fake_a, fake_b = self.get_gen_loss(real_a=real_a, real_b=real_b,
+                                                                 adv_criterion=nn.MSELoss(),
+                                                                 lambda_identity=lambda_identity,
+                                                                 lambda_cycle=lambda_cycle)
+                #   - backprop & update weights
+                # gen_loss.backward()
+                # self.gen_opt.step()
+                self.grad_scaler.scale(gen_loss).backward()
+                self.grad_scaler.step(self.gen_opt)
+                #   - update LR (if needed)
+                if self.gen_opt_lr_scheduler:
+                    if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
+                        self.gen_opt_lr_scheduler.step(metrics=gen_loss)
+                    else:
+                        self.gen_opt_lr_scheduler.step()
+
+        # Update grad scaler
+        self.grad_scaler.update()
+
+        # Save for visualization
+        if self.is_master_device:
+            self.fake_a = fake_a[::len(fake_a) - 1].detach().cpu()
+            self.fake_b = fake_b[::len(fake_b) - 1].detach().cpu()
+            self.real_a = real_a[::len(real_a) - 1].detach().cpu()
+            self.real_b = real_b[::len(real_b) - 1].detach().cpu()
+            self.gen_losses.append(gen_loss.item())
+            self.disc_losses.append(disc_loss.item())
+
+        return disc_loss, gen_loss
+
+        # # Erase previous gradients
+        # self.gen_opt.zero_grad()
+        # self.disc_opt.zero_grad()
+        # # Produce fake images for discriminators
+        # with no_grad():
+        #     fake_a = self.gen_b_to_a(real_b)
+        #     fake_b = self.gen_a_to_b(real_a)
+        # # Update discriminator A
+        # disc_a_loss = self.disc_a.get_loss(real=real_a, fake=fake_a, criterion=nn.MSELoss())
+        # disc_a_loss.backward(retain_graph=True)
+        # self.disc_a_opt.step()
+        # # Update discriminator B
+        # disc_b_loss = self.disc_b.get_loss(real=real_b, fake=fake_b, criterion=nn.MSELoss())
+        # disc_b_loss.backward(retain_graph=True)
+        # self.disc_b_opt.step()
+        # # Update generators
+        # gen_loss, fake_a, fake_b = self.get_gen_loss(real_a, real_b, lambda_identity=lambda_identity,
+        #                                              lambda_cycle=lambda_cycle)
+        # gen_loss.backward()
+        # self.gen_opt.step()
+        # # Update LR (if needed)
+        # if self.lr_scheduler_type is not None:
+        #     self.disc_a_opt_lr_scheduler.step(metrics=disc_a_loss) if self.lr_scheduler_type == 'on_plateau' \
+        #         else self.disc_a_opt_lr_scheduler.step()
+        #     self.disc_b_opt_lr_scheduler.step(metrics=disc_b_loss) if self.lr_scheduler_type == 'on_plateau' \
+        #         else self.disc_b_opt_lr_scheduler.step()
+        #     self.gen_opt_lr_scheduler.step(metrics=gen_loss) if self.lr_scheduler_type == 'on_plateau' \
+        #         else self.gen_opt_lr_scheduler.step()
+        # return disc_a_loss, disc_b_loss, gen_loss, fake_a, fake_b
 
     def get_gen_loss(self, real_a: Tensor, real_b: Tensor, adv_criterion: nn.modules.Module = nn.MSELoss(),
                      identity_criterion: nn.modules.Module = nn.L1Loss(),

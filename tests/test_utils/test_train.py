@@ -6,10 +6,10 @@ import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.models import inception_v3
+from utils.gdrive import GDriveModelCheckpoints
 
 from datasets.deep_fashion import ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
-from utils.gdrive import GDriveModelCheckpoints
 from utils.pytorch import get_total_params
 from utils.train import get_adam_optimizer, load_model_chkpt, train_test_split, \
     get_optimizer_lr_scheduler, save_model_chkpt
@@ -35,7 +35,7 @@ class TestTrainUtils(unittest.TestCase):
     def test_get_adam_optimizer(self) -> None:
         # Training of a single model
         model = nn.Conv2d(3, 10, 3, bias=False)
-        optimizer = get_adam_optimizer(model)
+        optimizer, _ = get_adam_optimizer(model)
         self.assertEqual(type(optimizer), torch.optim.Adam)
         self.assertEqual(len(optimizer.param_groups), 1)
         self.assertEqual(len(optimizer.param_groups[0]['params']), 1)
@@ -44,7 +44,7 @@ class TestTrainUtils(unittest.TestCase):
         # Joint training of two models
         model1 = nn.Conv2d(3, 10, 3, bias=False)
         model2 = nn.Conv2d(3, 5, 2, bias=False)
-        optimizer = get_adam_optimizer(model1, model2, lr=1e-2)
+        optimizer, _ = get_adam_optimizer(model1, model2, lr=1e-2)
         self.assertEqual(torch.optim.Adam, type(optimizer))
         self.assertEqual(1, len(optimizer.param_groups))
         self.assertEqual(2, len(optimizer.param_groups[0]['params']))
@@ -53,7 +53,7 @@ class TestTrainUtils(unittest.TestCase):
         self.assertEqual(1e-2, optimizer.param_groups[0]['lr'])
         model1_wb = nn.Conv2d(3, 10, 3)
         model2_wb = nn.Conv2d(3, 5, 2)
-        optimizer = get_adam_optimizer(model1_wb, model2_wb, lr=1e-5)
+        optimizer, _ = get_adam_optimizer(model1_wb, model2_wb, lr=1e-5)
         self.assertEqual(1, len(optimizer.param_groups))
         self.assertEqual(4, len(optimizer.param_groups[0]['params']))
         self.assertEqual(get_total_params(model1), len(optimizer.param_groups[0]['params'][0].view(-1)))
@@ -66,7 +66,7 @@ class TestTrainUtils(unittest.TestCase):
         # Test CyclicLR scheduler
         # Every step_up steps the LR reaches maximum while every 2*steps_up, its minimum. It's like a sinusoid.
         test_model = nn.Conv2d(3, 3, 3)
-        test_model_opt = get_adam_optimizer(test_model)
+        test_model_opt, _ = get_adam_optimizer(test_model)
         base_lr = 1e-4
         max_lr = 1e-3
         steps_up = 100
@@ -87,13 +87,13 @@ class TestTrainUtils(unittest.TestCase):
         # Test ReduceLROnPlateau scheduler
         # Reduces the LR after some steps with same value (within certain tolerance)
         test_model_2 = nn.Conv2d(3, 3, 3)
-        test_model_opt_2 = get_adam_optimizer(test_model_2)
+        test_model_opt_2, _ = get_adam_optimizer(test_model_2)
         test_lr_scheduler_2 = get_optimizer_lr_scheduler(test_model_opt_2, schedule_type='on_plateau')
         self.assertEqual(ReduceLROnPlateau, type(test_lr_scheduler_2))
 
     def test_load_model_chkpt(self) -> None:
         gen = PGPGGenerator(c_in=6, c_out=3, w_in=128, h_in=128).cpu()
-        gen_opt = get_adam_optimizer(gen)
+        gen_opt, _ = get_adam_optimizer(gen)
 
         def _weights_init(_m: nn.Module) -> None:
             if isinstance(_m, nn.Conv2d) or isinstance(_m, nn.ConvTranspose2d):

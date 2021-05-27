@@ -16,20 +16,33 @@ from utils.gdrive_bak import GDriveModelCheckpoints
 from utils.ifaces import ResumableDataLoader
 
 
-def get_adam_optimizer(*models, lr: float = 1e-4, betas: tuple = (0.9, 0.999), delta: float = 1e-8) -> Optimizer:
+def get_adam_optimizer(*models, lr: float = 1e-4, lr_scheduler_type: Optional[str] = None,
+                       betas: tuple = (0.5, 0.999), delta: float = 1e-8, weight_decay: float = 0,
+                       **lr_scheduler_kwargs) -> Tuple[Optimizer, Optional[CyclicLR or ReduceLROnPlateau]]:
     """
     Get Adam optimizer for jointly training ${models} argument.
     :param models: one or more models to apply optimizer on
-    :param lr: learning rate
-    :param betas: (p_1, p_2) exponential decay parameters for Adam optimiser's moment estimates. According to
-    Goodfellow, good defaults are (0.9, 0.999).
-    :param delta: small constant that's used for numerical stability. According to Goodfellow, good defaults is 1e-8.
-    :return: instance of torch.optim.Adam optimizer
+    :param (float) lr: learning rate
+    :param (str|None) lr_scheduler_type: if set, then it is the type of LR Scheduler user
+    :param (tuple) betas: (p_1, p_2) exponential decay parameters for Adam optimiser's moment estimates.
+                          According to Goodfellow, good defaults are (0.9, 0.999).
+    :param (float) delta: small constant that's used for numerical stability.
+                          According to Goodfellow, good default is 1e-8.
+    :param (float) weight_decay: small constant that's used for numerical stability.
+                          According to Goodfellow, good default is 1e-8.
+    :return: a tuple containing an instance of `torch.optim.Adam` optimizer, the LR scheduler instance or None
     """
+    # Initialize optimizer
     joint_params = []
     for model in models:
         joint_params += list(model.parameters())
-    return Adam(joint_params, lr=lr, betas=betas, eps=delta)
+    optim = Adam(joint_params, lr=lr, betas=betas, eps=delta, weight_decay=weight_decay)
+    # If no LR scheduler requested, return None as the 2nd parameter
+    if lr_scheduler_type is None:
+        return optim, None
+    # Initiate the LR Scheduler and return it as well
+    lr_scheduler = get_optimizer_lr_scheduler(optimizer=optim, schedule_type=lr_scheduler_type, **lr_scheduler_kwargs)
+    return optim, lr_scheduler
 
 
 def get_optimizer_lr_scheduler(optimizer: Optimizer, schedule_type: str, **kwargs) \
