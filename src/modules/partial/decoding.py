@@ -19,6 +19,25 @@ class ExpandingBlock(nn.Module):
         '.expanding_block.1.': '.expanding_block.0.',
     }
 
+    @staticmethod
+    def fix_state_dict(state_dict: dict) -> dict:
+        """
+        Fix state dicts after recent update in layer naming
+        :param (dict) state_dict: old state dict
+        :return: a dict object with the updated keys
+        """
+        # Check if newer checkpoint
+        for key in list(state_dict.keys()):
+            if '.upscale.' in key:
+                return state_dict
+        # Fix older checkpoints
+        s_r_dict = ExpandingBlock.STATE_DICT_REPLACE_DICT
+        for key in list(state_dict.keys()):
+            for search_key in list(s_r_dict.keys()):
+                if search_key in key:
+                    state_dict[key.replace(search_key, s_r_dict[search_key])] = state_dict[key]
+                    del state_dict[key]
+
     def __init__(self, c_in: int, use_norm: bool = True, kernel_size: int = 3, activation: Optional[str] = 'relu',
                  output_padding: int = 1, stride: int = 2, padding: int = 1, c_out: Optional[int] = None,
                  norm_type: str = 'instance', use_dropout: bool = False, use_skip: bool = False):

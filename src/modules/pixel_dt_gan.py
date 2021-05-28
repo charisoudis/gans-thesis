@@ -1,3 +1,4 @@
+import json
 from typing import Optional, Tuple, Sequence
 
 import matplotlib.pyplot as plt
@@ -464,11 +465,12 @@ if __name__ == '__main__':
                               f1_k=1)
 
     # Initialize model
-    chkpt = torch.load('/home/achariso/PycharmProjects/gans-thesis/.gdrive/Models/model_name=pixeldtgan/Checkpoints/epoch=220/0000055800.pth', 'cpu')
+    c = torch.load('/home/achariso/PycharmProjects/gans-thesis/.gdrive/Models/model_name=pixeldtgan/Checkpoints/epoch=220/0000055800.pth', 'cpu')
+    print(json.dumps(list(c['gen'].keys()), indent=4))
     # print(chkpt.keys())
     _pxldt = PixelDTGan(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dataset),
                         chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
-    _pxldt.load_state_dict(chkpt, strict=False)
+    _pxldt.load_state_dict(c, strict=False)
     # print(_pxldt)
 
     # # for _e in range(3):
