@@ -97,6 +97,7 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         # Proceed with loss calculation
         predictions_on_real = self(real, condition)
         predictions_on_fake = self(fake, condition)
+        # print('DISC OUTPUT SHAPE: ' + str(predictions_on_fake.shape))
         if type(criterion) == torch.nn.modules.loss.BCELoss:
             predictions_on_real = nn.Sigmoid()(predictions_on_real)
             predictions_on_fake = nn.Sigmoid()(predictions_on_fake)

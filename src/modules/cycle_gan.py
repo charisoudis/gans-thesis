@@ -4,7 +4,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from PIL.Image import Image
-from matplotlib import pyplot as plt
 from torch import Tensor
 from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -510,24 +509,24 @@ if __name__ == '__main__':
     # Initialize model
     _ccgan = CycleGAN(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dl.dataset),
                       chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
-    # print(_ccgan)
+    print(_ccgan.nparams_hr)
 
     _device = _ccgan.device
     _x, _y = next(iter(_dl))
     _disc_loss, _gen_loss = _ccgan(_x.to(_device), _y.to(_device))
-    print(_disc_loss, _gen_loss)
-    print('Number of parameters: gen_a_to_b=' + _ccgan.gen_a_to_b.nparams_hr)
-    print('Number of parameters: gen_b_to_a=' + _ccgan.gen_b_to_a.nparams_hr)
-    print('Number of parameters: disc_a=' + _ccgan.disc_a.nparams_hr)
-    print('Number of parameters: disc_b=' + _ccgan.disc_b.nparams_hr)
-    print('Number of parameters: TOTAL=' + _ccgan.nparams_hr)
-
-    _img = _ccgan.visualize(reproducible=(300, 1001))
-    plt.imshow(_img)
-    plt.show()
-    # _img.show()
-    # _img.show()
-    # with open('sample.png', 'wb') as fp:
-    #     _img.save(fp)
-    #     _pxldt.logger.debug('Image saved.')
-    exit(0)
+    # print(_disc_loss, _gen_loss)
+    # print('Number of parameters: gen_a_to_b=' + _ccgan.gen_a_to_b.nparams_hr)
+    # print('Number of parameters: gen_b_to_a=' + _ccgan.gen_b_to_a.nparams_hr)
+    # print('Number of parameters: disc_a=' + _ccgan.disc_a.nparams_hr)
+    # print('Number of parameters: disc_b=' + _ccgan.disc_b.nparams_hr)
+    # print('Number of parameters: TOTAL=' + _ccgan.nparams_hr)
+    #
+    # _img = _ccgan.visualize(reproducible=(300, 1001))
+    # plt.imshow(_img)
+    # plt.show()
+    # # _img.show()
+    # # _img.show()
+    # # with open('sample.png', 'wb') as fp:
+    # #     _img.save(fp)
+    # #     _pxldt.logger.debug('Image saved.')
+    # exit(0)

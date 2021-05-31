@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Tuple
 
 import h5py
 import matplotlib.pyplot as plt
@@ -94,11 +94,11 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
     def transforms(self, t: Optional[Compose] = None) -> None:
         self._transforms = t if t is not None else transforms.ToTensor()
 
-    def __getitem__(self, index: int) -> Tensor:
+    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
         """
         Implements abstract Dataset::__getitem__() method.
-        :param index: integer with the current image index that we want to read from disk
-        :return: an image from ICRB dataset as a torch.Tensor object
+        :param (int) index: integer with the current image index that we want to read from disk
+        :return: a tuple object containing one image from each domain (handbags and shoes respectively)
         """
         # Fetch handbag image
         handbag_image = Image.fromarray(self.handbags_dataset[index % self.handbags_total_images_count])
@@ -113,7 +113,7 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
         """
         Implements abstract Dataset::__len__() method. This method returns the total "length" of the dataset which is
         the total number of  images contained in the In-shop Clothes Retrieval Benchmark.
-        :return: integer
+        :return: the maximum length between the ones of each domain dataset
         """
         return self.total_images_count
 

@@ -27,13 +27,15 @@ parser.add_argument('--seed', type=int, default=42,
                     help='random generators seed value (default: 42)')
 parser.add_argument('-use_refresh_token', action='store_true',
                     help='if set will use client_secrets.json to connect to Google Drive, else will ask for auth code')
+parser.add_argument('--run_locally', action='store_true',
+                    help='flag must be present to start local running (aka first pass run)')
 args = parser.parse_args()
 
 ##########################################
 ###     Environment Initialization     ###
 ##########################################
 run_locally = True
-if in_notebook():
+if in_notebook() and not args.run_locally:
     run_locally = False  # local runs are performed vis IDE runs (and thus terminal)
 os.environ['TRAIN_ENV'] = 'local' if run_locally else 'nonlocal'
 

@@ -119,7 +119,7 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
         # Pass through residual blocks
         out = self.res_blocks(out)
 
-        # Pass through expanding blocks
+        # Pass through expanding blocks (appending on each the output of the respective contracting block)
         for i in range(self.n_contracting_blocks):
             expanding_block = getattr(self, f'expand{i}')
             out = expanding_block(out, contracting_block_outs[self.n_contracting_blocks - (i + 1)])
