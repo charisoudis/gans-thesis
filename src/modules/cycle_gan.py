@@ -184,6 +184,14 @@ class CycleGAN(nn.Module, IGanGModule):
     def load_configuration(self, configuration: dict) -> None:
         IGanGModule.load_configuration(self, configuration)
 
+    @property
+    def gen(self) -> nn.Module:
+        return self.gen_a_to_b
+
+    @gen.setter
+    def gen(self, gen: Optional[nn.Module]) -> None:
+        pass
+
     #
     # ------------
     # nn.Module
