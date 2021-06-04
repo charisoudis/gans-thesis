@@ -3,6 +3,7 @@ from typing import Optional, Tuple, Sequence
 import numpy as np
 import torch
 from PIL.Image import Image
+from matplotlib import pyplot as plt
 from torch import nn, Tensor
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 # noinspection PyProtectedMember
@@ -434,8 +435,8 @@ if __name__ == '__main__':
     _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
                  dataset_len=len(_dataset), chkpt_epoch='latest', log_level=_log_level,
                  evaluator=_evaluator, device='cpu')
-    print(_pgpg)
-    exit(0)
+    # print(_pgpg)
+    # exit(0)
 
     # # for _e in range(3):
     # #     _pgpg.logger.info(f'current epoch: {_e}')
@@ -449,8 +450,10 @@ if __name__ == '__main__':
     _disc_loss, _gen_loss = _pgpg(_x.to(_device), _y.to(_device), _y_pose.to(_device))
     # print(_disc_loss.shape, _gen_loss.shape, _g1_out.shape, _g_out.shape)
 
+    _pgpg.reproducible_indices = (13000, 60000)
     _img = _pgpg.visualize(reproducible=True)
-    _img.show()
+    plt.imshow(_img)
+    plt.show()
     exit(0)
 
     # import time
