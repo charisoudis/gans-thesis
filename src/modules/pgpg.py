@@ -13,6 +13,7 @@ from datasets.deep_fashion import ICRBDataset, ICRBCrossPoseDataset
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.pgpg import PGPGGenerator
 from modules.ifaces import IGanGModule
+from modules.partial.encoding import UNETContractingBlock
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
@@ -218,8 +219,12 @@ class PGPG(nn.Module, IGanGModule):
             self.logger.critical(f'Config IDs mismatch (self: "{self.config_id}", state_dict: '
                                  f'"{state_dict["config_id"]}"). NOT applying checkpoint.')
             return
+        # FIX: Checkpoint keys after update
+        # e.g.: [OLD KEY] "g1.contract1.unet_contracting_block.0.weight"
+        #       [NEW KEY] "g1.contract1.unet_contracting_block.0.contracting_block.0.weight"
+        gen_state_dict = UNETContractingBlock.fix_state_dict(state_dict['gen'])
         # Load model checkpoints
-        self.gen.load_state_dict(state_dict['gen'])
+        self.gen.load_state_dict(gen_state_dict)
         self.gen_opt.load_state_dict(state_dict['gen_opt'])
         self.disc.load_state_dict(state_dict['disc'])
         self.disc_opt.load_state_dict(state_dict['disc_opt'])

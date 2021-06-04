@@ -37,6 +37,7 @@ class ExpandingBlock(nn.Module):
                 if search_key in key:
                     state_dict[key.replace(search_key, s_r_dict[search_key])] = state_dict[key]
                     del state_dict[key]
+        return state_dict
 
     def __init__(self, c_in: int, use_norm: bool = True, kernel_size: int = 3, activation: Optional[str] = 'relu',
                  output_padding: int = 1, stride: int = 2, padding: int = 1, c_out: Optional[int] = None,

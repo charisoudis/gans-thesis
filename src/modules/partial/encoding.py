@@ -69,6 +69,31 @@ class UNETContractingBlock(nn.Module):
     Attention: Unlike UNET paper, we add padding=1 to Conv2d layers to make a "symmetric" version of UNET.
     """
 
+    STATE_DICT_REPLACE_DICT = {
+        '.unet_contracting_block.0.weight': '.unet_contracting_block.0.contracting_block.0.weight',
+        '.unet_contracting_block.0.bias': '.unet_contracting_block.0.contracting_block.0.bias',
+        '.unet_contracting_block.4.weight': '.unet_contracting_block.1.contracting_block.0.weight',
+        '.unet_contracting_block.4.bias': '.unet_contracting_block.1.contracting_block.0.bias',
+    }
+
+    @staticmethod
+    def fix_state_dict(state_dict: dict) -> dict:
+        """
+        Fix state dicts after recent update in layer naming
+        :param (dict) state_dict: old state dict
+        :return: a dict object with the updated keys
+        """
+        # Check if newer checkpoint
+        # TODO
+        # Fix older checkpoints
+        s_r_dict = UNETContractingBlock.STATE_DICT_REPLACE_DICT
+        for key in list(state_dict.keys()):
+            for search_key in list(s_r_dict.keys()):
+                if search_key in key:
+                    state_dict[key.replace(search_key, s_r_dict[search_key])] = state_dict[key]
+                    del state_dict[key]
+        return state_dict
+
     def __init__(self, c_in: int, use_bn: bool = True, use_dropout: bool = False, kernel_size: int = 3,
                  activation: str = 'lrelu'):
         """
