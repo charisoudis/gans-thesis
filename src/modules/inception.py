@@ -1,8 +1,9 @@
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence
 
 import torch
 import torch.nn as nn
+from PIL.Image import Image
 from torch import Tensor
 from torchvision.models import inception_v3
 
@@ -83,6 +84,12 @@ class InceptionV3(nn.Module, IGModule):
         self.gforward(x.shape[0])
         # Perform the actual forward pass
         return self.inception_v3(x)
+
+    def visualize(self, reproducible: bool = False) -> Image:
+        raise NotImplementedError
+
+    def visualize_indices(self, indices: int or Sequence) -> Image:
+        raise NotImplementedError
 
 
 if __name__ == '__main__':

@@ -156,7 +156,6 @@ class UNETExpandingBlock(nn.Module):
                                         for the skip connection
         :return: the transformed image tensor of shape (N, C/2, H*2, W*2)
         """
-        print(x.shape, skip_conn_at_x.shape)
         x = self.upsample_and_1st_conv(x)
         # Specify cat()'s dim to be 1 (aka channels), since we want a channel-wise concatenation of the two tensors
         x = torch.cat([x, UNETExpandingBlock.crop_skip_connection(skip_conn_at_x, x.shape)], dim=1)
