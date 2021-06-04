@@ -47,7 +47,7 @@ def main():
 
 
 # noinspection DuplicatedCode
-def preview_icrb_images():
+def preview_icrb_images() -> None:
     dataset = ICRBCrossPoseDataset(image_transforms=transforms.Compose([transforms.ToTensor()]), pose=True)
 
     # Split dataset into training and test subsets
