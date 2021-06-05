@@ -45,8 +45,9 @@ class GDriveDataset(FilesystemDataset):
             if hasattr(self, 'logger') and isinstance(self.logger, CommandLineLogger):
                 self.logger.debug('Dataset is fetched and unzipped!')
         if type(self.zip_gfile) == list:
-            return [self.dataset_gfolder.download_file(self.zip_gfile, in_parallel=in_parallel,
-                                                          show_progress=show_progress, unzip_after=True)]
+            return [self.dataset_gfolder.download_file(_zgf, in_parallel=in_parallel,
+                                                       show_progress=show_progress, unzip_after=True)
+                    for _zgf in self.zip_gfile]
         return self.dataset_gfolder.download_file(self.zip_gfile, in_parallel=in_parallel,
                                                   show_progress=show_progress, unzip_after=True)
 
