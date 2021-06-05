@@ -52,8 +52,10 @@ else:
     exec_env = 'ssh'
     local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
     if not os.path.exists(local_gdrive_root):
-        local_gdrive_root = input('local_gdrive_root = ')
         run_locally = False
+        local_gdrive_root = '/workspace/GoogleDrive'    # vast.ai
+        if not os.path.exists(local_gdrive_root):
+            local_gdrive_root = input('local_gdrive_root = ')
 assert os.path.exists(local_gdrive_root), f'local_gdrive_root={local_gdrive_root} NOT FOUND'
 os.environ['TRAIN_EXEC_ENV'] = exec_env
 

@@ -64,13 +64,13 @@ class CycleGAN(nn.Module, IGanGModule):
         'disc': {
             'disc_a': {
                 'c_hidden': 64,
-                'n_contracting_blocks': 4,
+                'n_contracting_blocks': 3,
                 'use_spectral_norm': True,
                 'adv_criterion': 'MSE',
             },
             'disc_b': {
                 'c_hidden': 64,
-                'n_contracting_blocks': 4,
+                'n_contracting_blocks': 3,
                 'use_spectral_norm': True,
                 'adv_criterion': 'MSE',
             },
