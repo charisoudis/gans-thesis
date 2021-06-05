@@ -37,7 +37,7 @@ class GDriveDataset(FilesystemDataset):
         if type(zip_filename) == list:
             self.zip_gfile = []
             for _zfn in zip_filename:
-                self.zip_gfile.append(self.dataset_gfolder.file_by_name(zip_filename))
+                self.zip_gfile.append(self.dataset_gfolder.file_by_name(_zfn))
         assert self.zip_gfile is not None, f'zip_filename={zip_filename} NOT FOUND in Google Drive folder root'
 
     def fetch_and_unzip(self, in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
