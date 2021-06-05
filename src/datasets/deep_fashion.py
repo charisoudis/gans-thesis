@@ -127,6 +127,7 @@ class ICRBDataset(Dataset, GDriveDataset):
         transforms_list = [
             transforms.Resize(target_shape),
             transforms.CenterCrop(target_shape),
+            transforms.RandomHorizontalFlip(),
         ]
         if target_channels == 1:
             transforms_list.append(transforms.Grayscale(1))

@@ -24,7 +24,7 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
      """
 
     def __init__(self, c_in: int, c_out: int, c_hidden: int = 64, n_contracting_blocks: int = 2,
-                 n_residual_blocks: int = 9, output_padding: int = 1,
+                 n_residual_blocks: int = 9, output_padding: int = 1, use_skip_connections: bool = True,
                  criteria_conf: Optional[dict] = None, logger: Optional[CommandLineLogger] = None):
         """
         CycleGANGenerator class constructor.
@@ -34,6 +34,8 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
         :param (int) n_contracting_blocks: number of contracting (and expanding) blocks
         :param (int) n_residual_blocks: number of residual blocks
         :param (int) output_padding: :attr:`output_padding` of `nn.Conv2d()`
+        :param (bool) use_skip_connections: set to True to have skip connections from the contracting blocks added to
+                                            the respective expanding blocks
         :param (optional) criteria_conf: the configuration parameters of the network. Among other parameters the
                                           following keys are necessary to instantiate the model:
                                             - real: type of Adversarial loss for real/fake discriminator
@@ -64,7 +66,8 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
 
         # Register expanding blocks
         for i in range(n_contracting_blocks):
-            setattr(self, f'expand{i}', ExpandingBlock(c_res // 2 ** i, output_padding=output_padding, use_skip=True))
+            setattr(self, f'expand{i}', ExpandingBlock(c_res // 2 ** i, output_padding=output_padding,
+                                                       use_skip=use_skip_connections))
 
         # Register output block
         self.out = nn.Sequential(
@@ -93,6 +96,7 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
         # Save args
         self.criteria_conf = criteria_conf
         self.logger = CommandLineLogger(name=self.__class__.__name__) if logger is None else logger
+        self.use_skip_connections = use_skip_connections
         self.verbose_enabled = False
 
     @property
@@ -110,19 +114,31 @@ class CycleGANGenerator(nn.Module, BalancedFreezable):
 
         # Pass through contracting blocks
         out = None
-        contracting_block_outs = [x0]
-        for i in range(self.n_contracting_blocks):
-            contracting_block = getattr(self, f'contract{(i + 1)}')
-            out = contracting_block(contracting_block_outs[-1])
-            contracting_block_outs.append(out)
+        contracting_block_outs = None
+        if self.use_skip_connections:
+            contracting_block_outs = [x0]
+            for i in range(self.n_contracting_blocks):
+                contracting_block = getattr(self, f'contract{(i + 1)}')
+                out = contracting_block(contracting_block_outs[-1])
+                contracting_block_outs.append(out)
+        else:
+            out = x0
+            for i in range(self.n_contracting_blocks):
+                contracting_block = getattr(self, f'contract{(i + 1)}')
+                out = contracting_block(out)
 
         # Pass through residual blocks
         out = self.res_blocks(out)
 
         # Pass through expanding blocks (appending on each the output of the respective contracting block)
-        for i in range(self.n_contracting_blocks):
-            expanding_block = getattr(self, f'expand{i}')
-            out = expanding_block(out, contracting_block_outs[self.n_contracting_blocks - (i + 1)])
+        if self.use_skip_connections:
+            for i in range(self.n_contracting_blocks):
+                expanding_block = getattr(self, f'expand{i}')
+                out = expanding_block(out, contracting_block_outs[self.n_contracting_blocks - (i + 1)])
+        else:
+            for i in range(self.n_contracting_blocks):
+                expanding_block = getattr(self, f'expand{i}')
+                out = expanding_block(out)
 
         return self.out(out)
         # return self.cycle_gan_generator(x)

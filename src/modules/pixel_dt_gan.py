@@ -151,7 +151,7 @@ class PixelDTGan(nn.Module, IGanGModule):
 
         # Load checkpoint from Google Drive
         self.other_state_dicts = {}
-        if chkpt_epoch:
+        if chkpt_epoch is not None:
             try:
                 chkpt_filepath = self.fetch_checkpoint(epoch_or_id=chkpt_epoch, step=chkpt_step)
                 self.logger.debug(f'Loading checkpoint file: {chkpt_filepath}')

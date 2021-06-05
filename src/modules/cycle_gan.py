@@ -41,12 +41,14 @@ class CycleGAN(nn.Module, IGanGModule):
                 'n_contracting_blocks': 2,
                 'n_residual_blocks': 9,
                 'output_padding': 1,
+                'use_skip_connections': False
             },
             'gen_b_to_a': {
                 'c_hidden': 64,
                 'n_contracting_blocks': 2,
                 'n_residual_blocks': 9,
                 'output_padding': 1,
+                'use_skip_connections': False
             },
             'adv_criterion': 'MSE',
             'cycle_criterion': 'L1',
@@ -55,8 +57,9 @@ class CycleGAN(nn.Module, IGanGModule):
         'gen_opt': {
             'optim_type': 'Adam',
             'lr': 1e-4,
-            'weight_decay': 1e-4,
-            'scheduler_type': None
+            'weight_decay': 1e-5,
+            'scheduler_type': None,
+            'betas': (0.5, 0.999)
         },
         'disc': {
             'disc_a': {
@@ -75,8 +78,10 @@ class CycleGAN(nn.Module, IGanGModule):
         'disc_opt': {
             'optim_type': 'Adam',
             'lr': 1e-4,
-            'weight_decay': 1e-4,
-            'scheduler_type': None
+            'weight_decay': 0,
+            'scheduler_type': None,
+            'betas': (0.5, 0.999),
+            'joint_opt': False
         }
     }
 
@@ -147,11 +152,18 @@ class CycleGAN(nn.Module, IGanGModule):
         #   - Optimizers & LR Schedulers
         self.gen_opt, self.gen_opt_lr_scheduler = get_optimizer(self.gen_a_to_b, self.gen_b_to_a,
                                                                 **self._configuration['gen_opt'])
-        self.disc_opt, self.disc_opt_lr_scheduler = get_optimizer(self.disc_a, self.disc_b,
-                                                                  **self._configuration['disc_opt'])
+        disc_opt_conf = self._configuration['disc_opt']
+        self.disc_joint_opt = 'joint_opt' not in disc_opt_conf.keys() or disc_opt_conf['joint_opt'] is True
+        del disc_opt_conf['joint_opt']
+        if self.disc_joint_opt:
+            self.disc_opt, self.disc_opt_lr_scheduler = get_optimizer(self.disc_a, self.disc_b, **disc_opt_conf)
+        else:
+            self.disc_a_opt, self.disc_a_opt_lr_scheduler = get_optimizer(self.disc_a, **disc_opt_conf)
+            self.disc_b_opt, self.disc_b_opt_lr_scheduler = get_optimizer(self.disc_b, **disc_opt_conf)
+
         # Load checkpoint from Google Drive
         self.other_state_dicts = {}
-        if chkpt_epoch:
+        if chkpt_epoch is not None:
             try:
                 chkpt_filepath = self.fetch_checkpoint(epoch_or_id=chkpt_epoch, step=chkpt_step)
                 self.logger.debug(f'Loading checkpoint file: {chkpt_filepath}')
@@ -211,19 +223,48 @@ class CycleGAN(nn.Module, IGanGModule):
                                  f'"{state_dict["config_id"]}"). NOT applying checkpoint.')
             return
         # Load model checkpoints
+        # FIX: Keys
+        if not self.gen_a_to_b.use_skip_connections:
+            del state_dict['gen_a_to_b']['expand0.expanding_block.0.weight']
+            del state_dict['gen_a_to_b']['expand0.expanding_block.0.bias']
+            del state_dict['gen_a_to_b']['expand1.expanding_block.0.weight']
+            del state_dict['gen_a_to_b']['expand1.expanding_block.0.bias']
+        if not self.gen_b_to_a.use_skip_connections:
+            del state_dict['gen_b_to_a']['expand0.expanding_block.0.weight']
+            del state_dict['gen_b_to_a']['expand0.expanding_block.0.bias']
+            del state_dict['gen_b_to_a']['expand1.expanding_block.0.weight']
+            del state_dict['gen_b_to_a']['expand1.expanding_block.0.bias']
         self.gen_a_to_b.load_state_dict(state_dict['gen_a_to_b'])
         self.gen_b_to_a.load_state_dict(state_dict['gen_b_to_a'])
-        self.gen_opt.load_state_dict(state_dict['gen_opt'])
+        try:
+            self.gen_opt.load_state_dict(state_dict['gen_opt'])
+        except ValueError:
+            pass
         self.disc_a.load_state_dict(state_dict['disc_a'])
         self.disc_b.load_state_dict(state_dict['disc_b'])
-        self.disc_opt.load_state_dict(state_dict['disc_opt'])
+        if self.disc_joint_opt:
+            self.disc_opt.load_state_dict(state_dict['disc_opt'])
+        elif 'disc_opt' in state_dict.keys():
+            disc_a_opt_state_dict = state_dict['disc_opt']
+            __l = len(disc_a_opt_state_dict['param_groups'][0]['params'])
+            __p = state_dict['disc_opt']['param_groups'][0]['params'].copy()
+            disc_a_opt_state_dict['param_groups'][0]['params'] = __p[0:__l//2]
+            self.disc_a_opt.load_state_dict(disc_a_opt_state_dict)
+            disc_b_opt_state_dict = state_dict['disc_opt']
+            disc_b_opt_state_dict['param_groups'][0]['params'] = __p[__l//2:__l]
+            self.disc_b_opt.load_state_dict(disc_b_opt_state_dict)
+            state_dict['nparams'] = self.nparams
+        else:
+            self.disc_a_opt.load_state_dict(state_dict['disc_a_opt'])
+            self.disc_b_opt.load_state_dict(state_dict['disc_b_opt'])
         self._nparams = state_dict['nparams']
         # Update latest metrics with checkpoint's metrics
         if 'metrics' in state_dict.keys():
             self.latest_metrics = state_dict['metrics']
         self.logger.debug(f'State dict loaded. Keys: {tuple(state_dict.keys())}')
         for _k in [_k for _k in state_dict.keys() if _k not in ('gen_a_to_b', 'gen_b_to_a', 'gen_opt', 'disc_a',
-                                                                'disc_b', 'disc_opt', 'configuration')]:
+                                                                'disc_b', 'disc_opt', 'disc_a_opt', 'disc_b_opt',
+                                                                'configuration')]:
             self.other_state_dicts[_k] = state_dict[_k]
 
     def state_dict(self, *args, **kwargs) -> dict:
@@ -237,19 +278,27 @@ class CycleGAN(nn.Module, IGanGModule):
         self.gen_losses.clear()
         mean_disc_loss = np.mean(self.disc_losses)
         self.disc_losses.clear()
-        return {
-            'gen_a_to_b': self.gen_a_to_b.state_dict(),
-            'gen_b_to_a': self.gen_b_to_a.state_dict(),
-            'gen_loss': mean_gen_loss,
-            'gen_opt': self.gen_opt.state_dict(),
-            'disc_a': self.disc_a.state_dict(),
-            'disc_b': self.disc_b.state_dict(),
-            'disc_loss': mean_disc_loss,
+        disc_opt_dict = {
             'disc_opt': self.disc_opt.state_dict(),
-            'nparams': self.nparams,
-            'nparams_hr': self.nparams_hr,
-            'config_id': self.config_id,
-            'configuration': self._configuration,
+        } if self.disc_joint_opt else {
+            'disc_a_opt': self.disc_a_opt.state_dict(),
+            'disc_b_opt': self.disc_b_opt.state_dict(),
+        }
+        return {
+            **{
+                'gen_a_to_b': self.gen_a_to_b.state_dict(),
+                'gen_b_to_a': self.gen_b_to_a.state_dict(),
+                'gen_loss': mean_gen_loss,
+                'gen_opt': self.gen_opt.state_dict(),
+                'disc_a': self.disc_a.state_dict(),
+                'disc_b': self.disc_b.state_dict(),
+                'disc_loss': mean_disc_loss,
+                'nparams': self.nparams,
+                'nparams_hr': self.nparams_hr,
+                'config_id': self.config_id,
+                'configuration': self._configuration,
+            },
+            **disc_opt_dict
         }
 
     def forward(self, real_a: Tensor, real_b: Tensor, lambda_identity: float = 0.1, lambda_cycle: float = 10) \
@@ -273,7 +322,11 @@ class CycleGAN(nn.Module, IGanGModule):
             with self.gen_b_to_a.frozen():
                 # Update discriminators
                 #   - zero-out discriminators' gradients (before backprop)
-                self.disc_opt.zero_grad()
+                if self.disc_joint_opt:
+                    self.disc_opt.zero_grad()
+                else:
+                    self.disc_a_opt.zero_grad()
+                    self.disc_b_opt.zero_grad()
                 #   - produce fake images & loss using half-precision (float16)
                 with torch.cuda.amp.autocast():
                     fake_b = self.gen_a_to_b(real_a)
@@ -284,17 +337,40 @@ class CycleGAN(nn.Module, IGanGModule):
                     disc_loss = 0.5 * (disc_a_loss + disc_b_loss)
                 #   - backprop & update weights
                 if self.device == 'cuda':
-                    self.grad_scaler.scale(disc_loss).backward()
-                    self.grad_scaler.step(self.disc_opt)
+                    if self.disc_joint_opt:
+                        self.grad_scaler.scale(disc_loss).backward()
+                        self.grad_scaler.step(self.disc_opt)
+                    else:
+                        self.grad_scaler.scale(disc_a_loss).backward()
+                        self.grad_scaler.step(self.disc_a_opt)
+                        self.grad_scaler.scale(disc_b_loss).backward()
+                        self.grad_scaler.step(self.disc_b_opt)
                 else:
-                    disc_loss.backward(retain_graph=True)
-                    self.disc_opt.step()
+                    if self.disc_joint_opt:
+                        disc_loss.backward(retain_graph=True)
+                        self.disc_opt.step()
+                    else:
+                        disc_a_loss.backward(retain_graph=True)
+                        self.disc_a_opt.step()
+                        disc_b_loss.backward(retain_graph=True)
+                        self.disc_b_opt.step()
                 #   - update LR (if needed)
-                if self.disc_opt_lr_scheduler:
+                if self.disc_joint_opt and self.disc_opt_lr_scheduler:
                     if isinstance(self.disc_opt_lr_scheduler, ReduceLROnPlateau):
                         self.disc_opt_lr_scheduler.step(metrics=disc_loss)
                     else:
                         self.disc_opt_lr_scheduler.step()
+                elif not self.disc_joint_opt:
+                    if self.disc_a_opt_lr_scheduler:
+                        if isinstance(self.disc_a_opt_lr_scheduler, ReduceLROnPlateau):
+                            self.disc_a_opt_lr_scheduler.step(metrics=disc_loss)
+                        else:
+                            self.disc_a_opt_lr_scheduler.step()
+                    if self.disc_b_opt_lr_scheduler:
+                        if isinstance(self.disc_b_opt_lr_scheduler, ReduceLROnPlateau):
+                            self.disc_b_opt_lr_scheduler.step(metrics=disc_loss)
+                        else:
+                            self.disc_b_opt_lr_scheduler.step()
 
         #############################################
         ########     Update Generator(s)     ########
@@ -439,13 +515,13 @@ class CycleGAN(nn.Module, IGanGModule):
             images = []
             for i in range(0, len(real_images) - 4):
                 images.append(real_images[i])
-                images.append(real_images[i+1])
-                images.append(real_images[i+2])
-                images.append(real_images[i+3])
+                images.append(real_images[i + 1])
+                images.append(real_images[i + 2])
+                images.append(real_images[i + 3])
                 images.append(fake_images[i])
-                images.append(fake_images[i+1])
-                images.append(fake_images[i+2])
-                images.append(fake_images[i+3])
+                images.append(fake_images[i + 1])
+                images.append(fake_images[i + 2])
+                images.append(fake_images[i + 3])
 
         # Convert to grid of images
         ncols = 4
@@ -499,7 +575,7 @@ if __name__ == '__main__':
     _groot = LocalFolder.root(capsule_or_fs=LocalCapsule(_local_gdrive_root))
 
     # Define folder roots
-    _models_groot = _groot.subfolder_by_name('Models')
+    _models_root = _groot.subfolder_by_name('Models')
     _datasets_groot = _groot.subfolder_by_name('Datasets')
 
     # Initialize model evaluator
@@ -511,18 +587,18 @@ if __name__ == '__main__':
     _bs = 2
     _dl = Bags2ShoesDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
                                log_level=_log_level, batch_size=_bs, pin_memory=False)
-    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_groot, gen_dataset=_dl.dataset, target_index=1,
+    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, target_index=1,
                               condition_indices=(0,), n_samples=2, batch_size=1, f1_k=1, device='cpu')
 
     # Initialize model
-    _ccgan = CycleGAN(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dl.dataset),
-                      chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
+    _ccgan = CycleGAN(model_fs_folder_or_root=_models_root, config_id='64_MSE_L1_L1_2_9_2_9_64_4_1e4_false_false_false',
+                      dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
     print(_ccgan.nparams_hr)
 
     _device = _ccgan.device
     _x, _y = next(iter(_dl))
     _disc_loss, _gen_loss = _ccgan(_x.to(_device), _y.to(_device))
-    # print(_disc_loss, _gen_loss)
+    print(_disc_loss, _gen_loss)
     # print('Number of parameters: gen_a_to_b=' + _ccgan.gen_a_to_b.nparams_hr)
     # print('Number of parameters: gen_b_to_a=' + _ccgan.gen_b_to_a.nparams_hr)
     # print('Number of parameters: disc_a=' + _ccgan.disc_a.nparams_hr)
