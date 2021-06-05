@@ -50,10 +50,17 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
         # Instantiate `utils.filesystems.gdrive.GDriveDataset` class
         dataset_fs_folder = dataset_fs_folder_or_root if dataset_fs_folder_or_root.name == self.DatasetName else \
             dataset_fs_folder_or_root.subfolder_by_name(folder_name=self.DatasetName, recursive=True)
-        GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='handbags_64.hdf5')
+        GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder,
+                               zip_filename=['handbags_64.hdf5', 'shoes_64.hdf5'])
         self.root = dataset_fs_folder.local_root
         # Initialize instance properties
         self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
+        # Check that the dataset is present at the local filesystem
+        if not self.is_fetched_and_unzipped():
+            if click.confirm(f'Dataset is not fetched and unzipped. Would you like to fetch now?', default=True):
+                self.fetch_and_unzip(in_parallel=False, show_progress=True)
+            else:
+                raise FileNotFoundError(f'Dataset not found in local filesystem (tried {self.root})')
         # Load hdf5 files
         #   - handbags_64.hdf5
         self.handbags_64_hdf5_path = os.path.join(self.root, 'handbags_64.hdf5')

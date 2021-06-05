@@ -24,22 +24,29 @@ class GDriveDataset(FilesystemDataset):
     a data loader afterwards.
     """
 
-    def __init__(self, dataset_fs_folder: FilesystemFolder, zip_filename: str):
+    def __init__(self, dataset_fs_folder: FilesystemFolder, zip_filename: str or list):
         """
         GDriveDataset class constructor.
         :param (FilesystemFolder) dataset_fs_folder: a `utils.gdrive.GDriveFolder` instance to interact with dataset 
                                                      folder in Google Drive
-        :param (str) zip_filename: the name of dataset's main .zip file (should be inside Google Drive folder root)
+        :param (str|list) zip_filename: the name of dataset's main .zip file (should be inside Google Drive folder
+                                         root). Lists also accepted.
         """
         self.dataset_gfolder = dataset_fs_folder
         self.zip_filename = zip_filename
-        self.zip_gfile = self.dataset_gfolder.file_by_name(zip_filename)
+        if type(zip_filename) == list:
+            self.zip_gfile = []
+            for _zfn in zip_filename:
+                self.zip_gfile.append(self.dataset_gfolder.file_by_name(zip_filename))
         assert self.zip_gfile is not None, f'zip_filename={zip_filename} NOT FOUND in Google Drive folder root'
 
     def fetch_and_unzip(self, in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
         if self.is_fetched_and_unzipped():
             if hasattr(self, 'logger') and isinstance(self.logger, CommandLineLogger):
                 self.logger.debug('Dataset is fetched and unzipped!')
+        if type(self.zip_gfile) == list:
+            return [self.dataset_gfolder.download_file(self.zip_gfile, in_parallel=in_parallel,
+                                                          show_progress=show_progress, unzip_after=True)]
         return self.dataset_gfolder.download_file(self.zip_gfile, in_parallel=in_parallel,
                                                   show_progress=show_progress, unzip_after=True)
 
