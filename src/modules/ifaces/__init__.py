@@ -57,6 +57,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
             config_filepath = self.fetch_configuration(config_id=config_id)
             with open(config_filepath) as yaml_fp:
                 configuration = yaml.load(yaml_fp, Loader=yaml.FullLoader)
+                self.logger.debug(f'Loaded configuration with id: "{config_id}"')
         assert configuration is not None and isinstance(configuration, dict), 'Configuration has not been initialized'
 
         # Check evaluator
