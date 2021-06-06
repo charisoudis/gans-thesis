@@ -82,7 +82,8 @@ class CycleGAN(nn.Module, IGanGModule):
             'scheduler_type': None,
             'betas': (0.5, 0.999),
             'joint_opt': False
-        }
+        },
+        'use_half_precision': True
     }
 
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, config_id: Optional[str] = 'default',
@@ -192,6 +193,8 @@ class CycleGAN(nn.Module, IGanGModule):
 
         # Save arguments
         self.device = device
+        self.use_half_precision = self._configuration['use_half_precision'] \
+            if 'use_half_precision' in self._configuration.keys() else False
 
     def load_configuration(self, configuration: dict) -> None:
         IGanGModule.load_configuration(self, configuration)
@@ -225,15 +228,23 @@ class CycleGAN(nn.Module, IGanGModule):
         # Load model checkpoints
         # FIX: Keys
         if not self.gen_a_to_b.use_skip_connections:
-            del state_dict['gen_a_to_b']['expand0.expanding_block.0.weight']
-            del state_dict['gen_a_to_b']['expand0.expanding_block.0.bias']
-            del state_dict['gen_a_to_b']['expand1.expanding_block.0.weight']
-            del state_dict['gen_a_to_b']['expand1.expanding_block.0.bias']
+            if 'expand0.expanding_block.0.weight' is state_dict['gen_a_to_b'].keys():
+                del state_dict['gen_a_to_b']['expand0.expanding_block.0.weight']
+            if 'expand0.expanding_block.0.bias' is state_dict['gen_a_to_b'].keys():
+                del state_dict['gen_a_to_b']['expand0.expanding_block.0.bias']
+            if 'expand1.expanding_block.0.weight' is state_dict['gen_a_to_b'].keys():
+                del state_dict['gen_a_to_b']['expand1.expanding_block.0.weight']
+            if 'expand1.expanding_block.0.bias' is state_dict['gen_a_to_b'].keys():
+                del state_dict['gen_a_to_b']['expand1.expanding_block.0.bias']
         if not self.gen_b_to_a.use_skip_connections:
-            del state_dict['gen_b_to_a']['expand0.expanding_block.0.weight']
-            del state_dict['gen_b_to_a']['expand0.expanding_block.0.bias']
-            del state_dict['gen_b_to_a']['expand1.expanding_block.0.weight']
-            del state_dict['gen_b_to_a']['expand1.expanding_block.0.bias']
+            if 'expand0.expanding_block.0.weight' is state_dict['gen_b_to_a'].keys():
+                del state_dict['gen_b_to_a']['expand0.expanding_block.0.weight']
+            if 'expand0.expanding_block.0.bias' is state_dict['gen_b_to_a'].keys():
+                del state_dict['gen_b_to_a']['expand0.expanding_block.0.bias']
+            if 'expand1.expanding_block.0.weight' is state_dict['gen_b_to_a'].keys():
+                del state_dict['gen_b_to_a']['expand1.expanding_block.0.weight']
+            if 'expand1.expanding_block.0.bias' is state_dict['gen_b_to_a'].keys():
+                del state_dict['gen_b_to_a']['expand1.expanding_block.0.bias']
         self.gen_a_to_b.load_state_dict(state_dict['gen_a_to_b'])
         self.gen_b_to_a.load_state_dict(state_dict['gen_b_to_a'])
         try:
@@ -248,10 +259,10 @@ class CycleGAN(nn.Module, IGanGModule):
             disc_a_opt_state_dict = state_dict['disc_opt']
             __l = len(disc_a_opt_state_dict['param_groups'][0]['params'])
             __p = state_dict['disc_opt']['param_groups'][0]['params'].copy()
-            disc_a_opt_state_dict['param_groups'][0]['params'] = __p[0:__l//2]
+            disc_a_opt_state_dict['param_groups'][0]['params'] = __p[0:__l // 2]
             self.disc_a_opt.load_state_dict(disc_a_opt_state_dict)
             disc_b_opt_state_dict = state_dict['disc_opt']
-            disc_b_opt_state_dict['param_groups'][0]['params'] = __p[__l//2:__l]
+            disc_b_opt_state_dict['param_groups'][0]['params'] = __p[__l // 2:__l]
             self.disc_b_opt.load_state_dict(disc_b_opt_state_dict)
             state_dict['nparams'] = self.nparams
         else:
@@ -328,7 +339,7 @@ class CycleGAN(nn.Module, IGanGModule):
                     self.disc_a_opt.zero_grad()
                     self.disc_b_opt.zero_grad()
                 #   - produce fake images & loss using half-precision (float16)
-                with torch.cuda.amp.autocast():
+                with torch.cuda.amp.autocast(enabled=self.use_half_precision):
                     fake_b = self.gen_a_to_b(real_a)
                     fake_a = self.gen_b_to_a(real_b)
                     #   - compute joint discriminator loss
@@ -380,7 +391,7 @@ class CycleGAN(nn.Module, IGanGModule):
                 #   - zero-out generators' gradients
                 self.gen_opt.zero_grad()
                 #   - produce fake images & generator loss using half-precision (float16)
-                with torch.cuda.amp.autocast():
+                with torch.cuda.amp.autocast(enabled=self.use_half_precision):
                     gen_loss, fake_a, fake_b = self.get_gen_loss(real_a=real_a, real_b=real_b,
                                                                  adv_criterion=nn.MSELoss(),
                                                                  lambda_identity=lambda_identity,
