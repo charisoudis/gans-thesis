@@ -6,9 +6,12 @@ from time import sleep
 from typing import Optional, Tuple, Union
 
 import click
+import h5py
 import numpy as np
 from IPython import get_ipython
 from PIL import Image, UnidentifiedImageError
+from h5py import Dataset as H5Dataset
+from matplotlib import pyplot as plt
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
@@ -20,6 +23,7 @@ from utils.command_line_logger import CommandLineLogger
 from utils.data import ResumableRandomSampler, ManualSeedReproducible
 from utils.dep_free import get_tqdm
 from utils.filesystems.gdrive import GDriveDataset
+from utils.filesystems.local import LocalFolder, LocalCapsule
 from utils.ifaces import ResumableDataLoader, FilesystemFolder
 from utils.list import get_pairs, list_diff, join_lists
 from utils.pytorch import ToTensorOrPass
@@ -447,6 +451,194 @@ class ICRBCrossPoseDataloader(DataLoader, ResumableDataLoader, ManualSeedReprodu
         # FIX: Skipping last batch size (interrupted before forward pass completed)
         if 'perm_index' in state.keys():
             state['perm_index'] -= self.batch_size
+            if state['perm_index'] < 0:
+                state['perm_index'] = self.__len__() + state['perm_index'] + 1
+        return self._sampler.set_state(state)
+
+
+class FISBDataset(Dataset, GDriveDataset):
+    """
+        FISBDataset Class:
+        This class is used to define the way DeepFashion's Fashion Image Synthesis Benchmark (ICRB) dataset is accessed.
+        """
+
+    # Dataset name is the name of the folder in Google Drive under which dataset's Img.zip lives
+    DatasetName = 'Fashion Synthesis Benchmark'
+
+    # Default normalization parameters for ICRB (converts tensors' ranges to [-1,1]
+    NormalizeMean = 0.5
+    NormalizeStd = 0.5
+
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
+                 log_level: str = 'info'):
+        """
+        FISBDataset class constructor.
+        :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
+                                                             dataset from local or remote (Google Drive) filesystem
+        :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
+        """
+        # Instantiate `torch.utils.data.Dataset` class
+        Dataset.__init__(self)
+        # Instantiate `utils.filesystems.gdrive.GDriveDataset` class
+        dataset_fs_folder = dataset_fs_folder_or_root if dataset_fs_folder_or_root.name == self.DatasetName else \
+            dataset_fs_folder_or_root.subfolder_by_name(folder_name=self.DatasetName, recursive=True)
+        GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.h5')
+        self.root = dataset_fs_folder.local_root
+        # Initialize instance properties
+        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
+
+        # Check that the dataset is present at the local filesystem
+        if not self.is_fetched_and_unzipped():
+            if click.confirm(f'Dataset is not fetched and unzipped. Would you like to fetch now?', default=True):
+                self.fetch_and_unzip(in_parallel=False, show_progress=True)
+            else:
+                raise FileNotFoundError(f'Dataset not found in local filesystem (tried {self.root})')
+
+        # Load h5 file
+        self.h5_path = os.path.join(self.root, 'Img.h5')
+        if not os.path.exists(self.h5_path):
+            self.logger.error(f'Img.h5 file not found in image directory (tried: {self.h5_path})')
+            raise FileNotFoundError(f'{self.h5_path} not found in image directory')
+        self.img_file = h5py.File(self.h5_path, 'r')
+        self.img_dataset: H5Dataset
+        self.img_dataset = self.img_file['ih']
+        self.img_mean = self.img_file['ih_mean']
+        self.img_mean_max = np.max(self.img_mean)
+        self.total_images_count = self.img_dataset.shape[0]
+        self.logger.debug(f'Found {to_human_readable(self.total_images_count)} total images in the ' +
+                          f'Fashion Synthesis Benchmark dataset')
+
+        # Save transforms
+        self._transforms = None
+        self.transforms = image_transforms
+
+    @property
+    def transforms(self):
+        return self._transforms
+
+    @transforms.setter
+    def transforms(self, t: Optional[Compose] = None) -> None:
+        self._transforms = t if t else transforms.ToTensor()
+
+    def __getitem__(self, index: int) -> Tensor:
+        """
+        Implements abstract Dataset::__getitem__() method.
+        :param index: integer with the current image index that we want to read from disk
+        :return: an image from ICRB dataset as a torch.Tensor object
+        """
+        # Create PIL Image object
+        img = self.img_mean_max * self.img_dataset[index] + self.img_mean
+        img = img / np.max(img)
+        image = Image.fromarray((255 * img).astype(np.uint8).swapaxes(2, 0), 'RGB')
+        # Apply transforms & return
+        image = self.transforms(image)
+        return image
+
+    def __len__(self) -> int:
+        """
+        Implements abstract Dataset::__len__() method. This method returns the total "length" of the dataset which is
+        the total number of  images contained in the In-shop Clothes Retrieval Benchmark.
+        :return: integer
+        """
+        return self.total_images_count
+
+    @staticmethod
+    def get_image_transforms(target_shape: int, target_channels: int, norm_mean: Optional[float] = None,
+                             norm_std: Optional[float] = None) -> Compose:
+        """
+        Get the torchvision transforms to apply to the dataset based on default normalization parameters
+        :param target_shape: the H and W in the tensor coming out of image transforms
+        :param target_channels: the number of channels in the tensor coming out of image transforms
+        :param norm_mean: mean (same for all channels) or None to use dataset's default mean normalization parameter
+        :param norm_std: standard deviation (same for all channels) or None to use dataset's default std normalization
+                         parameter
+        :return: a torchvision.transforms.Compose object with the transforms to apply to each dataset image
+        """
+        norm_mean = FISBDataset.NormalizeMean if norm_mean is None else norm_mean
+        norm_std = FISBDataset.NormalizeStd if norm_std is None else norm_std
+        return ICRBDataset.get_image_transforms(target_shape=target_shape, target_channels=target_channels,
+                                                norm_mean=norm_mean, norm_std=norm_std)
+
+    @staticmethod
+    def get_root_prefix(default_prefix: Optional[str] = None) -> str:
+        """
+        Get default root prefix based on execution environment and given :attr:`default_prefix`
+        :param (optional) default_prefix: if provided no automatic detection occurs
+        :return: an str object containing the path prefix with the last "/" stripped
+        """
+        return ICRBDataset.get_root_prefix(default_prefix=default_prefix)
+
+
+class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
+    """
+    FISBDataloader Class.
+    This class is used to load and access DeepFashion's Fashion Image Synthesis Benchmark dataset using PyTorch's
+    DataLoader interface.
+    """
+
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder,
+                 image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
+                 target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
+                 norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True,
+                 seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None, log_level: str = 'info'):
+        """
+        FISBDataloader class constructor.
+        :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
+                                                             dataset from local or remote (Google Drive) filesystem
+        :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param target_shape: the H and W in the tensor coming out of image transforms
+        :param target_channels: the number of channels in the tensor coming out of image transforms
+        :param norm_mean: mean (same for all channels) or None to use dataset's default mean normalization parameter
+        :param norm_std: standard deviation (same for all channels) or None to use dataset's default std normalization
+                         parameter
+        :param batch_size: the number of images batch
+        :param shuffle: set to True to have sampler shuffle indices when reaches the end
+        :param (int) seed: manual seed parameter of torch.Generator (used in dataset sampler)
+        :param (bool) pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is thoroughly
+                           explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
+        :param (optional) splits: if not None performs training/testing sets split based on given :attr:`split`
+                                  percentages
+        :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
+        """
+        # Reproducibility
+        seed = FISBDataloader.manual_seed(seed)
+        # Image transforms
+        if image_transforms is None and target_shape is None and target_channels is None:
+            image_transforms = transforms.Compose([transforms.ToTensor()])
+        assert image_transforms is None or (target_channels is None and target_shape is None), \
+            'Do not define image_transforms when target_channels and target_shape is not None'
+        assert (target_channels is not None and target_shape is not None) or (target_channels is None and target_shape
+                                                                              is None), \
+            'target_channels and target_shape can either both be None or both set'
+        if target_shape is not None:
+            image_transforms = FISBDataset.get_image_transforms(target_shape, target_channels,
+                                                                norm_mean=norm_mean, norm_std=norm_std)
+        # Create dataset instance with the given transforms
+        _entire_dataset = FISBDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root,
+                                      image_transforms=image_transforms, log_level=log_level)
+        # Perform train/test split
+        if splits:
+            _training_set, _test_set = train_test_split(_entire_dataset, splits=splits, seed=seed)
+            _entire_dataset.logger.debug(f'Split dataset: len(training_set)={to_human_readable(len(_training_set))}, ' +
+                                         f'len(test_set)={to_human_readable(len(_test_set))}')
+        else:
+            _training_set = _test_set = _entire_dataset
+        self.test_set = _test_set
+        # Create sample instance
+        self._sampler = ResumableRandomSampler(data_source=_training_set, shuffle=shuffle, seed=seed,
+                                               logger=_entire_dataset.logger)
+        # Finally, instantiate dataloader
+        super(FISBDataloader, self).__init__(dataset=_training_set, batch_size=batch_size, sampler=self._sampler,
+                                             pin_memory=pin_memory)
+
+    def get_state(self) -> dict:
+        return self._sampler.get_state()
+
+    def set_state(self, state: dict) -> None:
+        if 'perm_index' in state.keys():
+            # FIX: Skipping last batch size (interrupted before forward pass completed)
+            # state['perm_index'] -= self.batch_size
             if state['perm_index'] < 0:
                 state['perm_index'] = self.__len__() + state['perm_index'] + 1
         return self._sampler.set_state(state)
@@ -989,5 +1181,20 @@ class ICRBScraper:
 
 
 if __name__ == '__main__':
-    if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
-        ICRBScraper.run(forward_pass=True, backward_pass=True, hq=False)
+    # if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
+    #     ICRBScraper.run(forward_pass=True, backward_pass=True, hq=False)
+
+    # Init Google Drive stuff
+    _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
+    _groot = LocalFolder.root(LocalCapsule(_local_gdrive_root))
+    _datasets_groot = _groot.subfolder_by_name('Datasets')
+
+    # Init Dataset
+    _dl = FISBDataloader(_datasets_groot, target_shape=128, target_channels=3, batch_size=1,
+                         pin_memory=False, log_level='debug')
+
+    # Print first image from each dataset
+    _img = _dl.dataset[3004]
+    _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
+    plt.imshow(_plt_transforms(_img.squeeze(dim=0)))
+    plt.show()

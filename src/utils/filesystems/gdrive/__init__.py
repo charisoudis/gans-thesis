@@ -34,10 +34,8 @@ class GDriveDataset(FilesystemDataset):
         """
         self.dataset_gfolder = dataset_fs_folder
         self.zip_filename = zip_filename
-        if type(zip_filename) == list:
-            self.zip_gfile = []
-            for _zfn in zip_filename:
-                self.zip_gfile.append(self.dataset_gfolder.file_by_name(_zfn))
+        self.zip_gfile = [self.dataset_gfolder.file_by_name(_zfn) for _zfn in zip_filename] \
+            if type(zip_filename) == list else self.dataset_gfolder.file_by_name(zip_filename)
         assert self.zip_gfile is not None, f'zip_filename={zip_filename} NOT FOUND in Google Drive folder root'
 
     def fetch_and_unzip(self, in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
@@ -55,7 +53,7 @@ class GDriveDataset(FilesystemDataset):
         zip_filename = self.zip_filename[0] if type(self.zip_filename) == list else self.zip_filename
         zip_local_filepath = f'{self.dataset_gfolder.local_root}/{zip_filename}'
         # If is hdf5 file, then it just needs to exist in FS
-        if zip_local_filepath.endswith('.hdf5'):
+        if zip_local_filepath.endswith('.hdf5') or zip_local_filepath.endswith('.h5'):
             return os.path.exists(zip_local_filepath) and os.path.isfile(zip_local_filepath)
         # Else, check if folder with the same filename as the .zip (without the extension) exists in FS
         dataset_local_path = zip_local_filepath.replace('.zip', '')
