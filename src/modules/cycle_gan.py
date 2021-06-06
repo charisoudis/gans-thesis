@@ -18,7 +18,7 @@ from utils.filesystems.local import LocalCapsule, LocalFolder
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import plot_grid, create_img_grid
-from utils.train import get_optimizer, weights_init_naive
+from utils.train import get_optimizer, weights_init_naive, set_optimizer_lr
 
 
 class CycleGAN(nn.Module, IGanGModule):
@@ -207,6 +207,21 @@ class CycleGAN(nn.Module, IGanGModule):
     @gen.setter
     def gen(self, gen: Optional[nn.Module]) -> None:
         pass
+
+    def update_lr(self, gen_new_lr: Optional[float] = None, disc_new_lr: Optional[float] = None) -> None:
+        """
+        Updates learning-rate of model optimizers, for the non-None give arguments.
+        :param (float|None) gen_new_lr: new LR for generator's optimizer (or None to leave as is)
+        :param (float|None) disc_new_lr: new LR for real/fake discriminator's optimizer (or None to leave as is)
+        """
+        if gen_new_lr:
+            set_optimizer_lr(self.gen_opt, new_lr=gen_new_lr)
+        if disc_new_lr:
+            if self.disc_joint_opt:
+                set_optimizer_lr(self.disc_opt, new_lr=disc_new_lr)
+            else:
+                set_optimizer_lr(self.disc_a_opt, new_lr=disc_new_lr)
+                set_optimizer_lr(self.disc_b_opt, new_lr=disc_new_lr)
 
     #
     # ------------
