@@ -1,5 +1,6 @@
 from typing import Tuple, Optional, Sequence
 
+import click
 import numpy as np
 import torch
 import torch.nn as nn
@@ -223,8 +224,9 @@ class CycleGAN(nn.Module, IGanGModule):
         # Check if checkpoint is for different config
         if 'config_id' in state_dict.keys() and state_dict['config_id'] != self.config_id:
             self.logger.critical(f'Config IDs mismatch (self: "{self.config_id}", state_dict: '
-                                 f'"{state_dict["config_id"]}"). NOT applying checkpoint.')
-            return
+                                 f'"{state_dict["config_id"]}"). SHOULD NOT apply checkpoint...')
+            if not click.confirm('Override config_id in checkpoint and attempt to load it?', default=False):
+                return
         # Load model checkpoints
         # FIX: Keys
         if not self.gen_a_to_b.use_skip_connections:

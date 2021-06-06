@@ -1,6 +1,7 @@
 import json
 from typing import Optional, Tuple, Sequence
 
+import click
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -240,7 +241,8 @@ class PixelDTGan(nn.Module, IGanGModule):
         if 'config_id' in state_dict.keys() and state_dict['config_id'] != self.config_id:
             self.logger.critical(f'Config IDs mismatch (self: "{self.config_id}", state_dict: '
                                  f'"{state_dict["config_id"]}"). NOT applying checkpoint.')
-            return
+            if not click.confirm('Override config_id in checkpoint and attempt to load it?', default=False):
+                return
         # Load model checkpoints
         self.gen.load_state_dict(state_dict['gen'])
         self.gen_opt.load_state_dict(state_dict['gen_opt'])

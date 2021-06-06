@@ -1,5 +1,6 @@
 from typing import Optional, Tuple, Sequence
 
+import click
 import numpy as np
 import torch
 from PIL.Image import Image
@@ -219,7 +220,8 @@ class PGPG(nn.Module, IGanGModule):
         if 'config_id' in state_dict.keys() and state_dict['config_id'] != self.config_id:
             self.logger.critical(f'Config IDs mismatch (self: "{self.config_id}", state_dict: '
                                  f'"{state_dict["config_id"]}"). NOT applying checkpoint.')
-            return
+            if not click.confirm('Override config_id in checkpoint and attempt to load it?', default=False):
+                return
         # FIX: Checkpoint keys after update
         # e.g.: [OLD KEY] "g1.contract1.unet_contracting_block.0.weight"
         #       [NEW KEY] "g1.contract1.unet_contracting_block.0.contracting_block.0.weight"
