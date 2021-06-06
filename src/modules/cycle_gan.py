@@ -228,22 +228,22 @@ class CycleGAN(nn.Module, IGanGModule):
         # Load model checkpoints
         # FIX: Keys
         if not self.gen_a_to_b.use_skip_connections:
-            if 'expand0.expanding_block.0.weight' is state_dict['gen_a_to_b'].keys():
+            if 'expand0.expanding_block.0.weight' in state_dict['gen_a_to_b'].keys():
                 del state_dict['gen_a_to_b']['expand0.expanding_block.0.weight']
-            if 'expand0.expanding_block.0.bias' is state_dict['gen_a_to_b'].keys():
+            if 'expand0.expanding_block.0.bias' in state_dict['gen_a_to_b'].keys():
                 del state_dict['gen_a_to_b']['expand0.expanding_block.0.bias']
-            if 'expand1.expanding_block.0.weight' is state_dict['gen_a_to_b'].keys():
+            if 'expand1.expanding_block.0.weight' in state_dict['gen_a_to_b'].keys():
                 del state_dict['gen_a_to_b']['expand1.expanding_block.0.weight']
-            if 'expand1.expanding_block.0.bias' is state_dict['gen_a_to_b'].keys():
+            if 'expand1.expanding_block.0.bias' in state_dict['gen_a_to_b'].keys():
                 del state_dict['gen_a_to_b']['expand1.expanding_block.0.bias']
         if not self.gen_b_to_a.use_skip_connections:
-            if 'expand0.expanding_block.0.weight' is state_dict['gen_b_to_a'].keys():
+            if 'expand0.expanding_block.0.weight' in state_dict['gen_b_to_a'].keys():
                 del state_dict['gen_b_to_a']['expand0.expanding_block.0.weight']
-            if 'expand0.expanding_block.0.bias' is state_dict['gen_b_to_a'].keys():
+            if 'expand0.expanding_block.0.bias' in state_dict['gen_b_to_a'].keys():
                 del state_dict['gen_b_to_a']['expand0.expanding_block.0.bias']
-            if 'expand1.expanding_block.0.weight' is state_dict['gen_b_to_a'].keys():
+            if 'expand1.expanding_block.0.weight' in state_dict['gen_b_to_a'].keys():
                 del state_dict['gen_b_to_a']['expand1.expanding_block.0.weight']
-            if 'expand1.expanding_block.0.bias' is state_dict['gen_b_to_a'].keys():
+            if 'expand1.expanding_block.0.bias' in state_dict['gen_b_to_a'].keys():
                 del state_dict['gen_b_to_a']['expand1.expanding_block.0.bias']
         self.gen_a_to_b.load_state_dict(state_dict['gen_a_to_b'])
         self.gen_b_to_a.load_state_dict(state_dict['gen_b_to_a'])
