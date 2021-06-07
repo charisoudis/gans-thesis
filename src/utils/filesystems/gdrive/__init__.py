@@ -256,6 +256,7 @@ class GDriveModel(FilesystemModel):
         self._counter = 0
         self.epoch_inc = False
         self.dataset_len = dataset_len
+        self._batch_size = None
 
     def gcapture(self, checkpoint: bool = True, metrics: bool = True, visualizations: bool = True,
                  configuration: bool = False, in_parallel: bool = True, show_progress: bool = False,
@@ -341,6 +342,8 @@ class GDriveModel(FilesystemModel):
         """
         if self.dataset_len is None:
             raise AttributeError('self.dataset_len is None: need to re-implement some methods to allow this...')
+        if self.batch_size is None:
+            self.batch_size = batch_size
         # Update current step (ever-growing counter)
         self.step = self.step + 1 if self.step else 1
         self.initial_step += 1
@@ -350,9 +353,9 @@ class GDriveModel(FilesystemModel):
             self._counter = 0
             self.epoch_inc = False
         # Update number of samples seen
-        self._counter += batch_size
+        self._counter += batch_size if batch_size is not None else self.batch_size
         # Check if enc of epoch reached
-        # assert self._counter <= self.dataset_len, f'self._counter={self._counter} > self.dataset_len={self.dataset_len}'
+        # assert self._counter <= self.dataset_len, f'self._counter={self._counter}>self.dataset_len={self.dataset_len}'
         if self._counter >= self.dataset_len:
             self.epoch_inc = True
             self.initial_step = 0
@@ -370,7 +373,44 @@ class GDriveModel(FilesystemModel):
         self.epoch = state['epoch']
         self.epoch_inc = state['epoch_inc']
         self._counter = state['_counter']
+        self.batch_size = state['batch_size']
         self.logger.debug(f'Loading gforward state: {str(state)}')
+
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
+
+    @batch_size.setter
+    def batch_size(self, batch_size: int) -> None:
+        # # Save new value
+        # self._batch_size = batch_size
+        # # Check for changes: Base case
+        # if self._batch_size is None or self._batch_size == batch_size:
+        #
+        #     return
+        # Difficult case: Change batch size online
+        # assert max(self._batch_size, batch_size) % min(self._batch_size, batch_size) == 0, \
+        #     'batch size can only double or halve'
+        # ratio = batch_size // self._batch_size
+
+        #
+        # ---------------------
+        # Field of gforward()
+        # --------------------
+        # `_counter` holds the total number of images processed in current epoch: SAME
+        # `epoch`    holds the current epoch index                              : SAME
+        # `epoch_inc` is a flat set at the end of each epoch                    : SAME IF INITIAL_STEP UNCHANGED
+        # `initial_step` is the starting batch index                            : CHANGES ACC. TO FORMULA
+        #                                                                         is' = (is - (is % bs')) // bs' <= is
+        # `step` hold the number of batches passed from beginning of training   : SAME
+        #
+        self._batch_size = batch_size
+        initial_step_prev = self.initial_step
+        self.initial_step = (self.initial_step - (self.initial_step % batch_size)) // batch_size
+        if self.initial_step != initial_step_prev:
+            self.logger.info(f'[GDriveModel::batch_size()] initial_step changed: {initial_step_prev} --> ' +
+                             f'{self.initial_step}')
+            self.epoch_inc = False
 
     #
     # ------------------------------
@@ -406,6 +446,7 @@ class GDriveModel(FilesystemModel):
                     'epoch': self.epoch,
                     '_counter': self._counter,
                     'epoch_inc': self.epoch_inc,
+                    'batch_size': self.batch_size
                 }
                 # Check for dataloader
                 if dataloader:
