@@ -11,6 +11,7 @@ import yaml
 from PIL.Image import Image
 
 from utils.command_line_logger import CommandLineLogger
+from utils.data import ResumableRandomSampler
 from utils.filesystems.gdrive.colab import ColabFolder, ColabCapsule, ColabFilesystem, ColabFile
 from utils.filesystems.gdrive.remote import GDriveFolder, GDriveCapsule, GDriveFilesystem, GDriveFile
 from utils.ifaces import FilesystemDataset, FilesystemModel, FilesystemFolder, Filesystem, FilesystemCapsule, \
@@ -406,13 +407,21 @@ class GDriveModel(FilesystemModel):
         #
         self._batch_size = batch_size
         initial_step_prev = self.initial_step
-        self.initial_step = (self._counter - (self._counter % batch_size)) // batch_size
-        # self.initial_step = max(0, self.initial_step)
-        self._counter = (self.initial_step - 1) * batch_size
+        self.initial_step = (self._counter - (self._counter % batch_size)) // batch_size + 1
+        self._counter = self.initial_step * batch_size
         if self.initial_step != initial_step_prev:
             self.logger.info(f'[GDriveModel::batch_size()] initial_step changed: {initial_step_prev} --> ' +
                              f'{self.initial_step}')
             self.epoch_inc = False
+
+    def update_batch_size(self, new_batch_size: int, sampler_instance: Optional[ResumableRandomSampler] = None) -> None:
+        """
+        Updates default (checkpoint's) batch size to given while also correcting the `perm_index` value in sampler.
+        :param (int) new_batch_size: new batch size
+        :param (optional) sampler_instance: if given, this must implement `ResumableRandomSampler` interface
+        """
+        self.batch_size = new_batch_size
+        sampler_instance.perm_index = self._counter
 
     #
     # ------------------------------
