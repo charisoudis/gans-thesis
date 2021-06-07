@@ -401,12 +401,12 @@ class GDriveModel(FilesystemModel):
         # `epoch`    holds the current epoch index                              : SAME
         # `epoch_inc` is a flat set at the end of each epoch                    : SAME IF INITIAL_STEP UNCHANGED
         # `initial_step` is the starting batch index                            : CHANGES ACC. TO FORMULA
-        #                                                                         is' = (is - (is % bs')) // bs' <= is
+        #                                                                         is' = (_c - (_c % bs')) // bs' <= is
         # `step` hold the number of batches passed from beginning of training   : SAME
         #
         self._batch_size = batch_size
         initial_step_prev = self.initial_step
-        self.initial_step = (self.initial_step - (self.initial_step % batch_size)) // batch_size
+        self.initial_step = (self._counter - (self._counter % batch_size)) // batch_size
         if self.initial_step != initial_step_prev:
             self.logger.info(f'[GDriveModel::batch_size()] initial_step changed: {initial_step_prev} --> ' +
                              f'{self.initial_step}')
