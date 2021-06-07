@@ -406,7 +406,9 @@ class GDriveModel(FilesystemModel):
         #
         self._batch_size = batch_size
         initial_step_prev = self.initial_step
-        self.initial_step = (self._counter - (self._counter % batch_size)) // batch_size
+        self.initial_step = (self._counter - (self._counter % batch_size)) // batch_size - 1
+        self.initial_step = max(0, self.initial_step)
+        self._counter = self.initial_step * batch_size
         if self.initial_step != initial_step_prev:
             self.logger.info(f'[GDriveModel::batch_size()] initial_step changed: {initial_step_prev} --> ' +
                              f'{self.initial_step}')
