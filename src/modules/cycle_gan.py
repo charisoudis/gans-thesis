@@ -189,13 +189,14 @@ class CycleGAN(nn.Module, IGanGModule):
         self.real_b = None
         self.gen_transforms = gen_transforms
 
-        # Create a GradScaler (for float16 forward/backward passes) once
-        self.grad_scaler = GradScaler()
-
         # Save arguments
         self.device = device
         self.use_half_precision = self._configuration['use_half_precision'] \
             if 'use_half_precision' in self._configuration.keys() else False
+
+        # Create a GradScaler once (for float16 forward/backward passes)
+        if self.use_half_precision:
+            self.grad_scaler = GradScaler()
 
     def load_configuration(self, configuration: dict) -> None:
         IGanGModule.load_configuration(self, configuration)
@@ -346,89 +347,89 @@ class CycleGAN(nn.Module, IGanGModule):
         #############################################
         ########   Update Discriminator(s)   ########
         #############################################
-        with self.gen_a_to_b.frozen():
-            with self.gen_b_to_a.frozen():
-                # Update discriminators
-                #   - zero-out discriminators' gradients (before backprop)
-                if self.disc_joint_opt:
-                    self.disc_opt.zero_grad()
+        # with self.gen_a_to_b.frozen():
+        #     with self.gen_b_to_a.frozen():
+        # Update discriminators
+        #   - zero-out discriminators' gradients (before backprop)
+        if self.disc_joint_opt:
+            self.disc_opt.zero_grad()
+        else:
+            self.disc_a_opt.zero_grad()
+            self.disc_b_opt.zero_grad()
+        #   - produce fake images & loss using half-precision (float16)
+        with torch.cuda.amp.autocast(enabled=self.use_half_precision):
+            fake_b = self.gen_a_to_b(real_a)
+            fake_a = self.gen_b_to_a(real_b)
+            #   - compute joint discriminator loss
+            disc_a_loss = self.disc_a.get_loss(real=real_a, fake=fake_a, criterion=nn.MSELoss())
+            disc_b_loss = self.disc_b.get_loss(real=real_b, fake=fake_b, criterion=nn.MSELoss())
+            disc_loss = 0.5 * (disc_a_loss + disc_b_loss)
+        #   - backprop & update weights
+        if self.use_half_precision:
+            if self.disc_joint_opt:
+                self.grad_scaler.scale(disc_loss).backward()
+                self.grad_scaler.step(self.disc_opt)
+            else:
+                self.grad_scaler.scale(disc_a_loss).backward()
+                self.grad_scaler.step(self.disc_a_opt)
+                self.grad_scaler.scale(disc_b_loss).backward()
+                self.grad_scaler.step(self.disc_b_opt)
+        else:
+            if self.disc_joint_opt:
+                disc_loss.backward(retain_graph=True)
+                self.disc_opt.step()
+            else:
+                disc_a_loss.backward(retain_graph=True)
+                self.disc_a_opt.step()
+                disc_b_loss.backward(retain_graph=True)
+                self.disc_b_opt.step()
+        #   - update LR (if needed)
+        if self.disc_joint_opt and self.disc_opt_lr_scheduler:
+            if isinstance(self.disc_opt_lr_scheduler, ReduceLROnPlateau):
+                self.disc_opt_lr_scheduler.step(metrics=disc_loss)
+            else:
+                self.disc_opt_lr_scheduler.step()
+        elif not self.disc_joint_opt:
+            if self.disc_a_opt_lr_scheduler:
+                if isinstance(self.disc_a_opt_lr_scheduler, ReduceLROnPlateau):
+                    self.disc_a_opt_lr_scheduler.step(metrics=disc_loss)
                 else:
-                    self.disc_a_opt.zero_grad()
-                    self.disc_b_opt.zero_grad()
-                #   - produce fake images & loss using half-precision (float16)
-                with torch.cuda.amp.autocast(enabled=self.use_half_precision):
-                    fake_b = self.gen_a_to_b(real_a)
-                    fake_a = self.gen_b_to_a(real_b)
-                    #   - compute joint discriminator loss
-                    disc_a_loss = self.disc_a.get_loss(real=real_a, fake=fake_a, criterion=nn.MSELoss())
-                    disc_b_loss = self.disc_b.get_loss(real=real_b, fake=fake_b, criterion=nn.MSELoss())
-                    disc_loss = 0.5 * (disc_a_loss + disc_b_loss)
-                #   - backprop & update weights
-                if self.device == 'cuda':
-                    if self.disc_joint_opt:
-                        self.grad_scaler.scale(disc_loss).backward()
-                        self.grad_scaler.step(self.disc_opt)
-                    else:
-                        self.grad_scaler.scale(disc_a_loss).backward()
-                        self.grad_scaler.step(self.disc_a_opt)
-                        self.grad_scaler.scale(disc_b_loss).backward()
-                        self.grad_scaler.step(self.disc_b_opt)
+                    self.disc_a_opt_lr_scheduler.step()
+            if self.disc_b_opt_lr_scheduler:
+                if isinstance(self.disc_b_opt_lr_scheduler, ReduceLROnPlateau):
+                    self.disc_b_opt_lr_scheduler.step(metrics=disc_loss)
                 else:
-                    if self.disc_joint_opt:
-                        disc_loss.backward(retain_graph=True)
-                        self.disc_opt.step()
-                    else:
-                        disc_a_loss.backward(retain_graph=True)
-                        self.disc_a_opt.step()
-                        disc_b_loss.backward(retain_graph=True)
-                        self.disc_b_opt.step()
-                #   - update LR (if needed)
-                if self.disc_joint_opt and self.disc_opt_lr_scheduler:
-                    if isinstance(self.disc_opt_lr_scheduler, ReduceLROnPlateau):
-                        self.disc_opt_lr_scheduler.step(metrics=disc_loss)
-                    else:
-                        self.disc_opt_lr_scheduler.step()
-                elif not self.disc_joint_opt:
-                    if self.disc_a_opt_lr_scheduler:
-                        if isinstance(self.disc_a_opt_lr_scheduler, ReduceLROnPlateau):
-                            self.disc_a_opt_lr_scheduler.step(metrics=disc_loss)
-                        else:
-                            self.disc_a_opt_lr_scheduler.step()
-                    if self.disc_b_opt_lr_scheduler:
-                        if isinstance(self.disc_b_opt_lr_scheduler, ReduceLROnPlateau):
-                            self.disc_b_opt_lr_scheduler.step(metrics=disc_loss)
-                        else:
-                            self.disc_b_opt_lr_scheduler.step()
+                    self.disc_b_opt_lr_scheduler.step()
 
         #############################################
         ########     Update Generator(s)     ########
         #############################################
-        with self.disc_a.frozen():
-            with self.disc_b.frozen():
-                #   - zero-out generators' gradients
-                self.gen_opt.zero_grad()
-                #   - produce fake images & generator loss using half-precision (float16)
-                with torch.cuda.amp.autocast(enabled=self.use_half_precision):
-                    gen_loss, fake_a, fake_b = self.get_gen_loss(real_a=real_a, real_b=real_b,
-                                                                 adv_criterion=nn.MSELoss(),
-                                                                 lambda_identity=lambda_identity,
-                                                                 lambda_cycle=lambda_cycle)
-                #   - backprop & update weights
-                if self.device == 'cuda':
-                    self.grad_scaler.scale(gen_loss).backward()
-                    self.grad_scaler.step(self.gen_opt)
-                else:
-                    gen_loss.backward()
-                    self.gen_opt.step()
-                #   - update LR (if needed)
-                if self.gen_opt_lr_scheduler:
-                    if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
-                        self.gen_opt_lr_scheduler.step(metrics=gen_loss)
-                    else:
-                        self.gen_opt_lr_scheduler.step()
+        # with self.disc_a.frozen():
+        #     with self.disc_b.frozen():
+        #   - zero-out generators' gradients
+        self.gen_opt.zero_grad()
+        #   - produce fake images & generator loss using half-precision (float16)
+        with torch.cuda.amp.autocast(enabled=self.use_half_precision):
+            gen_loss, fake_a, fake_b = self.get_gen_loss(real_a=real_a, real_b=real_b,
+                                                         adv_criterion=nn.MSELoss(),
+                                                         lambda_identity=lambda_identity,
+                                                         lambda_cycle=lambda_cycle)
+        #   - backprop & update weights
+        if self.use_half_precision:
+            self.grad_scaler.scale(gen_loss).backward()
+            self.grad_scaler.step(self.gen_opt)
+        else:
+            gen_loss.backward()
+            self.gen_opt.step()
+        #   - update LR (if needed)
+        if self.gen_opt_lr_scheduler:
+            if isinstance(self.gen_opt_lr_scheduler, ReduceLROnPlateau):
+                self.gen_opt_lr_scheduler.step(metrics=gen_loss)
+            else:
+                self.gen_opt_lr_scheduler.step()
 
         # Update grad scaler
-        if self.device == 'cuda':
+        if self.use_half_precision:
             self.grad_scaler.update()
 
         # Save for visualization
