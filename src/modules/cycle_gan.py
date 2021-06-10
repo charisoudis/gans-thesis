@@ -476,7 +476,7 @@ class CycleGAN(nn.Module, IGanGModule):
     def get_gen_loss(self, real_a: Tensor, real_b: Tensor, adv_criterion: nn.modules.Module = nn.MSELoss(),
                      identity_criterion: nn.modules.Module = nn.L1Loss(),
                      cycle_criterion: nn.modules.Module = nn.L1Loss(),
-                     lambda_identity: float = 0.1, lambda_cycle: float = 10) -> Tuple[Tensor, Tensor, Tensor]:
+                     lambda_identity: float = 5.0, lambda_cycle: float = 10.0) -> Tuple[Tensor, Tensor, Tensor]:
         """
         Get the loss of the generator given inputs.
         :param real_a: the real images from pile A
