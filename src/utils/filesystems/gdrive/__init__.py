@@ -407,6 +407,8 @@ class GDriveModel(FilesystemModel):
         #
         self._batch_size = batch_size
         initial_step_prev = self.initial_step
+        if initial_step_prev <= 1 and self._counter <= batch_size:
+            return
         self.initial_step = (self._counter - (self._counter % batch_size)) // batch_size + 1
         self._counter = self.initial_step * batch_size
         if self.initial_step != initial_step_prev:
