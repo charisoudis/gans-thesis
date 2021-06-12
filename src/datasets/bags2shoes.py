@@ -88,7 +88,7 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
         self.logger.debug(f'Found {to_human_readable(self.shoes_total_images_count)} total images in the ' +
                           f'shoes_64 dataset')
         # Save benchmark info
-        self.total_images_count = max(self.handbags_total_images_count, self.shoes_total_images_count)
+        self.total_images_count = min(self.handbags_total_images_count, self.shoes_total_images_count)
         self.logger.debug(f'Dataset\'s length (max): {to_human_readable(self.total_images_count)} images')
         # Save transforms
         self._transforms = None
@@ -109,9 +109,9 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
         :return: a tuple object containing one image from each domain (handbags and shoes respectively)
         """
         # Fetch handbag image
-        handbag_image = Image.fromarray(self.handbags_dataset[index % self.handbags_total_images_count])
+        handbag_image = Image.fromarray(self.handbags_dataset[index])
         # Fetch shoe image
-        shoe_image = Image.fromarray(self.shoes_dataset[index % self.shoes_total_images_count])
+        shoe_image = Image.fromarray(self.shoes_dataset[index])
         # Apply transforms & return
         handbag_image = self.transforms(handbag_image)
         shoe_image = self.transforms(shoe_image)

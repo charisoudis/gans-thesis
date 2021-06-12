@@ -143,7 +143,6 @@ def plot_grid(grid: torch.Tensor or np.ndarray, figsize=tuple, footnote_l: Optio
     # Create image and return
     if footnote_l:
         plt.suptitle(footnote_l, y=0.03, fontsize=4, fontweight='light', horizontalalignment='left', x=0.001)
-    print(type(grid))
     plt.imshow(grid.permute(1, 2, 0) if isinstance(grid, torch.Tensor) else np.transpose(grid, (1, 2, 0)))
     # Show the right footnote
     fig: matplotlib.figure.Figure
