@@ -1,3 +1,4 @@
+import collections
 import json
 import os
 import shutil
@@ -8,12 +9,13 @@ from typing import Optional, Tuple, Union
 
 import click
 import h5py
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from IPython import get_ipython
 from PIL import Image, UnidentifiedImageError
 from h5py import Dataset as H5Dataset
-from matplotlib import pyplot as plt
+from scipy.interpolate import make_interp_spline
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
@@ -28,7 +30,6 @@ from utils.filesystems.gdrive import GDriveDataset
 from utils.filesystems.local import LocalFolder, LocalCapsule
 from utils.ifaces import ResumableDataLoader, FilesystemFolder
 from utils.list import get_pairs, list_diff, join_lists
-from utils.plot import create_img_grid, plot_grid
 from utils.pytorch import ToTensorOrPass
 from utils.string import group_by_prefix
 from utils.string import to_human_readable
@@ -512,6 +513,13 @@ class FISBDataset(Dataset, GDriveDataset):
         self.logger.debug(f'Found {to_human_readable(self.total_images_count)} total images in the ' +
                           f'Fashion Synthesis Benchmark dataset')
 
+        # Load crops.json file
+        self.crops_json_path = os.path.join(self.root, 'crops.json')
+        with open(self.crops_json_path, 'r') as json_fp:
+            self.crops = json.load(json_fp)
+            assert len(self.crops) == self.total_images_count, \
+                f'self.crops has {len(self.crops)} instead of {self.total_images_count}: ERROR'
+
         # Save transforms
         self._transforms = None
         self.transforms = image_transforms
@@ -534,9 +542,12 @@ class FISBDataset(Dataset, GDriveDataset):
         img = self.img_mean_max * self.img_dataset[index] + self.img_mean
         img = img / np.max(img)
         image = Image.fromarray((255 * img).astype(np.uint8).swapaxes(2, 0), 'RGB')
-        # Apply transforms & return
+        # Apply transforms
         image = self.transforms(image)
-        return image
+        # Crop
+        crop = self.crops[index]
+        return FISBDataset.crop_to_bounds(image, h_from=crop['h_from'], h_until=crop['h_until'],
+                                          w_from=crop['w_from'], w_until=crop['w_until'], upscale_size=image.shape[2])
 
     def __len__(self) -> int:
         """
@@ -571,6 +582,29 @@ class FISBDataset(Dataset, GDriveDataset):
         :return: an str object containing the path prefix with the last "/" stripped
         """
         return ICRBDataset.get_root_prefix(default_prefix=default_prefix)
+
+    @staticmethod
+    def crop_to_bounds(t: torch.Tensor or np.ndarray, h_from: int = 0, h_until: int = -1, w_from: int = 0,
+                       w_until: int = -1, upscale_size: Optional[int] = None) -> torch.Tensor or np.ndarray:
+        """
+        Crops given tensor at given bounding box.
+        :param (torch.Tensor) t: input image as a torch.Tensor object with CxHxW order
+        :param (int) h_from: starting crop heightwise (defaults to 0)
+        :param (int) h_until: starting crop heightwise (defaults to -1)
+        :param (int) w_from: starting crop widthwise (defaults to 0)
+        :param (int) w_until: starting crop widthwise (defaults to -1)
+        :param (int) h_until: target height and width of image
+        :param (int) upscale_size: set to an int to have the method return an upscaled tensor matching the given shape
+        :return: a torch.Tensor object containing the cropped image with CxHxW order
+        """
+        t_cropped = t[:, h_from:h_until, w_from:w_until]
+        # Upscale if requested
+        if upscale_size:
+            upsample = torch.nn.Upsample(size=upscale_size, mode='bicubic', align_corners=True)
+            if type(t_cropped) == np.ndarray:
+                return upsample(torch.from_numpy(t_cropped).unsqueeze(0)).squeeze(0).numpy().astype(t_cropped.dtype)
+            t_cropped = upsample(t_cropped.unsqueeze(0)).squeeze(0)
+        return t_cropped
 
 
 class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
@@ -634,6 +668,7 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
         # Finally, instantiate dataloader
         super(FISBDataloader, self).__init__(dataset=_training_set, batch_size=batch_size, sampler=self._sampler,
                                              pin_memory=pin_memory)
+        self.dataset: FISBDataset
 
     def get_state(self) -> dict:
         return self._sampler.get_state()
@@ -1221,6 +1256,12 @@ class FISBScraper:
         self.transforms = FISBDataset.get_image_transforms(target_shape=128, target_channels=3)
 
         self.crops = None
+        self.crops_json_path = os.path.join(self.root, 'crops.json')
+        if os.path.exists(self.crops_json_path):
+            with open(self.crops_json_path, 'r') as json_fp:
+                self.crops = json.load(json_fp)
+                assert len(self.crops) == self.total_images_count, \
+                    f'self.crops has {len(self.crops)} instead of {self.total_images_count}: ERROR'
 
     def forward(self) -> None:
         """
@@ -1228,8 +1269,7 @@ class FISBScraper:
         Open every image, process & crop it and save it back to the h5 file.
         """
         time.sleep(1.0)
-        self.crops = np.zeros((self.total_images_count, 4), dtype=np.uint8)
-        self.crops[:, 2:] = -1
+        self.crops = []
         for index in self.tqdm(range(self.total_images_count), file=sys.stdout):
             # Fetch image
             img_h5 = self.img_dataset[index]
@@ -1238,48 +1278,89 @@ class FISBScraper:
             img = Image.fromarray((255 * img).astype(np.uint8).swapaxes(2, 0), 'RGB')
             # Apply transforms
             img = self.transforms(img)
-            # Crop
-            #   - bottom
-            target_shape_bottom = FISBScraper.should_crop_bottom(img, target_shape=list(range(107, 127)))
-            if target_shape_bottom is not False:
-                self.crops[index, 0:1] = FISBScraper.crop_bottom(img, target_shape=target_shape_bottom, bounds_only=True)
-            #   - top
-            crop_shape_top = FISBScraper.should_crop_top(img, crop_shape=list(range(1, 20)))
-            if crop_shape_top is not False:
-                img = FISBScraper.crop_top(img, crop_shape=crop_shape_top, upscale_after=True)
-                img_h5 = FISBScraper.crop_top(img_h5, crop_shape=crop_shape_top, bounds_only=True)
-                # imgs.append(img.clone())
-            # Save image back
-            self.img_dataset[index] = img_h5
+            # Get cropping bounds
+            #   - height
+            crop_until_top = FISBScraper.should_crop_top(img, crop_shape=list(range(1, 20)))
+            keep_from_h = crop_until_top + 1 if crop_until_top is not False else 0
+            crop_from_bottom = FISBScraper.should_crop_bottom(img, target_shape=list(range(107, 127)))
+            keep_until_h = crop_from_bottom - 1 if crop_from_bottom is not False else (img.shape[1] - 1)
+            keep_h = keep_until_h - keep_from_h + 1
+            diff_h = img.shape[1] - keep_h
+            #   - width
+            keep_from_w = diff_h // 2
+            keep_until_w = img.shape[2] - diff_h // 2 + (diff_h % 2)
+            crop_dict = {
+                'h_from': keep_from_h,
+                'h_until': keep_until_h,
+                'w_from': keep_from_w,
+                'w_until': keep_until_w,
+                'upscale_size': img.shape[2]
+            }
+            self.crops.append(crop_dict)
+
+        # Save crops dict
+        with open(self.crops_json_path, 'w') as json_fp:
+            json.dump(self.crops, json_fp, indent=4)
+
+    def backward(self) -> None:
+        """
+        Perform backward pass.
+        """
+        if self.crops is None:
+            raise RuntimeError('self.crops is None: Exiting now...')
+        h_from_probs = {}
+        h_until_probs = {}
+        w_from_probs = {}
+        w_until_probs = {}
+        keys = ['h_from', 'h_until', 'w_from', 'w_until']
+        # keys = ['h_from', 'h_until']
+        for index in self.tqdm(range(self.total_images_count), file=sys.stdout):
+            # Get crop data
+            crops = self.crops[index]
+            # Fill dicts
+            for k in keys:
+                k_value = crops[k]
+                # Append to corresponding dict
+                probs_dict = locals()[f'{k}_probs']
+                if k_value not in probs_dict:
+                    probs_dict[k_value] = 1 / self.total_images_count
+                else:
+                    probs_dict[k_value] += 1 / self.total_images_count
+        # Output probs
+        for k in keys:
+            probs_dict = locals()[f'{k}_probs']
+            probs_dict = collections.OrderedDict(sorted(probs_dict.items()))
+            # print(json.dumps(probs_dict, indent=4))
+            x = [int(k) for k in probs_dict.keys()]
+            x_smooth = np.linspace(min(x), max(x), 300)
+            y = [float(v) for v in probs_dict.values()]
+            # spl = make_interp_spline(x, 7, k=3)
+            y_smooth = make_interp_spline(x, y, k=3)(x_smooth)
+            plt.plot(x_smooth, y_smooth)
+            plt.show()
 
     @staticmethod
-    def crop_bottom(t: torch.Tensor or np.ndarray, target_shape: int = 110, bounds_only: bool = False,
-                    upscale_after: bool = False) -> torch.Tensor or np.ndarray or list:
-        """
-        Crops given tensor at target_shape (square crop).
-        :param (torch.Tensor) t: input image as a torch.Tensor object with CxHxW order
-        :param (int) target_shape: target height and width of image
-        :param (bool) bounds_only: set to True to return cropping bounds only and not perform any actual operation on
-                                   the inputs
-        :param (bool) upscale_after: set to True to have the method return an upscaled tensor matching the dimensions
-                                     of the input one
-        :return: a torch.Tensor object containing the cropped image with CxHxW order
-        """
-        assert t.shape[1] == t.shape[2] and t.shape[1] > t.shape[0], 'check that ordering is CxHxW'
-        # Perform the crop by centering in width ONLY
-        initial_shape = t.shape[1]
-        diff_shape = initial_shape - target_shape
-        bounds = [0, target_shape, diff_shape // 2, (initial_shape - diff_shape // 2 - (diff_shape % 2))]
-        if bounds_only:
-            return bounds
-        t_cropped = t[:, bounds[0]:bounds[1], bounds[2]:bounds[3]]
-        # Upscale if requested
-        if upscale_after:
-            upsample = torch.nn.Upsample(size=initial_shape, mode='bicubic', align_corners=True)
-            if type(t_cropped) == np.ndarray:
-                return upsample(torch.from_numpy(t_cropped).unsqueeze(0)).squeeze(0).numpy().astype(t_cropped.dtype)
-            t_cropped = upsample(t_cropped.unsqueeze(0)).squeeze(0)
-        return t_cropped
+    def should_crop_top(t: torch.Tensor, crop_shape: int or tuple = 10) -> int or False:
+        if type(crop_shape) == int:
+            crop_shape = (crop_shape,)
+        crop_shape.sort(reverse=True)
+        for cs in crop_shape:
+            initial_shape = t.shape[1]
+            final_shape = initial_shape - cs
+            diff_shape = initial_shape - final_shape
+            width_limits = (diff_shape // 2 + (diff_shape % 2), (diff_shape // 2 + (diff_shape % 2)))
+            # Check if square is neutral (e.g. white or gray)
+            cropped_area: torch.Tensor
+            cropped_area = t[:, 0:cs, width_limits[0]:(initial_shape - width_limits[1])].clone()
+            cropped_area[0, 0, 0] = -1.0
+            cropped_area[-1, -1, -1] = 1.0
+            cropped_area = ToTensorOrPass()(cropped_area)
+            cropped_area = cropped_area[:, :, width_limits[0]:max(1, (cropped_area.shape[2] - width_limits[1]))]
+            if sum([abs(cropped_area[c_i].min() - cropped_area[c_i].max()) for c_i in range(3)]) < 0.1 \
+                    or (torch.allclose(cropped_area[0], cropped_area[1], rtol=1e-2) and
+                        torch.allclose(cropped_area[1], cropped_area[2], rtol=1e-2)):
+                return cs
+        return False
 
     @staticmethod
     def should_crop_bottom(t: torch.Tensor, target_shape: int or tuple = 110) -> int or False:
@@ -1311,7 +1392,7 @@ class FISBScraper:
 
     @staticmethod
     def crop_top(t: torch.Tensor or np.ndarray, crop_shape: int = 110, bounds_only: bool = False,
-                 upscale_after: bool = False) -> torch.Tensor or np.ndarray or list:
+                 upscale_after: bool = False) -> torch.Tensor or np.ndarray:
         """
         Crops given tensor at target_shape (square crop).
         :param (torch.Tensor) t: input image as a torch.Tensor object with CxHxW order
@@ -1331,38 +1412,57 @@ class FISBScraper:
         bounds = [crop_shape + 1, -1, width_limits[0], (initial_shape - width_limits[1])]
         if bounds_only:
             return bounds
-        t_cropped = t[:, bounds[0]:bounds[1], bounds[2]:bounds[3]]
-        # Upscale if requested
-        if upscale_after:
-            initial_shape = 128
-            upsample = torch.nn.Upsample(size=initial_shape, mode='bicubic', align_corners=True)
-            if type(t_cropped) == np.ndarray:
-                return upsample(torch.from_numpy(t_cropped).unsqueeze(0)).squeeze(0).numpy().astype(t_cropped.dtype)
-            t_cropped = upsample(t_cropped.unsqueeze(0)).squeeze(0)
-        return t_cropped
+        return FISBDataset.crop_to_bounds(t, bounds[0], bounds[1], bounds[2], bounds[3],
+                                          upscale_size=initial_shape if upscale_after else None)
 
     @staticmethod
-    def should_crop_top(t: torch.Tensor, crop_shape: int or tuple = 10) -> int or False:
-        if type(crop_shape) == int:
-            crop_shape = (crop_shape,)
-        crop_shape.sort(reverse=True)
-        for cs in crop_shape:
-            initial_shape = t.shape[1]
-            final_shape = initial_shape - cs
-            diff_shape = initial_shape - final_shape
-            width_limits = (diff_shape // 2 + (diff_shape % 2), (diff_shape // 2 + (diff_shape % 2)))
-            # Check if square is neutral (e.g. white or gray)
-            cropped_area: torch.Tensor
-            cropped_area = t[:, 0:cs, width_limits[0]:(initial_shape - width_limits[1])].clone()
-            cropped_area[0, 0, 0] = -1.0
-            cropped_area[-1, -1, -1] = 1.0
-            cropped_area = ToTensorOrPass()(cropped_area)
-            cropped_area = cropped_area[:, :, width_limits[0]:max(1, (cropped_area.shape[2] - width_limits[1]))]
-            if sum([abs(cropped_area[c_i].min() - cropped_area[c_i].max()) for c_i in range(3)]) < 0.1 \
-                    or (torch.allclose(cropped_area[0], cropped_area[1], rtol=1e-2) and
-                        torch.allclose(cropped_area[1], cropped_area[2], rtol=1e-2)):
-                return cs
-        return False
+    def crop_bottom(t: torch.Tensor or np.ndarray, target_shape: int = 110, bounds_only: bool = False,
+                    upscale_after: bool = False) -> torch.Tensor or np.ndarray:
+        """
+        Crops given tensor at target_shape (square crop).
+        :param (torch.Tensor) t: input image as a torch.Tensor object with CxHxW order
+        :param (int) target_shape: target height and width of image
+        :param (bool) bounds_only: set to True to return cropping bounds only and not perform any actual operation on
+                                   the inputs
+        :param (bool) upscale_after: set to True to have the method return an upscaled tensor matching the dimensions
+                                     of the input one
+        :return: a torch.Tensor object containing the cropped image with CxHxW order
+        """
+        assert t.shape[1] == t.shape[2] and t.shape[1] > t.shape[0], 'check that ordering is CxHxW'
+        # Perform the crop by centering in width ONLY
+        initial_shape = t.shape[1]
+        diff_shape = initial_shape - target_shape
+        bounds = [0, target_shape, diff_shape // 2, (initial_shape - diff_shape // 2 - (diff_shape % 2))]
+        if bounds_only:
+            return bounds
+        return FISBDataset.crop_to_bounds(t, bounds[0], bounds[1], bounds[2], bounds[3],
+                                          upscale_size=initial_shape if upscale_after else None)
+
+    @staticmethod
+    def run(forward_pass: bool = True, backward_pass: bool = True) -> None:
+        """
+        Entry point of class.
+        :param forward_pass: set to True to run scraper's forward pass (create crops.json file in dataset's root)
+        :param backward_pass: set to True to run scraper's backward pass (read crops.json and output stats)
+                              Note: if $forward_pass$ is set to True, then $backward_pass$ is also set to True.
+        """
+        scraper = FISBScraper()
+        scraper.logger.info(f'SCRAPE DIR = {scraper.root}')
+        if forward_pass:
+            # Forward pass
+            scraper.logger.info('[forward] STARTING')
+            time.sleep(0.5)
+            scraper.forward()
+            time.sleep(0.5)
+            scraper.logger.info('[forward] DONE')
+        # Backward pass
+        if backward_pass:
+            scraper.logger.info('[backward] STARTING')
+            time.sleep(0.5)
+            scraper.backward()
+            time.sleep(0.5)
+            scraper.logger.info('[backward] DONE')
+        scraper.logger.info('DONE')
 
 
 if __name__ == '__main__':
@@ -1378,38 +1478,52 @@ if __name__ == '__main__':
     _dl = FISBDataloader(_datasets_groot, target_shape=128, target_channels=3, batch_size=1,
                          pin_memory=False, log_level='debug')
 
-    # Print first image from each dataset
-    for i in np.random.randint(0, len(_dl.dataset), 10):
-        # i = 76820
-        print(i)
-        _img = _dl.dataset[i]
-        _imgs = [_img.clone(), ]
+    _img = _dl.dataset[1232]
+    _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
+    plt.imshow(_plt_transforms(_img.squeeze(dim=0)))
+    plt.show()
 
-        # Crop Bottom
-        _target_shape_bottom = FISBScraper.should_crop_bottom(_img, target_shape=list(range(107, 127)))
-        if _target_shape_bottom is not False:
-            _img = FISBScraper.crop_bottom(_img, target_shape=_target_shape_bottom, upscale_after=False)
-            _imgs.append(torch.nn.Upsample(size=128, mode='bicubic')(_img.clone().unsqueeze(0)).squeeze(0))
-
-        # Crop Top
-        _target_shape_top = FISBScraper.should_crop_top(_img, crop_shape=list(range(1, 20)))
-        if _target_shape_top is not False:
-            _img = FISBScraper.crop_top(_img, crop_shape=_target_shape_top, upscale_after=True)
-            _imgs.append(_img.clone())
-
-        _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
-        if len(_imgs) == 1:
-            pass
-        else:
-            _grid = create_img_grid(images=torch.stack(_imgs), ncols=len(_imgs), nrows=1)
-            _img = plot_grid(grid=_grid, figsize=(len(_imgs), 1), footnote_l=f'index={i}', footnote_r='[CROPPED]')
-            _img = ToTensorOrPass()(_img)
-
-        plt.imshow(_plt_transforms(_img.squeeze(dim=0)))
-        plt.show()
+    # # Print first image from each dataset
+    # from matplotlib import pyplot as plt
+    # from utils.plot import create_img_grid, plot_grid
+    # for i in np.random.randint(0, len(_dl.dataset), 10):
+    #     # i = 76820
+    #     print(i)
+    #     _img = _dl.dataset[i]
+    #     _imgs = [_img.clone(), ]
+    #
+    #     # Get cropping bounds
+    #     #   - height
+    #     _crop_until_top = FISBScraper.should_crop_top(_img, crop_shape=list(range(1, 20)))
+    #     _keep_from_h = _crop_until_top + 1 if _crop_until_top is not False else 0
+    #     _crop_from_bottom = FISBScraper.should_crop_bottom(_img, target_shape=list(range(107, 127)))
+    #     _keep_until_h = _crop_from_bottom - 1 if _crop_from_bottom is not False else (_img.shape[1] - 1)
+    #     _keep_h = _keep_until_h - _keep_from_h + 1
+    #     _diff_h = _img.shape[1] - _keep_h
+    #     #   - width
+    #     _keep_from_w = _diff_h // 2
+    #     _keep_until_w = _img.shape[2] - _diff_h // 2 + (_diff_h % 2)
+    #
+    #     # Crop
+    #     try:
+    #         _img = FISBDataset.crop_to_bounds(_img, h_from=_keep_from_h, h_until=_keep_until_h, w_from=_keep_from_w,
+    #                                           w_until=_keep_until_w, upscale_size=_img.shape[2])
+    #         _imgs.append(_img.clone())
+    #     except RuntimeError as e:
+    #         dataset_ptr: FISBDataset = _dl.dataset
+    #         dataset_ptr.logger.error(str(e) + ' | ' + str((_keep_from_h, _keep_until_h, _keep_from_w, _keep_until_w)))
+    #
+    #     _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
+    #     if len(_imgs) == 1:
+    #         pass
+    #     else:
+    #         _grid = create_img_grid(images=torch.stack(_imgs), ncols=len(_imgs), nrows=1)
+    #         _img = plot_grid(grid=_grid, figsize=(len(_imgs), 1), footnote_l=f'index={i}', footnote_r='[CROPPED]')
+    #         _img = ToTensorOrPass()(_img)
+    #
+    #     # Plot before/after
+    #     plt.imshow(_plt_transforms(_img.squeeze(dim=0)))
+    #     plt.show()
 
     # if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
-    #     scraper = FISBScraper(log_level='debug')
-    #     scraper.forward()
-
-    print('nah')
+    #     FISBScraper.run(forward_pass=False, backward_pass=True)

@@ -620,7 +620,7 @@ if __name__ == '__main__':
                               condition_indices=(0,), n_samples=2, batch_size=1, f1_k=1, device='cpu')
 
     # Initialize model
-    _ccgan = CycleGAN(model_fs_folder_or_root=_models_root, config_id='64_MSE_L1_L1_2_9_2_9_64_4_1e4_false_false_false',
+    _ccgan = CycleGAN(model_fs_folder_or_root=_models_root, config_id='discogan',
                       dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
     print(_ccgan.nparams_hr)
 
