@@ -238,7 +238,7 @@ class IGModule(GDriveModel, IModule, metaclass=ABCMeta):
         self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
 
         # Instantiate GDriveModel
-        model_name = self.__class__.__name__.lower()
+        model_name = os.environ.get('CURRENT_MODEL_NAME', self.__class__.__name__.lower())
         model_fs_folder = model_fs_folder_or_root if model_fs_folder_or_root.name.endswith(model_name) else \
             model_fs_folder_or_root.subfolder_by_name(folder_name=f'model_name={model_name}', recursive=True)
         if model_fs_folder is None:
