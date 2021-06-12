@@ -1,3 +1,4 @@
+import builtins
 import os
 from typing import Optional, Tuple
 
@@ -38,12 +39,14 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
     NormalizeStd = 0.5
 
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
-                 log_level: str = 'info'):
+                 count_len_on: str = 'min', log_level: str = 'info'):
         """
         Bags2ShoesDataset class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
                                                              dataset from local or remote (Google Drive) filesystem
         :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param (str) count_len_on: one of 'max' or 'min' that is used to define joint dataset length in case the two
+                                   datasets' sizes differ
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         """
         # Instantiate `torch.utils.data.Dataset` class
@@ -88,7 +91,8 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
         self.logger.debug(f'Found {to_human_readable(self.shoes_total_images_count)} total images in the ' +
                           f'shoes_64 dataset')
         # Save benchmark info
-        self.total_images_count = min(self.handbags_total_images_count, self.shoes_total_images_count)
+        min_max = getattr(builtins, count_len_on)
+        self.total_images_count = min_max(self.handbags_total_images_count, self.shoes_total_images_count)
         self.logger.debug(f'Dataset\'s length (max): {to_human_readable(self.total_images_count)} images')
         # Save transforms
         self._transforms = None
@@ -109,9 +113,9 @@ class Bags2ShoesDataset(Dataset, GDriveDataset):
         :return: a tuple object containing one image from each domain (handbags and shoes respectively)
         """
         # Fetch handbag image
-        handbag_image = Image.fromarray(self.handbags_dataset[index])
+        handbag_image = Image.fromarray(self.handbags_dataset[index % self.handbags_total_images_count])
         # Fetch shoe image
-        shoe_image = Image.fromarray(self.shoes_dataset[index])
+        shoe_image = Image.fromarray(self.shoes_dataset[index % self.shoes_total_images_count])
         # Apply transforms & return
         handbag_image = self.transforms(handbag_image)
         shoe_image = self.transforms(shoe_image)
@@ -161,7 +165,7 @@ class Bags2ShoesDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducib
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder,
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
                  target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
-                 norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True,
+                 norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True, count_len_on: str = 'max',
                  seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None, log_level: str = 'info'):
         """
         Bags2ShoesDataloader class constructor.
@@ -197,7 +201,8 @@ class Bags2ShoesDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducib
                                                                       norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance with the given transforms
         _entire_dataset = Bags2ShoesDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root,
-                                            image_transforms=image_transforms, log_level=log_level)
+                                            image_transforms=image_transforms,
+                                            count_len_on=count_len_on, log_level=log_level)
         # Perform train/test split
         if splits:
             _training_set, _test_set = train_test_split(_entire_dataset, splits=splits, seed=seed)
