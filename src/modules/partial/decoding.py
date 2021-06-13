@@ -80,7 +80,7 @@ class ExpandingBlock(nn.Module):
         if activation is not None:
             activations_switcher = {
                 'relu': nn.ReLU(),
-                'lrelu': nn.LeakyReLU(0.2),
+                'lrelu': nn.LeakyReLU(0.2, inplace=True),
                 'tanh': nn.Tanh(),
                 'sigmoid': nn.Sigmoid(),
             }
@@ -139,12 +139,12 @@ class UNETExpandingBlock(nn.Module):
             nn.Conv2d(c_in, c_in // 2, kernel_size=3, padding=1),
             nn.BatchNorm2d(c_in // 2) if use_bn else nn.Identity(),
             nn.Dropout() if use_dropout else nn.Identity(),
-            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
+            nn.ReLU(inplace=True) if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True),
             # 3rd convolution layer
             nn.Conv2d(c_in // 2, c_in // 2, kernel_size=2, padding=1),
             nn.BatchNorm2d(c_in // 2) if use_bn else nn.Identity(),
             nn.Dropout() if use_dropout else nn.Identity(),
-            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2),
+            nn.ReLU(inplace=True) if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True),
         )
 
     def forward(self, x: Tensor, skip_conn_at_x: Tensor) -> Tensor:

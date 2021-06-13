@@ -67,7 +67,7 @@ class MUNITContentEncoder(nn.Module):
                 nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride)
             ),
             nn.InstanceNorm2d(c_out) if use_instance_norm else nn.Identity(),
-            nn.ReLU()
+            nn.ReLU(inplace=True)
         )
 
 

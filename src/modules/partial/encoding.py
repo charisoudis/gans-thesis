@@ -44,8 +44,8 @@ class ContractingBlock(nn.Module):
             _layers.append(nn.Dropout2d(p=0.2))
         if activation is not None:
             activations_switcher = {
-                'relu': nn.ReLU(),
-                'lrelu': nn.LeakyReLU(0.2),
+                'relu': nn.ReLU(inplace=True),
+                'lrelu': nn.LeakyReLU(0.2, inplace=True),
                 'tanh': nn.Tanh(),
                 'sigmoid': nn.Sigmoid(),
             }

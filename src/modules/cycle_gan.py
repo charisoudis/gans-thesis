@@ -10,7 +10,6 @@ from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.transforms import Compose
 
-from datasets.bags2shoes import Bags2ShoesDataset, Bags2ShoesDataloader
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
 from modules.ifaces import IGanGModule
@@ -608,21 +607,22 @@ if __name__ == '__main__':
     _datasets_groot = _groot.subfolder_by_name('Datasets')
 
     # Initialize model evaluator
-    _gen_transforms = Bags2ShoesDataset.get_image_transforms(
-        target_shape=CycleGAN.DefaultConfiguration['shapes']['w_in'],
-        target_channels=CycleGAN.DefaultConfiguration['shapes']['c_in']
-    )
-
-    _bs = 2
-    _dl = Bags2ShoesDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
-                               log_level=_log_level, batch_size=_bs, pin_memory=False)
-    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, target_index=1,
-                              condition_indices=(0,), n_samples=2, batch_size=1, f1_k=1, device='cpu')
+    # _gen_transforms = Bags2ShoesDataset.get_image_transforms(
+    #     target_shape=CycleGAN.DefaultConfiguration['shapes']['w_in'],
+    #     target_channels=CycleGAN.DefaultConfiguration['shapes']['c_in']
+    # )
+    #
+    # _bs = 2
+    # _dl = Bags2ShoesDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
+    #                            log_level=_log_level, batch_size=_bs, pin_memory=False)
+    # _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, target_index=1,
+    #                           condition_indices=(0,), n_samples=2, batch_size=1, f1_k=1, device='cpu')
 
     # Initialize model
     _ccgan = CycleGAN(model_fs_folder_or_root=_models_root, config_id='discogan',
-                      dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
+                      dataset_len=79000, log_level=_log_level, evaluator=None, device='cpu')
     print(_ccgan.nparams_hr)
+    exit(0)
 
     _device = _ccgan.device
     _x, _y = next(iter(_dl))
