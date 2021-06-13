@@ -544,7 +544,7 @@ class FISBDataset(Dataset, GDriveDataset):
         image = Image.fromarray((255 * img).astype(np.uint8).swapaxes(2, 0), 'RGB')
         # Apply transforms
         image = self.transforms(image)
-        # Crop
+        # Crop (costs on average less than 2ms)
         crop = self.crops[index]
         return FISBDataset.crop_to_bounds(image, h_from=crop['h_from'], h_until=crop['h_until'],
                                           w_from=crop['w_from'], w_until=crop['w_until'], upscale_size=image.shape[2])
