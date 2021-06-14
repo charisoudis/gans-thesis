@@ -1,3 +1,4 @@
+import os
 from typing import Tuple, Optional, Sequence
 
 import click
@@ -5,11 +6,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 from PIL.Image import Image
+from matplotlib import pyplot as plt
 from torch import Tensor
 from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.transforms import Compose
 
+from datasets.bags2shoes import Bags2ShoesDataloader, Bags2ShoesDataset
 from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
 from modules.ifaces import IGanGModule
@@ -190,7 +193,7 @@ class CycleGAN(nn.Module, IGanGModule):
 
         # Save arguments
         self.device = device
-        self.use_half_precision = self._configuration['use_half_precision'] \
+        self.use_half_precision = self._configuration['use_half_precision'] and str(device) != 'cpu' \
             if 'use_half_precision' in self._configuration.keys() else False
 
         # Create a GradScaler once (for float16 forward/backward passes)
@@ -607,27 +610,37 @@ if __name__ == '__main__':
     _datasets_groot = _groot.subfolder_by_name('Datasets')
 
     # Initialize model evaluator
-    # _gen_transforms = Bags2ShoesDataset.get_image_transforms(
-    #     target_shape=CycleGAN.DefaultConfiguration['shapes']['w_in'],
-    #     target_channels=CycleGAN.DefaultConfiguration['shapes']['c_in']
-    # )
-    #
-    # _bs = 2
-    # _dl = Bags2ShoesDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
-    #                            log_level=_log_level, batch_size=_bs, pin_memory=False)
-    # _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, target_index=1,
-    #                           condition_indices=(0,), n_samples=2, batch_size=1, f1_k=1, device='cpu')
+    _gen_transforms = Bags2ShoesDataset.get_image_transforms(
+        target_shape=CycleGAN.DefaultConfiguration['shapes']['w_in'],
+        target_channels=CycleGAN.DefaultConfiguration['shapes']['c_in']
+    )
+
+    _bs = 2
+    _dl = Bags2ShoesDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
+                               log_level=_log_level, batch_size=_bs, count_len_on='min', pin_memory=False)
+    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, target_index=1,
+                              condition_indices=(0,), n_samples=2, batch_size=1, f1_k=1, device='cpu')
 
     # Initialize model
-    _ccgan = CycleGAN(model_fs_folder_or_root=_models_root, config_id='discogan',
-                      dataset_len=79000, log_level=_log_level, evaluator=None, device='cpu')
+    _ccgan = CycleGAN(model_fs_folder_or_root=_models_root, config_id='discogan', chkpt_step=66600, chkpt_epoch=88,
+                      dataset_len=79000, log_level=_log_level, evaluator=_evaluator, device='cpu')
+    _ccgan.use_half_precision = False
     print(_ccgan.nparams_hr)
-    exit(0)
+    # exit(0)
 
     _device = _ccgan.device
     _x, _y = next(iter(_dl))
     _disc_loss, _gen_loss = _ccgan(_x.to(_device), _y.to(_device))
     print(_disc_loss, _gen_loss)
+
+    _img = _ccgan.visualize()
+    with open('/home/achariso/Pictures/Thesis/ccgan_sample.png', 'wb') as _img_fp:
+        _img.save(_img_fp)
+        os.system('xdg-open /home/achariso/Pictures/Thesis/ccgan_sample.png')
+    plt.imshow(_img)
+    plt.show()
+
+
     # print('Number of parameters: gen_a_to_b=' + _ccgan.gen_a_to_b.nparams_hr)
     # print('Number of parameters: gen_b_to_a=' + _ccgan.gen_b_to_a.nparams_hr)
     # print('Number of parameters: disc_a=' + _ccgan.disc_a.nparams_hr)
