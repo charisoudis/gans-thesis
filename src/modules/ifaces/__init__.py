@@ -237,7 +237,10 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 x_new = np.linspace(curve_x[0], curve_x[-1], 300)
                 curve_colors = colors[color_index]
                 plt.plot(x_new, make_interp_spline(curve_x, curve_y, k=3)(x_new), '-.', color=curve_colors[0])
-                plt.plot(curve_x, curve_y, 'o', color=curve_colors[1])
+                if len(curve_y > 100):
+                    plt.plot(curve_x, curve_y, '.', color=curve_colors[1])
+                else:
+                    plt.plot(curve_x, curve_y, 'o', color=curve_colors[1])
                 color_index += 1
 
             # Set figure title
