@@ -2,7 +2,7 @@ import abc
 import json
 import os
 from abc import ABCMeta
-from typing import Optional, Union, Dict, List, Sequence
+from typing import Optional, Union, Dict, List, Sequence, Tuple
 
 import matplotlib
 import matplotlib.font_manager
@@ -130,7 +130,8 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
     def visualize_indices(self, indices: int or Sequence) -> Image:
         raise NotImplementedError
 
-    def visualize_losses(self, dict_keys: tuple, upload: bool = False, preview: bool = False) -> List[Image]:
+    def visualize_losses(self, dict_keys: tuple, upload: bool = False, preview: bool = False,
+                         colors: Optional[List[Tuple[str, str]]] = None) -> List[Image]:
         """
         Fetch the losses from every checkpoint and plot them nicely.
         :param (tuple) dict_keys: e.g. ('gen_loss', 'disc_loss') --> 2 images, each with the respective loss
@@ -138,10 +139,18 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                                        (('g1_loss', 'g2_loss'), 'disc_loss') --> 2 images, the 1st with 2 losses
         :param (bool) upload: set to True to have all the resulting images been uploaded to GoogleDrive
         :param (bool) preview: set to True to plot images using matplotlib
+        :param (optional) colors: a list of tuples wherein the first is the color of the line and the second is the
+                                  color of the point (default to None == [(blue1, blue2), (orange1, orange2),
+                                                                          (green1, green2), (purple1, purple2), (greys)]
         :return: a list of PIL.Image objects
         """
         assert isinstance(self, FilesystemModel), 'Model must implement utils.ifaces.FilesystemFolder to visualize' + \
                                                   'checkpoint losses and upload produced images to cloud'
+        # Setup colors
+        if colors is None:
+            colors = [('#2a9ceb', '#1f77b4'), ('#fa9800', '#fa5622'), ('#8bc34a', '#4caf4f'), ('#9c27b0', '#673ab7'),
+                      ('#9e9e9e', '#607d8b')]
+
         # Download all checkpoints locally
         chkpt_files = {}
         chkpts_dict = self.list_all_checkpoints()
@@ -204,31 +213,32 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
         _returns = []
         for ki, key_or_keys in enumerate(dict_keys):
             _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
-            _ii = f'img_{ki}'  # image index
-            _idata = losses_dict[_ii]  # image data (e.g. {'gen_loss': {0: [0.1, 0.4, ...], 1: [0.2, ...], ...},
-            #                   'disc_loss: {....}
+            _ii = f'img_{ki}'  # ______________ # image index
+            _idata = getattr(losses_dict, _ii)  # image data (e.g. {'gen_loss': {0: [0.1, 0.4, ...], 1: [0.2, ...],...},
+            # _________________________________ #                   'disc_loss: {....}
 
             # Create a new figure
+            color_index = 0
             plt.figure(figsize=(10, 5), dpi=300, clear=True)
 
             # Plot each curve
             curve_key: str
             curve_name: dict
             for curve_name, curve_data in _idata.items():
-                print(f'plotting {curve_name} (len = {len(curve_data)})')
-
                 # x-axis | y-axis
                 curve_x = []
                 curve_y = []
-                for epoch, epoch_values in curve_data:
+                for epoch, epoch_values in curve_data.items():
                     for vi, v in enumerate(epoch_values):
                         curve_x.append(epoch + vi / len(epoch_values))
                         curve_y.append(v)
 
                 # Plot curve (smooth line + actual points)
                 x_new = np.linspace(curve_x[0], curve_x[-1], 300)
-                plt.plot(x_new, make_interp_spline(curve_x, curve_y, k=3)(x_new), '-.', color='#2a9ceb')
-                plt.plot(curve_x, curve_y, 'o', color='#1f77b4')
+                curve_colors = colors[color_index]
+                plt.plot(x_new, make_interp_spline(curve_x, curve_y, k=3)(x_new), '-.', color=curve_colors[0])
+                plt.plot(curve_x, curve_y, 'o', color=curve_colors[1])
+                color_index += 1
 
             # Set figure title
             plt_title = f'{" vs. ".join(_keys)}'
