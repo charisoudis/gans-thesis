@@ -213,9 +213,9 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
         _returns = []
         for ki, key_or_keys in enumerate(dict_keys):
             _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
-            _ii = f'img_{ki}'  # ______________ # image index
-            _idata = getattr(losses_dict, _ii)  # image data (e.g. {'gen_loss': {0: [0.1, 0.4, ...], 1: [0.2, ...],...},
-            # _________________________________ #                   'disc_loss: {....}
+            _ii = f'img_{ki}'  # ______ # image index
+            _idata = losses_dict[_ii]  # image data (e.g. {'gen_loss': {0: [0.1, 0.4, ...], 1: [0.2, ...],...},
+            # _________________________ #                   'disc_loss: {....}
 
             # Create a new figure
             color_index = 0
