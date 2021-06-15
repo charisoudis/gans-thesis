@@ -219,7 +219,9 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
 
             # Create a new figure
             color_index = 0
-            plt.figure(figsize=(10, 5), dpi=300, clear=True)
+            fig: plt.Figure
+            fig, ax = plt.subplots(figsize=(10, 5), dpi=300, clear=True)
+            ax.set_xlabel('epoch')
 
             # Plot each curve
             curve_key: str
@@ -233,21 +235,33 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                         curve_x.append(epoch + vi / len(epoch_values))
                         curve_y.append(v)
 
+                # Init y-axis
+                if color_index > 0:
+                    ax = ax.twinx()
+                curve_colors = colors[color_index]
+                if len(_idata.keys()) > 1:
+                    ax.set_ylabel(curve_name, color=curve_colors[1])
+                else:
+                    ax.set_ylabel(curve_name)
+                ax.tick_params(axis='y')
+
                 # Plot curve (smooth line + actual points)
                 x_new = np.linspace(curve_x[0], curve_x[-1], 300)
-                curve_colors = colors[color_index]
-                plt.plot(x_new, make_interp_spline(curve_x, curve_y, k=3)(x_new), '-.', color=curve_colors[0])
-                if len(curve_y > 100):
-                    plt.plot(curve_x, curve_y, '.', color=curve_colors[1])
+                ax.plot(x_new, make_interp_spline(curve_x, curve_y, k=3)(x_new), '-.', color=curve_colors[0],
+                        label=curve_name)
+                if len(curve_y) > 100:
+                    ax.plot(curve_x, curve_y, '.', color=curve_colors[1])
                 else:
-                    plt.plot(curve_x, curve_y, 'o', color=curve_colors[1])
+                    ax.plot(curve_x, curve_y, 'o', color=curve_colors[1])
                 color_index += 1
 
             # Set figure title
             plt_title = f'{" vs. ".join(_keys)}'
             plt_subtitle = f'{filename_suffix.replace("_", " to ").replace("=", ": ").replace(".jpg", "")}'
-            plt.suptitle(f'{plt_title}', y=0.97, fontsize=12, fontweight='bold')
+            fig.suptitle(f'{plt_title}', y=0.97, fontsize=12, fontweight='bold')
             plt.title(f'{plt_subtitle}', pad=10., fontsize=10, )
+            fig.legend()
+            fig.tight_layout()
 
             # Get PIL image
             pil_img = pltfig_to_pil(plt.gcf())

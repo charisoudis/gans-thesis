@@ -77,33 +77,34 @@ class AdaptiveInstanceNorm2d(nn.Module):
     This is a instance normalization with added learned mean & std for every channel (same in batch).
     Values:
         c_in: the number of channels the image has
-        s_dim: the dimension of the style tensor (s)
+        w_dim: the dimension of the style tensor (s)
         h_dim: the hidden dimension of the MLP
     """
 
-    def __init__(self, c_in: int, s_dim: int = 8, h_dim: int = 256):
+    def __init__(self, c_in: int, w_dim: int = 8, h_dim: int = 256, n_mpl_blocks: int = 3):
         """
         AdaptiveInstanceNorm2d class constructor.
-        :param c_in: number of input channels
-        :param s_dim: length of style vector
-        :param h_dim: number of hidden neurons in MLPBlock modules that affinely transform instance norm statistics
+        :param (int) c_in: number of input channels
+        :param (int) w_dim: length of style vector
+        :param (int) h_dim: number of hidden neurons in MLPBlock's (that affinely transform instance norm statistics)
+        :param (int) n_mpl_blocks: number of blocks in MLPBlock's (that affinely transform instance norm statistics)
         """
         super(AdaptiveInstanceNorm2d, self).__init__()
         self.instance_norm = nn.InstanceNorm2d(c_in, affine=False)
-        self.style_scale_transform = MLPBlock(in_dim=s_dim, hidden_dim=h_dim, out_dim=c_in)
-        self.style_shift_transform = MLPBlock(in_dim=s_dim, hidden_dim=h_dim, out_dim=c_in)
+        self.style_scale_transform = MLPBlock(in_dim=w_dim, hidden_dim=h_dim, out_dim=c_in, n_blocks=n_mpl_blocks)
+        self.style_shift_transform = MLPBlock(in_dim=w_dim, hidden_dim=h_dim, out_dim=c_in, n_blocks=n_mpl_blocks)
 
     def forward(self, x: Tensor, w: Tensor) -> Tensor:
         """
         Function for completing a forward pass of AdaIN:
         Given an image and a style, returns the normalized image that has been scaled and shifted by the style.
-        :param x: the feature map of shape (N, C, H, W)
-        :param w: the intermediate noise vector w to be made into the style (y)
+        :param (torch.Tensor) x: the feature map of shape (N, C, H, W)
+        :param (torch.Tensor) w: the intermediate noise vector w to be made into the style (y), of shape (NxW_dim)
         :return: torch.Tensor
         """
-        normalized_x = self.instance_norm(x)
-        style_scale = self.style_scale_transform(w)[:, :, None, None]
-        style_shift = self.style_shift_transform(w)[:, :, None, None]
+        normalized_x = self.instance_norm(x)  # (N,C,W,H)
+        style_scale = self.style_scale_transform(w)[:, :, None, None]  # (N,C,1,1)
+        style_shift = self.style_shift_transform(w)[:, :, None, None]  # (N,C,1,1)
         return style_scale * normalized_x + style_shift
 
 

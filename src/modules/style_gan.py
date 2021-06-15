@@ -141,15 +141,11 @@ class StyleGAN(nn.Module, IGanGModule):
                 chkpt_epoch = None
         if not chkpt_epoch:
             # Initialize weights with small values
-            self.gen_a_to_b = self.gen_a_to_b.apply(weights_init_naive)
-            self.gen_b_to_a = self.gen_b_to_a.apply(weights_init_naive)
-            self.disc_a = self.disc_a.apply(weights_init_naive)
-            self.disc_b = self.disc_b.apply(weights_init_naive)
+            self.gen = self.gen.apply(weights_init_naive)
+            self.disc = self.disc.apply(weights_init_naive)
         # For visualizations
-        self.fake_a = None
-        self.fake_b = None
-        self.real_a = None
-        self.real_b = None
+        self.real = None
+        self.fake = None
         self.gen_transforms = gen_transforms
 
         # Save arguments
@@ -237,14 +233,14 @@ class StyleGAN(nn.Module, IGanGModule):
         if self.is_master_device:
             self.gforward(real_a.shape[0])
 
-        #############################################
-        ########   Update Discriminator(s)   ########
-        #############################################
+        ##########################################
+        ########   Update Discriminator   ########
+        ##########################################
         pass
 
-        #############################################
-        ########     Update Generator(s)     ########
-        #############################################
+        ##########################################
+        ########     Update Generator     ########
+        ##########################################
         pass
 
         # TODO

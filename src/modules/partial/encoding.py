@@ -3,6 +3,9 @@ from typing import Optional
 import torch.nn as nn
 from torch import Tensor
 
+from utils.pytorch import get_total_params
+from utils.string import to_human_readable
+
 
 class ContractingBlock(nn.Module):
     """
@@ -132,22 +135,22 @@ class MLPBlock(nn.Module):
     This is a Multi-Layer Perceptron block composed of (Linear-Relu)*2+Linear.
     """
 
-    def __init__(self, in_dim: int, hidden_dim: int, out_dim: int, activation: str = 'relu'):
+    def __init__(self, in_dim: int, hidden_dim: int, out_dim: int, activation: str = 'relu', n_blocks: int = 3):
         """
         MLPBlock class constructor.
         :param (int) in_dim: number of input neurons
         :param (int) hidden_dim: number of neurons in hidden layers
         :param (int) out_dim: number of neurons in output layer
         :param (str) activation: type of activation function used (supported: 'relu', 'lrelu')
+        :param (int) n_blocks: number of (conv+relu) blocks
         """
         super(MLPBlock, self).__init__()
-        self.mlp_block = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(hidden_dim, out_dim),
-        )
+        _layers = []
+        for bi in range(n_blocks - 1):
+            _layers.append(nn.Linear(in_features=in_dim if bi == 0 else hidden_dim, out_features=hidden_dim))
+            _layers.append(nn.ReLU(inplace=True) if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True))
+        _layers.append(nn.Linear(hidden_dim, out_dim))
+        self.mlp_block = nn.Sequential(*_layers)
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -157,3 +160,25 @@ class MLPBlock(nn.Module):
         :return: transformed tensor of shape (N, out_dim)
         """
         return self.mlp_block(x)
+
+
+class NoiseMappingNetwork(MLPBlock):
+    """
+    NoiseMappingNetwork Class:
+    This class implements a layer of the Noise Mapping network proposed in the original StyleGAN paper.
+    """
+
+    def __init__(self, z_dim: int, hidden_dim: int, w_dim: int):
+        """
+        NoiseMappingNetwork class constructor.
+        :param (int) z_dim: the dimension of the noise vector
+        :param (int) hidden_dim: the inner dimension
+        :param (int) w_dim: the dimension of the w-vector (i.e. the vector in the less-entangled learned vector space)
+        """
+        super(NoiseMappingNetwork, self).__init__(in_dim=z_dim, hidden_dim=hidden_dim, out_dim=w_dim)
+
+
+if __name__ == '__main__':
+    mlp = MLPBlock(in_dim=512, hidden_dim=128, out_dim=512)
+    print(mlp)
+    print(to_human_readable(get_total_params(mlp)))
