@@ -12,7 +12,7 @@ from utils.train import get_optimizer, get_optimizer_lr_scheduler
 class MUNIT(nn.Module):
     """
     MUNIT Class:
-    This is the whole MUNIT model consisting of two AE-like Generators and two (stacks of) PatchGAN Discriminators each
+    This is the entire MUNIT model consisting of two AE-like Generators and two (stacks of) PatchGAN Discriminators each
     for its respective domain.
     """
 

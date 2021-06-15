@@ -130,6 +130,128 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
     def visualize_indices(self, indices: int or Sequence) -> Image:
         raise NotImplementedError
 
+    def visualize_losses(self, dict_keys: tuple, upload: bool = False, preview: bool = False) -> List[Image]:
+        """
+        Fetch the losses from every checkpoint and plot them nicely.
+        :param (tuple) dict_keys: e.g. ('gen_loss', 'disc_loss') --> 2 images, each with the respective loss
+                                       (('gen_loss', 'disc_loss')) --> 1 image with both losses
+                                       (('g1_loss', 'g2_loss'), 'disc_loss') --> 2 images, the 1st with 2 losses
+        :param (bool) upload: set to True to have all the resulting images been uploaded to GoogleDrive
+        :param (bool) preview: set to True to plot images using matplotlib
+        :return: a list of PIL.Image objects
+        """
+        assert isinstance(self, FilesystemModel), 'Model must implement utils.ifaces.FilesystemFolder to visualize' + \
+                                                  'checkpoint losses and upload produced images to cloud'
+        # Download all checkpoints locally
+        chkpt_files = {}
+        chkpts_dict = self.list_all_checkpoints()
+        for epoch, epoch_chkpts in chkpts_dict.items():
+            # Check if file is in local filesystem and is a chkpt file
+            _files = []
+            for _f in epoch_chkpts:
+                if isinstance(_f, FilesystemFile) and _f.name.endswith('.pth'):
+                    if not _f.is_downloaded:  # and not _f.download(in_parallel=False, show_progress=True):
+                        pass
+                        # raise FileNotFoundError('File not found in GoogleDrive or FAILed to download')
+                    _files.append(_f)
+            # Check if epoch yielded on checkpoints
+            if len(_files) == 0:
+                self.logger.warning(f'Epoch #{epoch} has no checkpoint (.pth) files')
+                continue
+            # Append file to outer list
+            chkpt_files[epoch] = _files.copy()
+
+        # Initialize dicts
+        losses_dict = {}
+        for ki, key_or_keys in enumerate(dict_keys):
+            _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
+            # Create list
+            if f'img_{ki}' not in losses_dict.keys():
+                losses_dict[f'img_{ki}'] = {_k: {} for _k in _keys}
+
+        # Process each chkpt file and extract the required keys
+        for epoch, epoch_chkpts in chkpt_files.items():
+            epoch_chkpt: FilesystemFile
+            for epoch_chkpt in epoch_chkpts:
+                # Load chkpt file
+                chkpt_dict = torch.load(epoch_chkpt.path, map_location='cpu')
+                # Process it and append to images data
+                for ki, key_or_keys in enumerate(dict_keys):
+                    _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
+                    _ii = f'img_{ki}'  # image index
+                    # Fetch values for corresponding keys
+                    for _k in _keys:
+                        #   - initialize epoch dict
+                        if epoch not in losses_dict[_ii][_k].keys():
+                            losses_dict[_ii][_k][epoch] = []
+                        #   - check if key exists
+                        if _k not in chkpt_dict.keys():
+                            losses_dict[_ii][_k][epoch].append(np.NaN)
+                        else:
+                            losses_dict[_ii][_k][epoch].append(chkpt_dict[_k])
+
+        # Set matplotlib params
+        matplotlib.rcParams["font.family"] = 'JetBrains Mono'
+        # Configure matplotlib for pretty plots
+        plt.rcParams["font.family"] = 'JetBrains Mono'
+
+        # Create a subfolder inside "Visualizations" folder to store aggregated metrics plots
+        vis_losses_folder = self.visualizations_fs_folder.subfolder_by_name_or_create(
+            folder_name='Losses Plots')
+        filename_suffix = f'epochs={tuple(chkpts_dict.keys())[0]}_{tuple(chkpts_dict.keys())[-1]}.jpg'
+
+        # Save loss plots as images & display inline
+        _returns = []
+        for ki, key_or_keys in enumerate(dict_keys):
+            _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
+            _ii = f'img_{ki}'  # image index
+            _idata = losses_dict[_ii]  # image data (e.g. {'gen_loss': {0: [0.1, 0.4, ...], 1: [0.2, ...], ...},
+            #                   'disc_loss: {....}
+
+            # Create a new figure
+            plt.figure(figsize=(10, 5), dpi=300, clear=True)
+
+            # Plot each curve
+            curve_key: str
+            curve_name: dict
+            for curve_name, curve_data in _idata.items():
+                print(f'plotting {curve_name} (len = {len(curve_data)})')
+
+                # x-axis | y-axis
+                curve_x = []
+                curve_y = []
+                for epoch, epoch_values in curve_data:
+                    for vi, v in enumerate(epoch_values):
+                        curve_x.append(epoch + vi / len(epoch_values))
+                        curve_y.append(v)
+
+                # Plot curve (smooth line + actual points)
+                x_new = np.linspace(curve_x[0], curve_x[-1], 300)
+                plt.plot(x_new, make_interp_spline(curve_x, curve_y, k=3)(x_new), '-.', color='#2a9ceb')
+                plt.plot(curve_x, curve_y, 'o', color='#1f77b4')
+
+            # Set figure title
+            plt_title = f'{" vs. ".join(_keys)}'
+            plt_subtitle = f'{filename_suffix.replace("_", " to ").replace("=", ": ").replace(".jpg", "")}'
+            plt.suptitle(f'{plt_title}', y=0.97, fontsize=12, fontweight='bold')
+            plt.title(f'{plt_subtitle}', pad=10., fontsize=10, )
+
+            # Get PIL image
+            pil_img = pltfig_to_pil(plt.gcf())
+            _returns.append(pil_img)
+            # Save visualization file
+            if upload:
+                filepath = '{}/{}_{}'.format(vis_losses_folder.local_root, f'{"__vs__".join(_keys)}'.strip().lower(),
+                                             filename_suffix)
+                is_update = os.path.exists(filepath)
+                pil_img.save(filepath)
+                # Upload to Google Drive
+                vis_losses_folder.upload_file(local_filename=filepath, in_parallel=False, is_update=is_update)
+                self.logger.debug(f'Loss image from {filepath} uploaded successfully!')
+            if preview:
+                plt.show()
+        return _returns
+
     def visualize_metrics(self, upload: bool = False, preview: bool = False) -> List[Image]:
         assert isinstance(self, FilesystemModel), 'Model must implement utils.ifaces.FilesystemFolder to visualize' + \
                                                   'metrics and upload produced images to cloud'

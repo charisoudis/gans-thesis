@@ -64,7 +64,7 @@ class PGPGGenerator2(UNETWithSkipConnections):
 class PGPGGenerator(nn.Module, Freezable):
     """
     PGPGGenerator Class:
-    This class implements the whole (2-stage) PGPG generator network similar to the one found in the PGPG paper ("Pose
+    This class implements the entire (2-stage) PGPG generator network similar to the one found in the PGPG paper ("Pose
     Guided Person Image Generation").
     """
 

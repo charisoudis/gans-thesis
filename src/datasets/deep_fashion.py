@@ -692,7 +692,7 @@ class ICRBScraper:
     Backward Pass:
         Aggregates information on every category folder (e.g. "MEN/Shirts_Polos") of the items contained in the category
         and creates a JSON file "items_info.json". Recursive execution. After backward passes completion at the Img root
-        directory there will be a huge JSON file "items_info.json" containing the image pairs for the whole dataset.
+        directory there will be a huge JSON file "items_info.json" containing the image pairs for the entire dataset.
     When complete, in the Img root folder there will be two big JSON files containing the following aggregated info:
         1) items_info.json
         - id (int or str): "Img"

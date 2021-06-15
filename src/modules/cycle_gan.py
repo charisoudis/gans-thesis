@@ -26,7 +26,7 @@ from utils.train import get_optimizer, weights_init_naive, set_optimizer_lr
 class CycleGAN(nn.Module, IGanGModule):
     """
     CycleGAN Class:
-    This is the whole CycleGAN model consisting of two pix2pixHD-like Generators and two PatchGAN Discriminators each
+    This is the entire CycleGAN model consisting of two pix2pixHD-like Generators and two PatchGAN Discriminators each
     for its respective domain.
     """
 
@@ -335,7 +335,7 @@ class CycleGAN(nn.Module, IGanGModule):
     def forward(self, real_a: Tensor, real_b: Tensor, lambda_identity: float = 0.1, lambda_cycle: float = 10) \
             -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
-        Forward pass through the whole CycleGAN model.
+        Forward pass through the entire CycleGAN model.
         :param real_a: batch of images from real dataset of domain A
         :param real_b: batch of images from real dataset of domain B
         :param lambda_identity: weight for identity loss in total generator loss
