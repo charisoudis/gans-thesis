@@ -174,9 +174,52 @@ class ModulatedConv2d(nn.Module):
         return out.view(batch_size, out.shape[1] // batch_size, *out.shape[2:])
 
 
+class BatchStd(nn.Module):
+    """
+    MiniBatchStd Class:
+    Add mini-batch std (as described in ProGAN) as the last channel of disc to improve variance.
+    """
+
+    def __init__(self, group_size: int = 4):
+        """
+        MiniBatchStd class constructor.
+        :param (int) group_size: size of each group (batch is split into M such groups)
+        """
+        super().__init__()
+        self.group_size = group_size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass MiniBatchStd class: computes the mini-batch str (M=N/G values) and appends it as the last channel.
+        :param (torch.Tensor) x: the input tensor
+        :return: the input tensor + 1 channel containing the mini-batch std
+        """
+        shape = x.shape  # (N,C,H,W)
+        # (M,G,C,H,W): split batch into M groups of size |G|
+        x_std = x.view(self.group_size, -1, shape[1], shape[2], shape[3])
+        # (M,G,C,H,W): remove mean across groups
+        x_std -= torch.mean(x_std, dim=0, keepdim=True)
+        # (M,C,H,W): compute std across groups
+        x_std = (torch.mean(x_std ** 2, dim=0, keepdim=False) + 1e-08) ** 0.5
+        # (M,1,1,1): Take average across CHW
+        x_std = torch.mean(x_std.view(int(shape[0] / self.group_size), -1), dim=1, keepdim=True).view(-1, 1, 1, 1)
+        # (N,1,H,W): Expand to same shape as x with one channel (by repeating the M values)
+        x_std = x_std.repeat(self.group_size, 1, shape[2], shape[3])
+        # Append as new channel
+        return torch.cat([x, x_std], dim=1)
+
+    def __repr__(self):
+        return self.__class__.__name__ + f'(Group Size = {self.group_size})'
+
+
 if __name__ == '__main__':
-    ml = ModulatedConv2d(32, 4, 8, kernel_size=3, stride=3, padding=1)
-    _x = torch.randn(1, 4, 128, 128)
-    _s = torch.randn(1, 32)
-    _out = ml(_x, _s)
-    print(_out.shape)
+    # ml = ModulatedConv2d(32, 4, 8, kernel_size=3, stride=3, padding=1)
+    # _x = torch.randn(1, 4, 128, 128)
+    # _s = torch.randn(1, 32)
+    # _out = ml(_x, _s)
+    # print(_out.shape)
+
+    # _x = torch.randn(4, 128, 4, 4)
+    # _x_dot = BatchStd()(_x)
+    # print(_x_dot[:, -1, 2, 0])
+    pass

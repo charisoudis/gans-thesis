@@ -212,13 +212,16 @@ class ChannelsProjectLayer(nn.Module):
         c_out: the number of channels to expect for a given output
     """
 
-    def __init__(self, c_in: int, c_out: int, use_spectral_norm: bool = False):
+    def __init__(self, c_in: int, c_out: int, use_spectral_norm: bool = False, padding: int = 0):
         """
         ChannelsProjectLayer class constructor.
-        :param c_in: number of output channels
+        :param (int) c_in: number of input channels
+        :param (int) c_out: number of output channels
+        :param (bool) use_spectral_norm: set to True to add a spectral normalization layer after the Conv2d
+        :param (int) padding: nn.Conv2d's padding argument
         """
         super(ChannelsProjectLayer, self).__init__()
-        self.feature_map_block = nn.Conv2d(c_in, c_out, kernel_size=1, padding=0)
+        self.feature_map_block = nn.Conv2d(c_in, c_out, stride=1, kernel_size=1, padding=padding)
         if use_spectral_norm:
             self.feature_map_block = nn.utils.spectral_norm(self.feature_map_block)
 

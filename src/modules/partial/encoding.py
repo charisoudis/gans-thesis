@@ -142,7 +142,7 @@ class MLPBlock(nn.Module):
         :param (int) hidden_dim: number of neurons in hidden layers
         :param (int) out_dim: number of neurons in output layer
         :param (str) activation: type of activation function used (supported: 'relu', 'lrelu')
-        :param (int) n_blocks: number of (conv+relu) blocks
+        :param (int) n_blocks: number of (FC+ReLU) blocks
         """
         super(MLPBlock, self).__init__()
         _layers = []
@@ -168,17 +168,18 @@ class NoiseMappingNetwork(MLPBlock):
     This class implements a layer of the Noise Mapping network proposed in the original StyleGAN paper.
     """
 
-    def __init__(self, z_dim: int, hidden_dim: int, w_dim: int):
+    def __init__(self, z_dim: int, hidden_dim: int, w_dim: int, n_blocks: int = 3):
         """
         NoiseMappingNetwork class constructor.
         :param (int) z_dim: the dimension of the noise vector
         :param (int) hidden_dim: the inner dimension
         :param (int) w_dim: the dimension of the w-vector (i.e. the vector in the less-entangled learned vector space)
+        :param (int) n_blocks: number of (FC+ReLU) blocks
         """
-        super(NoiseMappingNetwork, self).__init__(in_dim=z_dim, hidden_dim=hidden_dim, out_dim=w_dim)
+        super(NoiseMappingNetwork, self).__init__(in_dim=z_dim, hidden_dim=hidden_dim, out_dim=w_dim, n_blocks=n_blocks)
 
 
 if __name__ == '__main__':
-    mlp = MLPBlock(in_dim=512, hidden_dim=128, out_dim=512)
-    print(mlp)
-    print(to_human_readable(get_total_params(mlp)))
+    _nmn = NoiseMappingNetwork(z_dim=512, hidden_dim=512, w_dim=512, n_blocks=4)
+    print(_nmn)
+    print(to_human_readable(get_total_params(_nmn)))
