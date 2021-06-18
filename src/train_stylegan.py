@@ -124,15 +124,13 @@ for epoch in range(stgan.epoch, n_epochs):
     # initial_step = stgan.initial_step % len(dataloader)
     stgan.logger.debug('[START OF EPOCH] ' + str(d))
 
-    bags: Tensor
-    shoes: Tensor
-    for bags, shoes in exec_tqdm(dataloader, initial=stgan.initial_step):
+    real: Tensor
+    for real in exec_tqdm(dataloader, initial=stgan.initial_step):
         # Transfer image batches to GPU
-        bags = bags.to(exec_device)
-        shoes = shoes.to(exec_device)
+        real = real.to(exec_device)
 
         # Perform a forward + backward pass + weight update on the Generator & Discriminator models
-        disc_loss, gen_loss = stgan(bags, shoes)
+        disc_loss, gen_loss = stgan(real)
 
         # Metrics & Checkpoint Code
         if stgan.step % checkpoint_step == 0:
