@@ -8,10 +8,12 @@ from torch import Tensor
 
 from modules.partial.decoding import ChannelsProjectLayer
 from modules.partial.normalization import BatchStd
+from utils import pytorch
 from utils.command_line_logger import CommandLineLogger
 from utils.ifaces import BalancedFreezable, Verbosable
-from utils.pytorch import get_total_params, enable_verbose
+from utils.pytorch import get_total_params, enable_verbose, get_gradient_penalty
 from utils.string import to_human_readable
+from utils.train import get_alpha_curve
 
 
 class StyleGanDiscriminatorBlock(nn.Module):
@@ -26,18 +28,18 @@ class StyleGanDiscriminatorBlock(nn.Module):
             self.disc_block = nn.Sequential(
                 BatchStd(),
                 nn.Conv2d(c_in + 1, c_out, kernel_size=3, stride=1, padding=1),
-                nn.LeakyReLU(0.2, inplace=True),
+                nn.LeakyReLU(0.2),
                 nn.Conv2d(c_out, c_out, kernel_size=4, stride=1, padding=1),
-                nn.LeakyReLU(0.2, inplace=True),
+                nn.LeakyReLU(0.2),
                 nn.Flatten(),
                 nn.Linear(c_out * (initial_shape - 1) ** 2, 1)
             )
         else:
             self.disc_block = nn.Sequential(
                 nn.Conv2d(c_in, c_out, kernel_size=3, stride=1, padding=1),
-                nn.LeakyReLU(0.2, inplace=True),
+                nn.LeakyReLU(0.2),
                 nn.Conv2d(c_out, c_out, kernel_size=3, stride=1, padding=1),
-                nn.LeakyReLU(0.2, inplace=True),
+                nn.LeakyReLU(0.2),
                 nn.AvgPool2d(kernel_size=2, stride=2)
             )
 
@@ -52,8 +54,8 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
     """
 
     def __init__(self, resolution: int, c_in: int = 3, c_base: int = 2048, c_max: int = 512, c_decay: float = 1.0,
-                 alpha_init: float = 0.0, logger: Optional[CommandLineLogger] = None,
-                 adv_criterion: Optional[str] = None):
+                 adv_criterion: Optional[str] = None, lambda_gp: float = 10.0, alpha_multiplier: float = 10.0,
+                 num_iters: int = 2, use_gradient_penalty: bool = False, logger: Optional[CommandLineLogger] = None):
         """
         StyleGanDiscriminator class constructor.
         :param (int) resolution: network's input resolution
@@ -61,11 +63,16 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         :param (int) c_base: base number of channels (used in channels calculations)
         :param (int) c_max: max number of channels (used in channels calculations)
         :param (float) c_decay: channel decay parameter (<=1.0 - defaults to 1.0)
-        :param (float) alpha_init: initial mixing weight (defaults to 0 - no mixing)
-        :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
         :param (optional) adv_criterion: str description of desired default adversarial criterion (e.g. 'MSE', 'BCE',
                                          'BCEWithLogits', etc.). If None, then it must be set in the respective function
                                          call.
+        :param (float) lambda_gp: weighting coefficient of gradient penalty when computing the loss
+        :param (float) alpha_multiplier: multiplier that defines the smoothness of the alpha curve
+                                         (1=linear, ..., 10=smooth, ..., 1000=delta)
+        :param (int) num_iters: number of iterations
+        :param (bool) use_gradient_penalty: set to True to have the discriminator compute gradient penalty alongside its
+                                            loss
+        :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
         """
         # Save arguments
         self.locals = locals()
@@ -82,15 +89,24 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
             block_index = bi - 2
             block_c_in, block_c_out = self._get_c_hidden(bi), self._get_c_hidden(bi - 1)
             setattr(self, f'fromRGB{block_index}',
-                    nn.Sequential(ChannelsProjectLayer(c_in=c_in, c_out=block_c_in), nn.LeakyReLU(0.2, inplace=True)))
+                    nn.Sequential(ChannelsProjectLayer(c_in=c_in, c_out=block_c_in), nn.LeakyReLU(0.2)))
             setattr(self, f'block{block_index}',
                     StyleGanDiscriminatorBlock(block_c_in, block_c_out, is_initial_block=block_index == 0))
         self.downsample = nn.AvgPool2d(kernel_size=2, stride=2)
         # Save args
-        self.alpha = nn.Parameter(torch.tensor(alpha_init), requires_grad=True)
         self.resolution = self.locals['resolution']
-        self.adv_criterion = self.locals['adv_criterion']
         self.verbose_enabled = False
+        self.adv_criterion = None
+        if adv_criterion is not None:
+            if hasattr(nn, f'{adv_criterion}Loss'):
+                self.adv_criterion = getattr(nn, f'{adv_criterion}Loss')()
+            elif hasattr(pytorch, f'{adv_criterion}Loss'):
+                self.adv_criterion = getattr(pytorch, f'{adv_criterion}Loss')()
+            else:
+                raise RuntimeError(f'adv_criterion="{adv_criterion}" could be found (tried torch.nn and utils.pytorch)')
+
+        self.alpha_curve = get_alpha_curve(num_iters=num_iters, alpha_multiplier=alpha_multiplier)
+        self.alpha_index = 0
 
         self.logger = logger if logger is not None else \
             CommandLineLogger(log_level='debug', name=self.__class__.__name__)
@@ -115,6 +131,14 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         if self.verbose_enabled:
             self.logger.debug('_: ' + str(x.shape))
 
+        # Get current alpha value
+        if self.alpha_index >= len(self.alpha_curve):
+            alpha = 1.0
+        else:
+            alpha = self.alpha_curve[self.alpha_index]
+        self.alpha_index += 1
+        self.logger.info(f'[DISC] alpha={alpha}')
+
         bi = int(math.log2(self.resolution))
         block_index = bi - 2
         # Edge case: alpha == 1 or one block only
@@ -122,12 +146,15 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         block = getattr(self, f'block{block_index}')
         x_new = fromRGB(x.clone())
         x_new = block(x_new)
-        if block_index == 0 or self.alpha >= 1.0:
+        if block_index == 0 or alpha >= 1.0:
             return x_new
         # Mix old and new x
-        x = self.downsample(x)
-        x = getattr(self, f'fromRGB{block_index - 1}')(x)
-        x = (1 - self.alpha) * x + self.alpha * x_new
+        if alpha >= 1.0:
+            x = x_new
+        else:
+            x = self.downsample(x)
+            x = getattr(self, f'fromRGB{block_index - 1}')(x)
+            x = (1.0 - alpha) * x + alpha * x_new
         # Pass through the rest blocks
         for bi in reversed(range(2, int(math.log2(self.resolution)))):
             block_index = bi - 2
@@ -150,7 +177,12 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         # print('DISC OUTPUT SHAPE: ' + str(predictions_on_fake.shape))
         if type(criterion) == torch.nn.modules.loss.BCELoss:
             predictions = nn.Sigmoid()(predictions)
-        return criterion(predictions, getattr(torch, f'{"ones" if is_real else "zeros"}_like')(predictions))
+        # Get loss' second argument
+        if type(criterion) == pytorch.WassersteinLoss:
+            reference = -1.0 * torch.ones_like(predictions) if is_real else 1.0 * torch.ones_like(predictions)
+        else:
+            reference = torch.ones_like(predictions) if is_real else torch.zeros_like(predictions)
+        return criterion(predictions, reference)
 
     def get_loss(self, real: Tensor, fake: Tensor, criterion: Optional[nn.modules.Module] = None) -> Tensor:
         """
@@ -162,7 +194,12 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         """
         loss_on_real = self.get_loss_on_batch(real, is_real=True, criterion=criterion)
         loss_on_fake = self.get_loss_on_batch(fake, is_real=False, criterion=criterion)
-        return 0.5 * (loss_on_real + loss_on_fake)
+        total_loss = loss_on_real + loss_on_fake
+        if not self.locals['use_gradient_penalty']:
+            return total_loss
+        # Calculate gradient penalty and append to loss
+        gradient_penalty = get_gradient_penalty(disc=self, real=real, fake=fake)
+        return total_loss + self.locals['lambda_gp'] * gradient_penalty
 
     def get_layer_attr_names(self) -> List[str]:
         layer_names = []
@@ -173,15 +210,18 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         layer_names.append('downsample')
         return layer_names
 
-    def grow(self) -> 'StyleGanDiscriminator':
+    def grow(self, num_iters: int = 2, device: Optional[str or torch.device] = None) -> 'StyleGanDiscriminator':
         """
         Function to grow the Discriminator's resolution by a factor of 2.
+        :param (int) num_iters: number of iterations the new discriminator will run
+        :param (str or torch.device or None) device: new network's device
         :return: a new StyleGanDiscriminator instance
         """
         # Init new Discriminator network
         new_resolution = 2 * self.resolution
         new_locals = self.locals.copy()
         new_locals['resolution'] = new_resolution
+        new_locals['num_iters'] = num_iters
         new_locals['logger'] = self.logger
         new_disc = StyleGanDiscriminator(**new_locals)
         # Transfer parameter values
@@ -192,13 +232,14 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
                 .load_state_dict(getattr(self, f'fromRGB{block_index}').state_dict())
             getattr(new_disc, f'block{block_index}').load_state_dict(getattr(self, f'block{block_index}').state_dict())
         # Return the initialized network
-        return new_disc.to(self.alpha.device)
+        return new_disc.to(device=device)
 
 
 if __name__ == '__main__':
     # 4x4
     _resolution = 4
-    _disc4 = StyleGanDiscriminator(resolution=_resolution, c_in=3)
+    _disc4 = StyleGanDiscriminator(resolution=_resolution, c_in=3, adv_criterion='Wasserstein',
+                                   use_gradient_penalty=True)
     print(f'Params: {to_human_readable(get_total_params(_disc4))}')
     enable_verbose(_disc4)
     # print(_disc4)
@@ -206,6 +247,9 @@ if __name__ == '__main__':
     _y = _disc4(torch.randn(4, 3, _disc4.resolution, _disc4.resolution))
     time.sleep(0.5)
     print(_y.shape)
+
+    print(f'loss={_disc4.get_loss(real=torch.ones(4, 3, 4, 4), fake=torch.ones(4, 3, 4, 4))}')
+    exit(0)
 
     # 8x8
     _disc8 = _disc4.grow()

@@ -74,7 +74,11 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
         self._configuration = configuration
         self._nparams = None
         self.gen_losses = []
+        self.gen_losses_permanent = []
+        self.gen_losses_indices = []
         self.disc_losses = []
+        self.disc_losses_permanent = []
+        self.disc_losses_indices = []
 
     @property
     def nparams(self) -> int or str:

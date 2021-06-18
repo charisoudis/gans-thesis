@@ -16,6 +16,28 @@ from utils.gdrive_bak import GDriveModelCheckpoints
 from utils.ifaces import ResumableDataLoader
 
 
+def get_alpha_curve(num_iters: int, alpha_multiplier: float = 10.0,
+                    return_x: bool = False) -> Tuple[np.ndarray, np.ndarray] or np.ndarray:
+    """
+    Return the sigmoid curve fro StyleGAN's alpha parameter.
+    :param (int) num_iters: total number of iterations (equals the number of points in curve)
+    :param (float) alpha_multiplier: parameter which controls the sharpness of the curve (1=linear, 1000=delta at half
+                                     the interval - defaults to 10 that a yields a fairly smooth transition)
+    :param (bool) return_x: set to True to have the method also return the x-values
+    :return: either a tuple with x,y as np.ndarray objects  or y as np.ndarray object
+    """
+    if num_iters < 2:
+        return np.arange(2)
+    x = np.arange(num_iters)
+    c = num_iters // 2
+    a = alpha_multiplier / num_iters
+    y = 1. / (1 + np.exp(-a * (x - c)))
+    y = y / (y[-1] - y[0])
+    if return_x:
+        return x, y + (1.0 - y[-1]) + 1e-14
+    return y + (1.0 - y[-1]) + 1e-14
+
+
 def get_optimizer(*models, optim_type: str = 'Adam',
                   scheduler_type: Optional[str] = None, scheduler_kwargs: Optional[dict] = None,
                   **optim_args) -> Tuple[Optimizer, Optional[CyclicLR or ReduceLROnPlateau]]:

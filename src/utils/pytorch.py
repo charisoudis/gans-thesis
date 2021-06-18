@@ -109,8 +109,8 @@ def get_gradient_penalty_from_gradient(gradient: torch.Tensor) -> torch.Tensor:
     return torch.mean((torch.ones_like(gradient_norm) - gradient_norm) ** 2)
 
 
-def get_gradient_penalty(disc: nn.Module, real: torch.Tensor, fake: torch.Tensor, epsilon: torch.Tensor) \
-        -> torch.Tensor:
+def get_gradient_penalty(disc: nn.Module, real: torch.Tensor, fake: torch.Tensor,
+                         epsilon: Optional[torch.Tensor] = None) -> torch.Tensor:
     """
     Get the gradient penalty regularization term, given the discriminator (critic) model, a set of real and fake images
     and the parameter :attr:`epsilon` to mix the two set of images (approximating an average input to critic).
@@ -120,9 +120,21 @@ def get_gradient_penalty(disc: nn.Module, real: torch.Tensor, fake: torch.Tensor
     :param (torch.Tensor) epsilon: a vector of the uniformly random proportions of real/fake per mixed image
     :return: (torch.Tensor) the gradient of the critic's scores, with respect to the mixed image
     """
+    if epsilon is None:
+        # if no epsilon param provided, use a random mixing weight for each pair of real/fake images in current batch
+        epsilon = torch.rand(real.shape[0], 1, 1, 1, device=real.device, requires_grad=True)
     return get_gradient_penalty_from_gradient(
         get_gradient(disc=disc, real=real, fake=fake, epsilon=epsilon)
     )
+
+
+class WassersteinLoss(nn.modules.Module):
+    def __init__(self):
+        super().__init__()
+
+    # noinspection PyMethodMayBeStatic
+    def forward(self, predictions: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        return weights.view(-1)[0] * torch.mean(predictions)
 
 
 def get_total_params(model: Module, print_table: bool = False, sort_desc: bool = False) -> int or None:

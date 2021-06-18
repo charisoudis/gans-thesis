@@ -47,8 +47,8 @@ class ContractingBlock(nn.Module):
             _layers.append(nn.Dropout2d(p=0.2))
         if activation is not None:
             activations_switcher = {
-                'relu': nn.ReLU(inplace=True),
-                'lrelu': nn.LeakyReLU(0.2, inplace=True),
+                'relu': nn.ReLU(),
+                'lrelu': nn.LeakyReLU(0.2),
                 'tanh': nn.Tanh(),
                 'sigmoid': nn.Sigmoid(),
             }
@@ -148,7 +148,7 @@ class MLPBlock(nn.Module):
         _layers = []
         for bi in range(n_blocks - 1):
             _layers.append(nn.Linear(in_features=in_dim if bi == 0 else hidden_dim, out_features=hidden_dim))
-            _layers.append(nn.ReLU(inplace=True) if activation == 'relu' else nn.LeakyReLU(0.2, inplace=True))
+            _layers.append(nn.ReLU() if activation == 'relu' else nn.LeakyReLU(0.2))
         _layers.append(nn.Linear(hidden_dim, out_dim))
         self.mlp_block = nn.Sequential(*_layers)
 

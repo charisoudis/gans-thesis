@@ -1,17 +1,19 @@
 import math
 import time
-from typing import Optional
+from typing import Optional, Tuple, List
 
 import torch
 import torch.nn as nn
 from torch import Tensor
 
+from modules.discriminators.stylegan import StyleGanDiscriminator
 from modules.partial.encoding import NoiseMappingNetwork
 from modules.partial.normalization import AdaptiveInstanceNorm2d
 from utils.command_line_logger import CommandLineLogger
-from utils.ifaces import BalancedFreezable
+from utils.ifaces import BalancedFreezable, Verbosable
 from utils.pytorch import get_total_params, enable_verbose
 from utils.string import to_human_readable
+from utils.train import get_alpha_curve
 
 
 class InjectNoise(nn.Module):
@@ -63,7 +65,7 @@ class StyleGanGeneratorBlock(nn.Module):
         self.conv_block = nn.Sequential(
             nn.Conv2d(c_in, c_out, kernel_size, padding=1),
             InjectNoise(c_out),
-            nn.LeakyReLU(0.2, inplace=True)
+            nn.LeakyReLU(0.2)
         )
         self.adaptive_norm = AdaptiveInstanceNorm2d(c_out, w_dim)
 
@@ -79,7 +81,7 @@ class StyleGanGeneratorBlock(nn.Module):
         return self.adaptive_norm(x, w)
 
 
-class StyleGanGenerator(nn.Module, BalancedFreezable):
+class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
     """
     StyleGanGenerator Class.
     Values:
@@ -94,7 +96,8 @@ class StyleGanGenerator(nn.Module, BalancedFreezable):
 
     def __init__(self, z_dim: int = 512, map_hidden_dim: int = 512, map_n_blocks: int = 4, w_dim: int = 512,
                  c_const: int = 512, c_hidden: int = 1024, c_out: int = 3, resolution: int = 128,
-                 kernel_size: int = 3, alpha_init: float = 1e-2, logger: Optional[CommandLineLogger] = None):
+                 kernel_size: int = 3, alpha_multiplier: float = 10.0, num_iters: int = 1,
+                 logger: Optional[CommandLineLogger] = None):
         """
         StyleGanGenerator class constructor.
         :param (int) z_dim: size of the noise vector (defaults to 512)
@@ -106,7 +109,10 @@ class StyleGanGenerator(nn.Module, BalancedFreezable):
         :param (int) c_out: number of channels expected in the output
         :param (int) resolution: width and height of the desired output
         :param (int) kernel_size: nn.Conv2d()'s kernel_size argument (defaults to 3)
-        :param (float) alpha_init: initial mixing weight used for progressing growing (defaults to 1e-2)
+        :param (float) alpha_multiplier: multiplier that defines the smoothness of the alpha curve
+                                         (1=linear, ..., 10=smooth, ..., 1000=delta)
+        :param (int) num_iters: number of iterations
+        :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
         """
         # Save arguments
         self.locals = locals()
@@ -124,6 +130,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable):
         self.constant = nn.Parameter(torch.ones(1, c_const, 4, 4))
         # Generator convolutional blocks
         self.block0 = StyleGanGeneratorBlock(c_in=c_const, c_out=c_hidden, w_dim=w_dim, kernel_size=kernel_size)
+        self.project0_block = nn.Conv2d(c_hidden, c_out, kernel_size=1)
         for bi in range(3, int(math.log2(resolution)) + 1):
             block_index = bi - 2
             setattr(self, f'upsample{block_index}', nn.Upsample(size=2 ** bi, mode='bilinear', align_corners=False))
@@ -133,8 +140,9 @@ class StyleGanGenerator(nn.Module, BalancedFreezable):
                 setattr(self, f'project{block_index}_upsample', nn.Conv2d(c_hidden, c_out, kernel_size=1))
                 setattr(self, f'project{block_index}_block', nn.Conv2d(c_hidden, c_out, kernel_size=1))
         # Save args
-        self.alpha = nn.Parameter(torch.tensor(alpha_init), requires_grad=True)
         self.resolution = self.locals['resolution']
+        self.alpha_curve = get_alpha_curve(num_iters=num_iters, alpha_multiplier=alpha_multiplier)
+        self.alpha_index = 0
 
         self.logger = logger if logger is not None else \
             CommandLineLogger(log_level='debug', name=self.__class__.__name__)
@@ -146,14 +154,25 @@ class StyleGanGenerator(nn.Module, BalancedFreezable):
         :param (torch.tensor) z: input noise vector of shape (N, z_dim)
         :return: a torch.Tensor object containing the mixing of the output of the UpSampler and the last conv block
         """
+        # Get current alpha value
+        if self.alpha_index >= len(self.alpha_curve):
+            alpha = 1.0
+        else:
+            alpha = self.alpha_curve[self.alpha_index]
+        self.alpha_index += 1
+        self.logger.info(f'[GEN] alpha={alpha}')
+        # Get total number of blocks
+        resolution_log2 = int(math.log2(self.resolution))
         # Map noise
         w = self.noise_mapping(z)  # (N, w_dim)
         # Pass through generator blocks
         #   - constant + first block
         x = self.constant
         x = self.block0(x, w)
+        if resolution_log2 == 2:
+            return self.project0_block(x)
         #   - upsampling + conv blocks until the last (wherein the mixing happens)
-        for bi in range(3, int(math.log2(self.resolution)) + 1):
+        for bi in range(3, resolution_log2 + 1):
             block_index = bi - 2
             upsample = getattr(self, f'upsample{block_index}')
             x = upsample(x)
@@ -164,19 +183,62 @@ class StyleGanGenerator(nn.Module, BalancedFreezable):
                 x_upsampled = project_upsample(x)
                 x = block(x, w)
                 x = project_block(x)
-                return (1.0 - self.alpha) * x_upsampled + self.alpha * x
+                return x if alpha >= 1.0 else (1.0 - alpha) * x_upsampled + alpha * x
             x = block(x, w)
         return x
 
-    def grow(self) -> 'StyleGanGenerator':
+    def get_noise(self, batch_size: int, device: Optional[str or torch.device] = None) -> torch.Tensor:
+        """
+        Create and return a new noise vector in the same device as the model itself.
+        :param (int) batch_size: number of vectors in batch
+        :param (str or torch.device or None) device: vector's device
+        :return: a torch.Tensor object of shape (N, z_dim)
+        """
+        return torch.randn(batch_size, self.locals['z_dim'], device=device)
+
+    def get_loss(self, batch_size: int, disc: StyleGanDiscriminator,
+                 adv_criterion: Optional[nn.modules.Module] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Get the loss of the generator given inputs. If the criteria are not provided they will be set using the
+        instance's given (or default) configuration.
+        :param (int) batch_size: current number of input noise vectors
+        :param (torch.nn.Module) disc: the StyleGAN Discriminator network
+        :param (optional) adv_criterion: the adversarial loss function; takes the discriminator predictions and the
+                                         target labels and returns a adversarial loss (which we aim to minimize)
+        :return: a torch.Tensor object containing the Generator's loss (a scalar) and the output batch of images (for
+                 visualization purposes)
+        """
+        # 0) Create a batch of noise vectors
+        z = self.get_noise(batch_size=batch_size, device=self.constant.device)
+        # 1) Make a forward pass on the Generator
+        fake = self(z)
+        # 2) Compute Generator's Adversarial Loss
+        gen_loss = disc.get_loss_on_batch(fake, is_real=True, criterion=adv_criterion)
+        return gen_loss, fake.detach()
+
+    def get_layer_attr_names(self) -> List[str]:
+        layer_names = ['block0', 'project0_block']
+        for bi in range(3, int(math.log2(self.resolution)) + 1):
+            block_index = bi - 2
+            layer_names.append(f'upsample{block_index}')
+            layer_names.append(f'block{block_index}')
+            if bi == int(math.log2(self.resolution)):
+                layer_names.append(f'project{block_index}_upsample')
+                layer_names.append(f'project{block_index}_block')
+        return layer_names
+
+    def grow(self, num_iters: int = 2, device: Optional[str or torch.device] = None) -> 'StyleGanGenerator':
         """
         Grow by a factor of 2 the generator's output resolution.
+        :param (int) num_iters: number of iterations the new generator will run
+        :param (str or torch.device or None) device: new network's device
         :return: a new StyleGanGenerator instance with doubled the resolution
         """
         # Init new Generator network
         new_resolution = 2 * self.resolution
         new_locals = self.locals.copy()
         new_locals['resolution'] = new_resolution
+        new_locals['num_iters'] = num_iters
         new_locals['logger'] = self.logger
         new_gen = StyleGanGenerator(**new_locals)
         # Transfer parameter values
@@ -192,54 +254,74 @@ class StyleGanGenerator(nn.Module, BalancedFreezable):
                 getattr(self, f'project{block_index}_block') \
                     .load_state_dict(getattr(self, f'project{block_index}_block').state_dict())
         # Return the initialized network
-        return new_gen.to(self.alpha.device)
+        return new_gen.to(device=device)
 
 
 if __name__ == '__main__':
-    _z = torch.randn(1, 512)
-
-    # 8x8
-    _stgen8 = StyleGanGenerator(resolution=8)
-    print(to_human_readable(get_total_params(_stgen8)))
-    enable_verbose(_stgen8)
+    # 4x4
+    _stgen4 = StyleGanGenerator(resolution=4)
+    _stdisc4 = StyleGanDiscriminator(resolution=4, c_in=3, adv_criterion='Wasserstein', use_gradient_penalty=True)
+    print(to_human_readable(get_total_params(_stgen4)))
+    enable_verbose(_stgen4)
+    # enable_verbose(_stdisc4)
     # print(_stgen8)
     time.sleep(0.5)
-    _y = _stgen8(_z)
+    _gen_loss, _ = _stgen4.get_loss(batch_size=4, disc=_stdisc4)
     time.sleep(0.5)
-    print(_y.shape)
+    print(_gen_loss)
+
+    # 8x8
+    _stgen8 = _stgen4.grow()
+    _stdisc8 = _stdisc4.grow()
+    print(to_human_readable(get_total_params(_stgen8)))
+    enable_verbose(_stgen8)
+    # enable_verbose(_stdisc8)
+    # print(_stgen8)
+    time.sleep(0.5)
+    _gen_loss, _ = _stgen8.get_loss(batch_size=4, disc=_stdisc8)
+    time.sleep(0.5)
+    print(_gen_loss)
 
     # 16x16
     _stgen16 = _stgen8.grow()
+    _stdisc16 = _stdisc8.grow()
     print(to_human_readable(get_total_params(_stgen16)))
     enable_verbose(_stgen16)
+    # enable_verbose(_stdisc16)
     time.sleep(0.5)
-    _y = _stgen16(_z)
+    _gen_loss, _ = _stgen16.get_loss(batch_size=4, disc=_stdisc16)
     time.sleep(0.5)
-    print(_y.shape)
+    print(_gen_loss)
 
     # 32x32
     _stgen32 = _stgen16.grow()
+    _stdisc32 = _stdisc16.grow()
     print(to_human_readable(get_total_params(_stgen32)))
     enable_verbose(_stgen32)
+    # enable_verbose(_stdisc32)
     time.sleep(0.5)
-    _y = _stgen32(_z)
+    _gen_loss, _ = _stgen32.get_loss(batch_size=4, disc=_stdisc32)
     time.sleep(0.5)
-    print(_y.shape)
+    print(_gen_loss)
 
     # 64x64
     _stgen64 = _stgen32.grow()
+    _stdisc64 = _stdisc32.grow()
     print(to_human_readable(get_total_params(_stgen64)))
     enable_verbose(_stgen64)
+    # enable_verbose(_stdisc64)
     time.sleep(0.5)
-    _y = _stgen64(_z)
+    _gen_loss, _ = _stgen64.get_loss(batch_size=4, disc=_stdisc64)
     time.sleep(0.5)
-    print(_y.shape)
+    print(_gen_loss)
 
     # 128x128
     _stgen128 = _stgen64.grow()
+    _stdisc128 = _stdisc64.grow()
     print(to_human_readable(get_total_params(_stgen128)))
     enable_verbose(_stgen128)
+    # enable_verbose(_stdisc128)
     time.sleep(0.5)
-    _y = _stgen128(_z)
+    _gen_loss, _ = _stgen128.get_loss(batch_size=4, disc=_stdisc128)
     time.sleep(0.5)
-    print(_y.shape)
+    print(_gen_loss)
