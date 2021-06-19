@@ -85,6 +85,11 @@ except NameError:
     stgan_chkpt_step = None
 stgan = StyleGan(model_fs_folder_or_root=models_groot, config_id=stgan_config_id, dataset_len=len(dataset),
                  chkpt_epoch=stgan_chkpt_step, evaluator=evaluator, device=exec_device, log_level=log_level)
+########################################################################################################################
+##################################################### DEV LOGGING ######################################################
+########################################################################################################################
+# stgan._init_gen_disc_opt_scheduler(resolution=64)
+########################################################################################################################
 stgan.logger.debug(f'Using device: {str(exec_device)}')
 stgan.logger.debug(f'Model initialized. Number of params = {stgan.nparams_hr}')
 # FIX: Warmup counters before first batch
@@ -149,6 +154,12 @@ for epoch in range(stgan.epoch, n_epochs):
         # Perform a forward + backward pass + weight update on the Generator & Discriminator models
         disc_loss, gen_loss = stgan(real)
 
+        ################################################################################################################
+        ################################################# DEV LOGGING ##################################################
+        ################################################################################################################
+        # break
+        ################################################################################################################
+
         # Metrics & Checkpoint Code
         if stgan.step % checkpoint_step == 0:
             # Check if another upload is pending
@@ -203,3 +214,12 @@ if async_results:
 
 # Training finished!
 stgan.logger.info('[training loop] DONE')
+
+########################################################################################################################
+##################################################### DEV LOGGING ######################################################
+########################################################################################################################
+# img = stgan.visualize()
+# img.show()
+# img = stgan.visualize(reproducible=True)
+# img.show()
+########################################################################################################################

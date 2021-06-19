@@ -113,7 +113,7 @@ class StyleGan(nn.Module, IGanGModule):
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, config_id: Optional[str] = 'default',
                  chkpt_epoch: Optional[int or str] = None, chkpt_step: Optional[int] = None, disc_iters: int = 1,
                  device: torch.device or str = 'cpu', gen_transforms: Optional[Compose] = None, log_level: str = 'info',
-                 dataset_len: Optional[int] = None, reproducible_indices: Sequence = (0, -1),
+                 dataset_len: Optional[int] = None, reproducible_indices: Sequence = (0, 1, -1),
                  evaluator: Optional[GanEvaluator] = None, **evaluator_kwargs):
         """
         StyleGan class constructor.
@@ -209,8 +209,13 @@ class StyleGan(nn.Module, IGanGModule):
             if self._configuration['grow_scheduler'] and self.evaluator and self.evaluator.dataset:
                 resolution_index = int(math.log2(resolution)) - 2
                 batch_size = self._configuration['grow_scheduler']['batch_sizes'][resolution_index]
-                transition_epoch = self._configuration['grow_scheduler']['transition_epochs'][resolution_index]
-                num_iters = (self.dataset_len // batch_size) * transition_epoch
+                transition_epochs = [None]
+                transition_epochs.extend(self._configuration['grow_scheduler']['transition_epochs'])
+                transition_epoch = transition_epochs[resolution_index]
+                if batch_size is None or transition_epoch is None:
+                    num_iters = 2
+                else:
+                    num_iters = (self.dataset_len // batch_size) * transition_epoch
             else:
                 batch_size = None
                 num_iters = 2
@@ -218,7 +223,7 @@ class StyleGan(nn.Module, IGanGModule):
         #   - Free current networks
         if self.gen is not None:
             del self.gen
-            del self.self.gen_opt
+            del self.gen_opt
             del self.disc
             del self.disc_opt
             gc.collect()
@@ -337,7 +342,7 @@ class StyleGan(nn.Module, IGanGModule):
             'configuration': self._configuration,
         }
 
-    def forward(self, real: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, real: torch.Tensor) -> Tuple[torch.Tensor or None, torch.Tensor or None]:
         """
         Forward pass through the entire CycleGAN model.
         :param (torch.Tensor) real: batch of real images
@@ -347,6 +352,10 @@ class StyleGan(nn.Module, IGanGModule):
         batch_size = real.shape[0]
         if self.is_master_device:
             self.gforward(batch_size)
+
+        # FIX: Due to the MiniBatchStd layer, batch_size must be >= group_size (which by default equals to 4)
+        if batch_size < 4:
+            return None, None
 
         ##########################################
         ########   Update Discriminator   ########
@@ -423,8 +432,8 @@ class StyleGan(nn.Module, IGanGModule):
 
         # Save for visualization
         if self.is_master_device:
-            self.fake = fake[::len(fake) - 1].detach().cpu()
-            self.real = real[::len(real) - 1].detach().cpu()
+            self.fake = fake[::batch_size // 2 - 1].detach().cpu()
+            self.real = real[::batch_size // 2 - 1].detach().cpu()
             self.gen_losses.append(gen_loss.detach().item())
             self.gen_losses_permanent.append(gen_loss.detach().item())
             self.gen_losses_indices.append(self.epoch)
@@ -473,27 +482,54 @@ class StyleGan(nn.Module, IGanGModule):
     #
 
     def visualize_indices(self, indices: int or Sequence) -> Image:
-        # TODO
-        raise NotImplementedError
+        # Fetch images
+        assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could not find dataset from model'
+        real_images = []
+        with self.gen.frozen():
+            fake_images = self.gen(self.gen.get_noise(batch_size=3)).detach().cpu()
+            for index in indices:
+                real_images.append(self.evaluator.dataset[index].cpu())
+
+        # Resize
+        if self.gen.resolution != real_images[0].shape[-1]:
+            fake_images = nn.Upsample(size=real_images[0].shape[-1])(fake_images)
+
+        # Convert to grid of images
+        ncols = 3
+        nrows = 2
+        grid = create_img_grid(images=torch.stack([
+            real_images[0], real_images[1], real_images[2],
+            fake_images[0], fake_images[1], fake_images[2],
+        ]), ncols=ncols, gen_transforms=self.gen_transforms)
+
+        # Plot
+        return plot_grid(grid=grid, figsize=(ncols, nrows),
+                         footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)} | '
+                                    f'i={indices}',
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
 
     def visualize(self, reproducible: bool = False) -> Image:
-        # if reproducible:
-        #     return self.visualize_indices(indices=self.reproducible_indices)
+        if reproducible:
+            return self.visualize_indices(indices=self.reproducible_indices)
 
         # Get first & last sample from saved images in self
         real_0 = self.real[0]
         fake_0 = self.fake[0]
+        real_1 = self.real[1]
+        fake_1 = self.fake[1]
         real__1 = self.real[-1]
         fake__1 = self.fake[-1]
 
-        # Concat images to a 4x2 grid (each row is a separate generation, the columns contain real and generated images
-        # side-by-side)
-        ncols = 2
+        # Concat images to a 2x3 grid (each column is a separate generation, the rows contain real and generated images
+        # respectively)
+        ncols = 3
         nrows = 2
-        grid = create_img_grid(images=torch.stack([
-            real_0, real__1,
-            fake_0, fake__1,
-        ]), ncols=ncols, gen_transforms=self.gen_transforms)
+        upsample = nn.Upsample(size=self._configuration['resolutions']['max'])
+        grid = create_img_grid(images=upsample(torch.stack([
+            real_0, real_1, real__1,
+            fake_0, fake_1, fake__1,
+        ])), ncols=ncols, gen_transforms=self.gen_transforms)
 
         # Plot
         return plot_grid(grid=grid.numpy(), figsize=(ncols, nrows),

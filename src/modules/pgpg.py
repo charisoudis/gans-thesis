@@ -350,7 +350,7 @@ class PGPG(nn.Module, IGanGModule):
 
     def visualize_indices(self, indices: int or Sequence) -> Image:
         # Fetch images
-        assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could find dataset from model'
+        assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could not find dataset from model'
         images = []
         with self.gen.frozen():
             for index in indices:
