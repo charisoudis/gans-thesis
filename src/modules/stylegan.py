@@ -428,7 +428,11 @@ class StyleGan(nn.Module, IGanGModule):
             self.gen.alpha_index += 1
             self.disc.alpha = self.disc.alpha_curve[self.disc.alpha_index]
             self.disc.alpha_index += 1
-            self.logger.debug(f'self.disc.alpha_index={self.disc.alpha_index}')
+            ############################################################################################################
+            ############################################### DEV LOGGING ################################################
+            ############################################################################################################
+            # self.logger.debug(f'self.disc.alpha_index={self.disc.alpha_index}')
+            ############################################################################################################
 
         # Save for visualization
         if self.is_master_device:
