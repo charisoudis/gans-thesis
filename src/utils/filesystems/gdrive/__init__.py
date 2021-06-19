@@ -364,6 +364,19 @@ class GDriveModel(FilesystemModel):
         # self.logger.debug(f'self.dataset_len={self.dataset_len}, self._counter={self._counter}, '
         #                   f'self.step={self.step}, self.epoch={self.epoch}, self.epoch_inc={self.epoch_inc}')
 
+    def gforward_reset(self, batch_size: Optional[int] = None) -> None:
+        """
+        Reset internal counters (e.g in case dataloader changed as when training StyleGAN)
+        :param (optional) batch_size: if set it will perform the initial counters warming-up
+        """
+        # Initialize internal state of step/batch size
+        self.initial_step = 0
+        self._counter = 0
+        self._batch_size = None
+        # Warm up
+        if batch_size is not None:
+            self.gforward(batch_size=batch_size)
+
     def load_gforward_state(self, state: dict):
         """
         Loads running statistics (e.g. counters) from the model checkpoint.

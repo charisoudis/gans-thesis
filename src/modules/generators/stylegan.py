@@ -2,8 +2,10 @@ import math
 import time
 from typing import Optional, Tuple, List
 
+import numpy as np
 import torch
 import torch.nn as nn
+from matplotlib import pyplot as plt
 from torch import Tensor
 
 from modules.discriminators.stylegan import StyleGanDiscriminator
@@ -141,8 +143,11 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                 setattr(self, f'project{block_index}_block', nn.Conv2d(c_hidden, c_out, kernel_size=1))
         # Save args
         self.resolution = self.locals['resolution']
+
+        # Fade coefficient
         self.alpha_curve = get_alpha_curve(num_iters=num_iters, alpha_multiplier=alpha_multiplier)
         self.alpha_index = 0
+        self.alpha = self.alpha_curve[self.alpha_index]
 
         self.logger = logger if logger is not None else \
             CommandLineLogger(log_level='debug', name=self.__class__.__name__)
@@ -155,12 +160,18 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         :return: a torch.Tensor object containing the mixing of the output of the UpSampler and the last conv block
         """
         # Get current alpha value
-        if self.alpha_index >= len(self.alpha_curve):
-            alpha = 1.0
-        else:
-            alpha = self.alpha_curve[self.alpha_index]
-        self.alpha_index += 1
-        self.logger.info(f'[GEN] alpha={alpha}')
+        alpha = self.alpha
+        ################################################################################################################
+        ################################################# DEV LOGGING ##################################################
+        ################################################################################################################
+        # if abs(alpha - 0.5) < 1e-3:
+        #     self.logger.debug(f'[GEN] alpha={alpha} (alpha_index={self.alpha_index}, len()={len(self.alpha_curve)})')
+        # elif abs(alpha - 0.99) < 1e-3:
+        #     self.logger.debug(f'[GEN] alpha={alpha} (alpha_index={self.alpha_index}, len()={len(self.alpha_curve)})')
+        #
+        # return torch.zeros(z.shape[0], 3, self.resolution, self.resolution, device=z.device, requires_grad=True)
+        ################################################################################################################
+
         # Get total number of blocks
         resolution_log2 = int(math.log2(self.resolution))
         # Map noise
@@ -227,6 +238,13 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                 layer_names.append(f'project{block_index}_block')
         return layer_names
 
+    def plot_alpha_curve(self):
+        y = self.alpha_curve
+        x = np.arange(len(y))
+        plt.plot(x, y, '-.')
+        plt.title(f'GEN @ {self.resolution}x{self.resolution} (num_iters={self.locals["num_iters"]})')
+        plt.show()
+
     def grow(self, num_iters: int = 2, device: Optional[str or torch.device] = None) -> 'StyleGanGenerator':
         """
         Grow by a factor of 2 the generator's output resolution.
@@ -257,6 +275,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         return new_gen.to(device=device)
 
 
+# noinspection DuplicatedCode
 if __name__ == '__main__':
     # 4x4
     _stgen4 = StyleGanGenerator(resolution=4)

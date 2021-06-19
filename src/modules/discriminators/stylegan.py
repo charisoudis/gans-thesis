@@ -2,8 +2,10 @@ import math
 import time
 from typing import Optional, List
 
+import numpy as np
 import torch
 import torch.nn as nn
+from matplotlib import pyplot as plt
 from torch import Tensor
 
 from modules.partial.decoding import ChannelsProjectLayer
@@ -105,8 +107,10 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
             else:
                 raise RuntimeError(f'adv_criterion="{adv_criterion}" could be found (tried torch.nn and utils.pytorch)')
 
+        # Fade coefficient
         self.alpha_curve = get_alpha_curve(num_iters=num_iters, alpha_multiplier=alpha_multiplier)
         self.alpha_index = 0
+        self.alpha = self.alpha_curve[self.alpha_index]
 
         self.logger = logger if logger is not None else \
             CommandLineLogger(log_level='debug', name=self.__class__.__name__)
@@ -132,12 +136,18 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
             self.logger.debug('_: ' + str(x.shape))
 
         # Get current alpha value
-        if self.alpha_index >= len(self.alpha_curve):
-            alpha = 1.0
-        else:
-            alpha = self.alpha_curve[self.alpha_index]
-        self.alpha_index += 1
-        self.logger.info(f'[DISC] alpha={alpha}')
+        alpha = self.alpha
+
+        ################################################################################################################
+        ################################################# DEV LOGGING ##################################################
+        ################################################################################################################
+        # if abs(alpha - 0.5) < 1e-3:
+        #     self.logger.debug(f'[DISC] alpha={alpha} (alpha_index={self.alpha_index}, len()={len(self.alpha_curve)})')
+        # elif abs(alpha - 0.99) < 1e-3:
+        #     self.logger.debug(f'[DISC] alpha={alpha} (alpha_index={self.alpha_index}, len()={len(self.alpha_curve)})')
+        #
+        # return torch.zeros(x.shape[0], 1, device=x.device, requires_grad=True)
+        ################################################################################################################
 
         bi = int(math.log2(self.resolution))
         block_index = bi - 2
@@ -209,6 +219,13 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
             layer_names.append(f'block{block_index}')
         layer_names.append('downsample')
         return layer_names
+
+    def plot_alpha_curve(self):
+        y = self.alpha_curve
+        x = np.arange(len(y))
+        plt.plot(x, y, '-.')
+        plt.title(f'DISC @ {self.resolution}x{self.resolution} (num_iters={self.locals["num_iters"]})')
+        plt.show()
 
     def grow(self, num_iters: int = 2, device: Optional[str or torch.device] = None) -> 'StyleGanDiscriminator':
         """

@@ -473,14 +473,22 @@ class FISBDataset(Dataset, GDriveDataset):
     NormalizeMean = 0.5
     NormalizeStd = 0.5
 
+    ################################################################################################################
+    ################################################# DEV LOGGING ##################################################
+    ################################################################################################################
+    # IMAGE_R = None
+    ################################################################################################################
+
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
-                 log_level: str = 'info'):
+                 verbose: bool = True, log_level: str = 'info', logger: Optional[CommandLineLogger] = None):
         """
         FISBDataset class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
                                                              dataset from local or remote (Google Drive) filesystem
         :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param (bool) verbose: set to False to disable messages regarding Dataset initialization etc. (defaults to True)
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
+        :param (optional) logger: `utils.command_line_logger.CommandLineLogger` or None to instantiate a new one
         """
         # Instantiate `torch.utils.data.Dataset` class
         Dataset.__init__(self)
@@ -490,7 +498,7 @@ class FISBDataset(Dataset, GDriveDataset):
         GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.h5')
         self.root = dataset_fs_folder.local_root
         # Initialize instance properties
-        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__)
+        self.logger = CommandLineLogger(log_level=log_level, name=self.__class__.__name__) if not logger else logger
 
         # Check that the dataset is present at the local filesystem
         if not self.is_fetched_and_unzipped():
@@ -510,8 +518,9 @@ class FISBDataset(Dataset, GDriveDataset):
         self.img_mean = self.img_file['ih_mean']
         self.img_mean_max = np.max(self.img_mean)
         self.total_images_count = self.img_dataset.shape[0]
-        self.logger.debug(f'Found {to_human_readable(self.total_images_count)} total images in the ' +
-                          f'Fashion Synthesis Benchmark dataset')
+        if verbose:
+            self.logger.debug(f'Found {to_human_readable(self.total_images_count)} total images in the ' +
+                              f'Fashion Synthesis Benchmark dataset')
 
         # Load crops.json file
         self.crops_json_path = os.path.join(self.root, 'crops.json')
@@ -519,6 +528,12 @@ class FISBDataset(Dataset, GDriveDataset):
             self.crops = json.load(json_fp)
             assert len(self.crops) == self.total_images_count, \
                 f'self.crops has {len(self.crops)} instead of {self.total_images_count}: ERROR'
+
+        ################################################################################################################
+        ################################################# DEV LOGGING ##################################################
+        ################################################################################################################
+        # self.IMAGE_R = torch.randn(3, 128, 128)
+        ################################################################################################################
 
         # Save transforms
         self._transforms = None
@@ -538,6 +553,11 @@ class FISBDataset(Dataset, GDriveDataset):
         :param index: integer with the current image index that we want to read from disk
         :return: an image from ICRB dataset as a torch.Tensor object
         """
+        ################################################################################################################
+        ################################################# DEV LOGGING ##################################################
+        ################################################################################################################
+        # return self.IMAGE_R
+        ################################################################################################################
         # Create PIL Image object
         img = self.img_mean_max * self.img_dataset[index] + self.img_mean
         img = img / np.max(img)
@@ -614,15 +634,18 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
     DataLoader interface.
     """
 
-    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder,
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder or FISBDataset,
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
                  target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
-                 norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True,
-                 seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None, log_level: str = 'info'):
+                 norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True, verbose: bool = True,
+                 seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None,
+                 log_level: str = 'info', logger: Optional[CommandLineLogger] = None):
         """
         FISBDataloader class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
-                                                             dataset from local or remote (Google Drive) filesystem
+                                                             dataset from local or remote (Google Drive) filesystem.
+                                                             If instance of FISBDataset is given, then the process of
+                                                             creating it will be bypassed.
         :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms
@@ -631,13 +654,18 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
                          parameter
         :param batch_size: the number of images batch
         :param shuffle: set to True to have sampler shuffle indices when reaches the end
+        :param (bool) verbose: set to False to disable messages regarding Dataset initialization etc. (defaults to True)
         :param (int) seed: manual seed parameter of torch.Generator (used in dataset sampler)
         :param (bool) pin_memory: set to True to have data transferred in GPU from the Pinned RAM (this is thoroughly
                            explained here: https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc)
         :param (optional) splits: if not None performs training/testing sets split based on given :attr:`split`
                                   percentages
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
+        :param (optional) logger: `utils.command_line_logger.CommandLineLogger` or None to instantiate a new one
         """
+        self.locals = locals()
+        del self.locals['self']
+        del self.locals['__class__']
         # Reproducibility
         seed = FISBDataloader.manual_seed(seed)
         # Image transforms
@@ -652,13 +680,18 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
             image_transforms = FISBDataset.get_image_transforms(target_shape, target_channels,
                                                                 norm_mean=norm_mean, norm_std=norm_std)
         # Create dataset instance with the given transforms
-        _entire_dataset = FISBDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root,
-                                      image_transforms=image_transforms, log_level=log_level)
+        if type(dataset_fs_folder_or_root) == FISBDataset:
+            _entire_dataset = dataset_fs_folder_or_root
+        else:
+            _entire_dataset = FISBDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, verbose=verbose,
+                                          image_transforms=image_transforms, log_level=log_level, logger=logger)
+        self._entire_dataset = _entire_dataset
         # Perform train/test split
         if splits:
             _training_set, _test_set = train_test_split(_entire_dataset, splits=splits, seed=seed)
-            _entire_dataset.logger.debug(f'Split dataset: len(training_set)={to_human_readable(len(_training_set))}, ' +
-                                         f'len(test_set)={to_human_readable(len(_test_set))}')
+            if verbose:
+                _entire_dataset.logger.debug(f'Split dataset: len(training_set)={to_human_readable(len(_training_set))}'
+                                             f', len(test_set)={to_human_readable(len(_test_set))}')
         else:
             _training_set = _test_set = _entire_dataset
         self.test_set = _test_set
@@ -680,6 +713,17 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
             if state['perm_index'] < 0:
                 state['perm_index'] = self.__len__() + state['perm_index'] + 1
         return self._sampler.set_state(state)
+
+    def update_batch_size(self, batch_size: int) -> 'FISBDataloader':
+        """
+        Update DataLoader's batch_size property. This (unfortunately) means re-initializing the entire object.
+        :return: a new FISBDataloader instance with all the parameters untouched except batch_size.
+        """
+        self.locals['dataset_fs_folder_or_root'] = self._entire_dataset
+        self.locals['batch_size'] = batch_size
+        self.locals['verbose'] = False
+        self.locals['logger'] = None
+        return FISBDataloader(**self.locals)
 
 
 class ICRBScraper:

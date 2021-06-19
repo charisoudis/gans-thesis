@@ -1,5 +1,7 @@
+import gc
 import math
 import os
+import time
 from typing import Tuple, Optional, Sequence
 
 import numpy as np
@@ -9,7 +11,7 @@ from PIL.Image import Image
 from matplotlib import pyplot as plt
 from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torchvision.transforms import Compose, transforms
+from torchvision.transforms import Compose
 
 from datasets.deep_fashion import FISBDataloader, FISBDataset
 from modules.discriminators.stylegan import StyleGanDiscriminator
@@ -81,24 +83,22 @@ class StyleGan(nn.Module, IGanGModule):
             'max': 128,
         },
         'grow_scheduler': {
-            'starting_epoch': [
+            'starting_epochs': [
                 5,  # at that epoch grow to 8x8
                 15,  # at that epoch grow to 16x16
                 25,  # at that epoch grow to 32x32
                 35,  # at that epoch grow to 64x64
                 45,  # at that epoch grow to 128x128
             ],
-            'batch_size': [
+            'batch_sizes': [
                 128,  # images/batch at 4x4
                 64,  # images/batch at 8x8
                 32,  # images/batch at 16x16
-                32,  # images/batch at 32x32
                 32,  # images/batch at 32x32
                 32,  # images/batch at 64x64
                 16,  # images/batch at 128x128
             ],
             'transition_epochs': [
-                5,  # epochs for alpha to go from 0 --> 1 at 4x4
                 5,  # epochs for alpha to go from 0 --> 1 at 8x8
                 5,  # epochs for alpha to go from 0 --> 1 at 16x16
                 5,  # epochs for alpha to go from 0 --> 1 at 32x32
@@ -149,6 +149,8 @@ class StyleGan(nn.Module, IGanGModule):
         nn.Module.__init__(self)
 
         # Move models to {C,G,T}PU
+        self.gen = None
+        self.disc = None
         self.device = device
         self.is_master_device = (isinstance(device, torch.device) and device.type == 'cuda' and device.index == 0) \
                                 or (isinstance(device, torch.device) and device.type == 'cpu') \
@@ -172,8 +174,10 @@ class StyleGan(nn.Module, IGanGModule):
             # Move to GPU only if no checkpoint is applied
             self._init_gen_disc_opt_scheduler(resolution=self._configuration['resolutions']['min'], device=device)
             # Initialize weights with small values
-            self.gen: StyleGanGenerator = self.gen.apply(weights_init_naive)
-            self.disc: StyleGanDiscriminator = self.disc.apply(weights_init_naive)
+            if self.gen is not None:
+                self.gen = self.gen.apply(weights_init_naive)
+            if self.disc is not None:
+                self.disc = self.disc.apply(weights_init_naive)
         # For visualizations
         self.real = None
         self.fake = None
@@ -188,18 +192,53 @@ class StyleGan(nn.Module, IGanGModule):
         if self.use_half_precision:
             self.grad_scaler = GradScaler()
 
-    def _init_gen_disc_opt_scheduler(self, resolution: int = 4, device: Optional[str or torch.device] = None) -> None:
+    def _init_gen_disc_opt_scheduler(self, resolution: int = 4, num_iters: Optional[int] = None,
+                                     batch_size: Optional[int] = None, device: Optional[str or torch.device] = None):
         """
         Initialize Generator and Discriminator networks.
         :param (int) resolution: height and width of current generation/discrimination
+        :param (int) num_iters: number of iterations the new networks will run
+        :param (int) batch_size: batch_size of the new networks' dataloader
         :param (str or torch.device) device: the device to move networks to
         """
+        if self.gen and resolution == self.gen.resolution:
+            return
+        self.logger.info(f'[GROWING REQUEST] resolution={resolution}, num_iters={num_iters}, batch_size={batch_size}')
+        # Find number of iters
+        if num_iters is None:
+            if self._configuration['grow_scheduler'] and self.evaluator and self.evaluator.dataset:
+                resolution_index = int(math.log2(resolution)) - 2
+                batch_size = self._configuration['grow_scheduler']['batch_sizes'][resolution_index]
+                transition_epoch = self._configuration['grow_scheduler']['transition_epochs'][resolution_index]
+                num_iters = (self.dataset_len // batch_size) * transition_epoch
+            else:
+                batch_size = None
+                num_iters = 2
+        self.logger.debug(f'[_init_gen_disc_opt_scheduler] num_iters:{num_iters} | batch_size={batch_size}')
+        #   - Free current networks
+        if self.gen is not None:
+            del self.gen
+            del self.self.gen_opt
+            del self.disc
+            del self.disc_opt
+            gc.collect()
+            time.sleep(1.0)
         #   - Generator
-        self.gen = StyleGanGenerator(c_out=self._configuration['shapes']['c_out'], logger=self.logger,
-                                     resolution=resolution, **self._configuration['gen'])
+        self.gen = StyleGanGenerator(c_out=self._configuration['shapes']['c_out'], resolution=resolution,
+                                     num_iters=num_iters, logger=self.logger, **self._configuration['gen'])
+        ################################################################################################################
+        ################################################# DEV LOGGING ##################################################
+        ################################################################################################################
+        # self.gen.plot_alpha_curve()
+        ################################################################################################################
         #   - Discriminator
-        self.disc = StyleGanDiscriminator(c_in=self._configuration['shapes']['c_in'], logger=self.logger,
-                                          resolution=resolution, **self._configuration['disc'])
+        self.disc = StyleGanDiscriminator(c_in=self._configuration['shapes']['c_in'], resolution=resolution,
+                                          num_iters=num_iters, logger=self.logger, **self._configuration['disc'])
+        ################################################################################################################
+        ################################################# DEV LOGGING ##################################################
+        ################################################################################################################
+        # self.disc.plot_alpha_curve()
+        ################################################################################################################
         #   - Move models to GPU
         if device is not None:
             self.gen.to(device)
@@ -207,6 +246,11 @@ class StyleGan(nn.Module, IGanGModule):
         #   - Optimizers & LR Schedulers
         self.gen_opt, self.gen_opt_lr_scheduler = get_optimizer(self.gen, **self._configuration['gen_opt'])
         self.disc_opt, self.disc_opt_lr_scheduler = get_optimizer(self.disc, **self._configuration['disc_opt'])
+        # Save dataset parameters
+        self.current_batch_size = batch_size
+        # Reset GDriveModel counters
+        self.gforward_reset()
+        self.logger.info(f'[GROWING REQUEST] new_resolution: g={self.gen.resolution} d={self.disc.resolution}')
 
     def load_configuration(self, configuration: dict) -> None:
         IGanGModule.load_configuration(self, configuration)
@@ -238,15 +282,15 @@ class StyleGan(nn.Module, IGanGModule):
         if state_dict["resolution"] != self.gen.resolution:
             self.logger.warning(f'state_dict["resolution"]={state_dict["resolution"]} IS NOT self.gen.resolution=' +
                                 str(self.gen.resolution) + '. Re-initializing disc/gen.')
-            del self.gen
-            del self.disc
             self._init_gen_disc_opt_scheduler(resolution=state_dict['resolution'], device=self.device)
         self.gen.load_state_dict(state_dict['gen'])
         self.gen.alpha_curve = state_dict['gen_alpha']['curve']
         self.gen.alpha_index = state_dict['gen_alpha']['index']
+        self.gen.alpha = state_dict['gen_alpha']['value']
         self.disc.load_state_dict(state_dict['disc'])
         self.disc.alpha_curve = state_dict['disc_alpha']['curve']
         self.disc.alpha_index = state_dict['disc_alpha']['index']
+        self.disc.alpha = state_dict['disc_alpha']['value']
         self.gen_opt.load_state_dict(state_dict['gen_opt'])
         self.disc_opt.load_state_dict(state_dict['disc_opt'])
         self.gen_losses_permanent = state_dict['gen_losses']
@@ -271,6 +315,7 @@ class StyleGan(nn.Module, IGanGModule):
             'gen_alpha': {
                 'curve': self.gen.alpha_curve,
                 'index': self.gen.alpha_index,
+                'value': self.gen.alpha,
             },
             'gen_loss': mean_gen_loss,
             'gen_losses': self.gen_losses_permanent.copy(),
@@ -280,6 +325,7 @@ class StyleGan(nn.Module, IGanGModule):
             'disc_alpha': {
                 'curve': self.disc.alpha_curve,
                 'index': self.disc.alpha_index,
+                'value': self.disc.alpha,
             },
             'disc_loss': mean_disc_loss,
             'disc_losses': self.disc_losses_permanent.copy(),
@@ -301,13 +347,6 @@ class StyleGan(nn.Module, IGanGModule):
         batch_size = real.shape[0]
         if self.is_master_device:
             self.gforward(batch_size)
-
-        # Check if the networks should grow
-        self.growing()
-
-        # Downsample images
-        if real.shape[-1] != self.gen.resolution:
-            real = transforms.Resize(size=self.gen.resolution)(real)
 
         ##########################################
         ########   Update Discriminator   ########
@@ -337,6 +376,11 @@ class StyleGan(nn.Module, IGanGModule):
                     else:
                         self.disc_opt_lr_scheduler.step()
                 disc_losses.append(disc_loss.detach())
+                ########################################################################################################
+                ############################################# DEV LOGGING ##############################################
+                ########################################################################################################
+                # disc_losses.append(torch.tensor(0.0))
+                ########################################################################################################
             disc_loss = torch.mean(torch.stack(disc_losses))
 
         ##########################################
@@ -366,6 +410,17 @@ class StyleGan(nn.Module, IGanGModule):
         if self.use_half_precision:
             self.grad_scaler.update()
 
+        # Update alphas
+        if self.gen.alpha_index >= len(self.gen.alpha_curve):
+            self.gen.alpha = 1.0
+            self.disc.alpha = 1.0
+        else:
+            self.gen.alpha = self.gen.alpha_curve[self.gen.alpha_index]
+            self.gen.alpha_index += 1
+            self.disc.alpha = self.disc.alpha_curve[self.disc.alpha_index]
+            self.disc.alpha_index += 1
+            self.logger.debug(f'self.disc.alpha_index={self.disc.alpha_index}')
+
         # Save for visualization
         if self.is_master_device:
             self.fake = fake[::len(fake) - 1].detach().cpu()
@@ -379,38 +434,37 @@ class StyleGan(nn.Module, IGanGModule):
 
         return disc_loss, gen_loss.detach()
 
-    def grow(self, num_iters: int = 2) -> None:
-        """
-        Grows by a factor of 2 the Generator's output and Discriminator's input resolution.
-        :param (int) num_iters: number of iterations the new networks will run
-        """
-        self.gen = self.gen.to('cpu').grow(num_iters=num_iters).to(self.device)
-        self.disc = self.disc.to('cpu').grow(num_iters=num_iters).to(self.device)
-
-    def growing(self) -> None:
+    def growing(self) -> bool:
         """
         Function to call on every step to check if the network should grow.
+        :return: True if networks grew during function call, False if no change occurred
         """
         scheduler = self._configuration['grow_scheduler']
-        starting_epochs = scheduler['starting_epoch']
-        batch_sizes = scheduler['starting_epoch']
-        transition_epochs = scheduler['transition_epochs']
+        starting_epochs = scheduler['starting_epochs']
+        batch_sizes = scheduler['batch_sizes']
+        transition_epochs = [None]
+        transition_epochs.extend(scheduler['transition_epochs'])
 
         current_epoch = self.epoch
         current_resolution = self.gen.resolution
-        new_resolution = None
-        new_resolution_index = None
-        for se in range(2, int(math.log2(self._configuration['resolutions']['max'])) + 1):
-            if current_epoch < starting_epochs[se - 2]:
-                new_resolution = 2 ** se
-                new_resolution_index = se - 2
+        new_resolution = 4
+        new_resolution_index = 0
+        for se in reversed(range(2, int(math.log2(self._configuration['resolutions']['max'])))):
+            # print(starting_epochs, starting_epochs[se - 2], current_epoch)
+            if current_epoch >= starting_epochs[se - 2]:
+                new_resolution = 2 ** (se + 1)
+                new_resolution_index = se - 1
                 break
         if new_resolution > current_resolution:
             batch_size = batch_sizes[new_resolution_index]
             transition_epoch = transition_epochs[new_resolution_index]
-            num_iters = batch_size * transition_epoch
+            num_iters = (len(self.evaluator.dataset) // batch_size) * transition_epoch
             self.logger.info(f'Growing network: {current_resolution} --> {new_resolution} (num_iters={num_iters})')
-            self.grow(num_iters=num_iters)
+            self._init_gen_disc_opt_scheduler(resolution=new_resolution, num_iters=num_iters, batch_size=batch_size,
+                                              device=self.device)
+            self.logger.debug(f'Growing network: [DONE]')
+            return True
+        return False
 
     #
     # --------------

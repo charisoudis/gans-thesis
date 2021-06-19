@@ -47,9 +47,9 @@ class GanEvaluator(object):
                                                             with random noise.
         :param (int) f1_k: `k` param of precision/recall metric (default is 3)
         """
-        gen_dataset = gen_dataset.dataset if isinstance(gen_dataset, Subset) else gen_dataset
-        if hasattr(gen_dataset, 'transforms'):
-            self.gen_transforms = gen_dataset.transforms
+        gen_dataset_underlying = gen_dataset.dataset if isinstance(gen_dataset, Subset) else gen_dataset
+        if hasattr(gen_dataset_underlying, 'transforms'):
+            self.gen_transforms = gen_dataset_underlying.transforms
         else:
             raise NotImplementedError('gen_dataset should expose image transforms (to invert them before entering '
                                       'ImageNET classifier to extract embeddings')

@@ -1,9 +1,11 @@
 import torch
 from IPython.core.display import display
+from PIL import Image
 from torch import Tensor
 from torch.nn import DataParallel
 # noinspection PyProtectedMember
 from torch.utils.data import DataLoader
+from torchvision.transforms import transforms
 
 from datasets.deep_fashion import FISBDataset, FISBDataloader
 from modules.stylegan import StyleGan
@@ -20,7 +22,7 @@ torch.cuda.empty_cache()
 ###################################
 #   - training
 n_epochs = 300
-batch_size = 144 if not run_locally else 2
+batch_size = 128 if not run_locally else 4
 train_test_splits = [90, 10]  # for a 90% training - 10% evaluation set split
 #   - evaluation
 metrics_n_samples = 1000 if not run_locally else 2
@@ -61,9 +63,8 @@ else:
 #   - apply rudimentary tests
 assert issubclass(dataloader.__class__, DataLoader)
 assert len(dataloader) == len(dataset) // batch_size + (1 if len(dataset) % batch_size else 0)
-_bags, _shoes = next(iter(dataloader))
-assert tuple(_bags.shape) == (batch_size, target_channels, target_shape, target_shape)
-assert tuple(_shoes.shape) == (batch_size, target_channels, target_shape, target_shape)
+_real = next(iter(dataloader))
+assert tuple(_real.shape) == (batch_size, target_channels, target_shape, target_shape)
 
 ###################################
 ###    Models Initialization    ###
@@ -90,6 +91,11 @@ stgan.logger.debug(f'Model initialized. Number of params = {stgan.nparams_hr}')
 if stgan.step is None:
     stgan.gforward(batch_size=batch_size)
     stgan.logger.debug(f'Model warmed-up (internal counters).')
+# FIX: Dataloader batch_size need update
+if stgan.current_batch_size is not None and stgan.current_batch_size != batch_size:
+    stgan.logger.debug(f'Updating Dataloader batch_size (from {batch_size} --> {stgan.current_batch_size}).')
+    batch_size = stgan.current_batch_size
+    dataloader = dataloader.update_batch_size(batch_size=batch_size)
 #   - setup multi-GPU training
 if torch.cuda.device_count() > 1:
     stgan.gen = DataParallel(stgan.gen)
@@ -113,6 +119,13 @@ gcapture_ready = True
 async_results = None
 stgan.logger.info(f'[training loop] STARTING (epoch={stgan.epoch}, step={stgan.initial_step})')
 for epoch in range(stgan.epoch, n_epochs):
+    # Check if the networks should grow
+    if stgan.growing() or batch_size != stgan.current_batch_size:
+        batch_size = stgan.current_batch_size
+        stgan.logger.critical(f'Reinitializing Dataloader... (new batch_size={batch_size})')
+        dataloader = dataloader.update_batch_size(batch_size=batch_size)
+        stgan.update_batch_size(batch_size, sampler_instance=dataloader.sampler)
+
     # noinspection PyProtectedMember
     d = {
         'step': stgan.step,
@@ -126,6 +139,10 @@ for epoch in range(stgan.epoch, n_epochs):
 
     real: Tensor
     for real in exec_tqdm(dataloader, initial=stgan.initial_step):
+        # Downsample images
+        if real.shape[-1] != stgan.gen.resolution:
+            real = transforms.Resize(size=stgan.gen.resolution, interpolation=Image.BILINEAR)(real)
+
         # Transfer image batches to GPU
         real = real.to(exec_device)
 
