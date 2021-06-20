@@ -466,7 +466,6 @@ class StyleGan(nn.Module, IGanGModule):
         new_resolution = 4
         new_resolution_index = 0
         for se in reversed(range(2, int(math.log2(self._configuration['resolutions']['max'])))):
-            # print(starting_epochs, starting_epochs[se - 2], current_epoch)
             if current_epoch >= starting_epochs[se - 2]:
                 new_resolution = 2 ** (se + 1)
                 new_resolution_index = se - 1

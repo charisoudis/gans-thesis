@@ -155,7 +155,7 @@ class SSIM(nn.Module):
                 # Generate fake images from conditions
                 gen_inputs = [real_samples[_i].to(self.device) for _i in condition_indices] if condition_indices \
                     else torch.randn(cur_batch_size, z_dim, device=self.device)
-                fake_output = gen(*gen_inputs)
+                fake_output = gen(*gen_inputs if type(gen_inputs) == list else gen_inputs)
                 if type(fake_output) == tuple or type(fake_output) == list:
                     fake_output = fake_output[-1]
                 # if not skip_asserts:

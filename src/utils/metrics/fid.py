@@ -138,7 +138,7 @@ class FID(nn.Module):
                     else torch.randn(cur_batch_size, z_dim, device=self.device)
                 # gen_inputs = [gen_transforms(gen_input).to(self.device) for gen_input in gen_inputs] \
                 #     if condition_indices is not None else gen_inputs.to(self.device)
-                fake_output = gen(*gen_inputs)
+                fake_output = gen(*gen_inputs if type(gen_inputs) == list else gen_inputs)
                 if type(fake_output) == tuple or type(fake_output) == list:
                     fake_output = fake_output[-1]
                 # ATTENTION: In order to pass generator's output through Inception we must re-normalize tensor stats!
