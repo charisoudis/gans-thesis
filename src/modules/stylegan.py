@@ -566,21 +566,22 @@ if __name__ == '__main__':
     _dl = FISBDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
                          log_level=_log_level, batch_size=_bs, pin_memory=False)
     _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, z_dim=512,
-                              n_samples=4, batch_size=4, f1_k=1, device='cpu')
+                              n_samples=4, batch_size=2, f1_k=1, device='cpu')
 
     # Initialize model
     _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='default', chkpt_step=None, chkpt_epoch=None,
                       dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
-    _stgan.use_half_precision = False
-    print(_stgan.nparams_hr)
-
-    _device = _stgan.device
-    _x = next(iter(_dl))
-    _disc_loss, _gen_loss = _stgan(_x.to(_device))
-    print(_disc_loss, _gen_loss)
-
-    _state_dict = _stgan.state_dict()
-    torch.save(_state_dict, '/home/achariso/PycharmProjects/gans-thesis/src/checkpoint.pth')
+    # _stgan._init_gen_disc_opt_scheduler(resolution=128)
+    # _stgan.use_half_precision = False
+    # print(_stgan.nparams_hr)
+    #
+    # _device = _stgan.device
+    # _x = next(iter(_dl))
+    # _disc_loss, _gen_loss = _stgan(_x.to(_device))
+    # print(_disc_loss, _gen_loss)
+    #
+    # _state_dict = _stgan.state_dict()
+    # torch.save(_state_dict, '/home/achariso/PycharmProjects/gans-thesis/src/checkpoint.pth')
 
     _metrics = _evaluator.evaluate(gen=_stgan.gen, show_progress=True)
     exit(0)
