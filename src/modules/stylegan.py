@@ -493,7 +493,7 @@ class StyleGan(nn.Module, IGanGModule):
         assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could not find dataset from model'
         real_images = []
         with self.gen.frozen():
-            fake_images = self.gen(self.gen.get_noise(batch_size=3)).detach().cpu()
+            fake_images = self.gen(self.gen.get_noise(batch_size=3, device=self.device)).detach().cpu()
             for index in indices:
                 real_images.append(self.evaluator.dataset[index].cpu())
 
