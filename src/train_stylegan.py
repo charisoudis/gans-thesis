@@ -51,7 +51,8 @@ gen_transforms = FISBDataset.get_image_transforms(target_shape=target_shape, tar
 #     > len(dataloader) = <number of batches>
 #     > len(dataloader.dataset) = <number of total dataset items>
 dataloader = FISBDataloader(dataset_fs_folder_or_root=datasets_groot, batch_size=batch_size, log_level=log_level,
-                            image_transforms=gen_transforms, splits=train_test_splits, pin_memory=not run_locally)
+                            image_transforms=gen_transforms, splits=train_test_splits, pin_memory=not run_locally,
+                            load_in_memory=not run_locally)
 dataset = dataloader.dataset  # save training dataset as `dataset`
 #   - ensure dataset is fetched locally and unzipped
 if isinstance(dataset, FilesystemDataset):

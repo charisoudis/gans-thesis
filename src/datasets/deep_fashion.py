@@ -480,12 +480,14 @@ class FISBDataset(Dataset, GDriveDataset):
     ################################################################################################################
 
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
-                 verbose: bool = True, log_level: str = 'info', logger: Optional[CommandLineLogger] = None):
+                 load_in_memory: bool = False, verbose: bool = True, log_level: str = 'info',
+                 logger: Optional[CommandLineLogger] = None):
         """
         FISBDataset class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
                                                              dataset from local or remote (Google Drive) filesystem
         :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
+        :param (bool) load_in_memory: set to True to load the whole h5 file in memory
         :param (bool) verbose: set to False to disable messages regarding Dataset initialization etc. (defaults to True)
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         :param (optional) logger: `utils.command_line_logger.CommandLineLogger` or None to instantiate a new one
@@ -512,7 +514,7 @@ class FISBDataset(Dataset, GDriveDataset):
         if not os.path.exists(self.h5_path):
             self.logger.error(f'Img.h5 file not found in image directory (tried: {self.h5_path})')
             raise FileNotFoundError(f'{self.h5_path} not found in image directory')
-        self.img_file = h5py.File(self.h5_path, 'r+')
+        self.img_file = h5py.File(self.h5_path, 'r', driver='core' if load_in_memory else None)
         self.img_dataset: H5Dataset
         self.img_dataset = self.img_file['ih']
         self.img_mean = self.img_file['ih_mean']
@@ -634,7 +636,7 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
     DataLoader interface.
     """
 
-    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder or FISBDataset,
+    def __init__(self, dataset_fs_folder_or_root: FilesystemFolder or FISBDataset, load_in_memory: bool = False,
                  image_transforms: Optional[transforms.Compose] = None, target_shape: Optional[int] = None,
                  target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
                  norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True, verbose: bool = True,
@@ -646,6 +648,7 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
                                                              dataset from local or remote (Google Drive) filesystem.
                                                              If instance of FISBDataset is given, then the process of
                                                              creating it will be bypassed.
+        :param (bool) load_in_memory: set to True to load the whole h5 file in memory
         :param (optional) image_transforms: a list of torchvision.transforms.* sequential image transforms
         :param target_shape: the H and W in the tensor coming out of image transforms
         :param target_channels: the number of channels in the tensor coming out of image transforms

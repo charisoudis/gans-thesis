@@ -196,7 +196,11 @@ class BatchStd(nn.Module):
         """
         shape = x.shape  # (N,C,H,W)
         # (M,G,C,H,W): split batch into M groups of size |G|
-        x_std = x.view(self.group_size, -1, shape[1], shape[2], shape[3])
+        try:
+            x_std = x.view(self.group_size, -1, shape[1], shape[2], shape[3])
+        except RuntimeError:
+            x = x[0:shape[0] - (shape[0] % (self.group_size * shape[1] * shape[2] * shape[3]))]
+            x_std = x.view(self.group_size, -1, shape[1], shape[2], shape[3])
         # (M,G,C,H,W): remove mean across groups
         x_std -= torch.mean(x_std, dim=0, keepdim=True)
         # (M,C,H,W): compute std across groups

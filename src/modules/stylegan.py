@@ -354,7 +354,10 @@ class StyleGan(nn.Module, IGanGModule):
             self.gforward(batch_size)
 
         # FIX: Due to the MiniBatchStd layer, batch_size must be >= group_size (which by default equals to 4)
-        if batch_size < 4:
+        batch_size_mod_4 = batch_size % 4
+        if batch_size_mod_4 != 0:
+            batch_size -= batch_size_mod_4
+
             return None, None
 
         ##########################################
