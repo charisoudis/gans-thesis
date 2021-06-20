@@ -687,7 +687,8 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
             _entire_dataset = dataset_fs_folder_or_root
         else:
             _entire_dataset = FISBDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, verbose=verbose,
-                                          image_transforms=image_transforms, log_level=log_level, logger=logger)
+                                          image_transforms=image_transforms, log_level=log_level, logger=logger,
+                                          load_in_memory=load_in_memory)
         self._entire_dataset = _entire_dataset
         # Perform train/test split
         if splits:
