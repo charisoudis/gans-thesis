@@ -353,12 +353,12 @@ class StyleGan(nn.Module, IGanGModule):
         if self.is_master_device:
             self.gforward(batch_size)
 
-        # FIX: Due to the MiniBatchStd layer, batch_size must be >= group_size (which by default equals to 4)
+        # FIX: Due to the MiniBatchStd layer, batch_size must be divided by group_size (which defaults to 4)
         batch_size_mod_4 = batch_size % 4
         if batch_size_mod_4 != 0:
             batch_size -= batch_size_mod_4
-
-            return None, None
+            if batch_size < 4:
+                return None, None
 
         ##########################################
         ########   Update Discriminator   ########
@@ -566,7 +566,7 @@ if __name__ == '__main__':
     _dl = FISBDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
                          log_level=_log_level, batch_size=_bs, pin_memory=False)
     _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, z_dim=512,
-                              n_samples=2, batch_size=1, f1_k=1, device='cpu')
+                              n_samples=4, batch_size=4, f1_k=1, device='cpu')
 
     # Initialize model
     _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='default', chkpt_step=None, chkpt_epoch=None,
@@ -581,6 +581,8 @@ if __name__ == '__main__':
 
     _state_dict = _stgan.state_dict()
     torch.save(_state_dict, '/home/achariso/PycharmProjects/gans-thesis/src/checkpoint.pth')
+
+    _metrics = _evaluator.evaluate(gen=_stgan.gen, show_progress=True)
     exit(0)
 
     _img = _stgan.visualize()

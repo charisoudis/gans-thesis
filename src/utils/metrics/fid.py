@@ -125,6 +125,9 @@ class FID(nn.Module):
                 if cur_samples >= self.n_samples:
                     break_after = True
 
+                if hasattr(gen, 'resolution'):
+                    real_samples = transforms.Resize(size=gen.resolution)(real_samples)
+
                 # Compute real embeddings
                 target_output = real_samples[target_index] if target_index else real_samples
                 target_output = target_output.to(self.device)
@@ -134,12 +137,13 @@ class FID(nn.Module):
                 cur_batch_size = len(target_output)
 
                 # Compute fake embeddings
-                gen_inputs = [real_samples[_i].to(self.device) for _i in condition_indices] if condition_indices \
-                    else torch.randn(cur_batch_size, z_dim, device=self.device)
+                gen_inputs = [real_samples[_i].to(self.device) for _i in condition_indices] \
+                    if condition_indices else [torch.randn(cur_batch_size, z_dim, device=self.device), ]
                 # gen_inputs = [gen_transforms(gen_input).to(self.device) for gen_input in gen_inputs] \
                 #     if condition_indices is not None else gen_inputs.to(self.device)
-                fake_output = gen(*gen_inputs if type(gen_inputs) == list else gen_inputs)
-                if type(fake_output) == tuple or type(fake_output) == list:
+                fake_output = gen(*gen_inputs)
+                fake_output_type = type(fake_output)
+                if fake_output_type != torch.Tensor and (type(fake_output) == tuple or type(fake_output) == list):
                     fake_output = fake_output[-1]
                 # ATTENTION: In order to pass generator's output through Inception we must re-normalize tensor stats!
                 # Generator output images in the range [-1, 1], since it uses a Tanh() activation layer, whereas
@@ -204,7 +208,7 @@ if __name__ == '__main__':
                                     image_transforms=ICRBDataset.get_image_transforms(_target_shape, _target_channels))
 
     # Initialize Generator
-    _gen = PGPGGenerator(c_in=2*_target_channels, c_out=_target_channels, w_in=_target_shape, h_in=_target_shape)
+    _gen = PGPGGenerator(c_in=2 * _target_channels, c_out=_target_channels, w_in=_target_shape, h_in=_target_shape)
 
     # Evaluate Generator using FID
     _fid = FID(model_fs_folder_or_root=_models_groot, n_samples=2, batch_size=1)

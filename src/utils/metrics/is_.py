@@ -7,6 +7,7 @@ import torch.utils.data
 from torch import Tensor
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms import transforms
 
 from datasets.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
@@ -68,13 +69,19 @@ class IS(FID):
                 if cur_samples >= self.n_samples:
                     break_after = True
 
+                if hasattr(gen, 'resolution'):
+                    real_samples = transforms.Resize(size=gen.resolution)(real_samples)
+
                 cur_batch_size = len(real_samples if condition_indices is None else real_samples[0])
 
                 # Compute predictions on fake
-                gen_inputs = [real_samples[_i].to(self.device) for _i in condition_indices] if condition_indices \
-                    else torch.randn(cur_batch_size, z_dim, device=self.device)
-                fake_output = gen(*gen_inputs if type(gen_inputs) == list else gen_inputs)
-                if type(fake_output) == tuple or type(fake_output) == list:
+                gen_inputs = [real_samples[_i].to(self.device) for _i in condition_indices] \
+                    if condition_indices else [torch.randn(cur_batch_size, z_dim, device=self.device), ]
+                # gen_inputs = [gen_transforms(gen_input).to(self.device) for gen_input in gen_inputs] \
+                #     if condition_indices is not None else gen_inputs.to(self.device)
+                fake_output = gen(*gen_inputs)
+                fake_output_type = type(fake_output)
+                if fake_output_type != torch.Tensor and (type(fake_output) == tuple or type(fake_output) == list):
                     fake_output = fake_output[-1]
                 # ATTENTION: In order to pass generator's output through Inception we must re-normalize tensor stats!
                 # Generator output images in the range [-1, 1], since it uses a Tanh() activation layer, whereas

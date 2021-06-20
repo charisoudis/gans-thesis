@@ -9,6 +9,7 @@ from torch import Tensor
 from torch.autograd import Variable
 # noinspection PyProtectedMember
 from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms import transforms
 
 from datasets.deep_fashion import ICRBCrossPoseDataset, ICRBDataset
 from modules.generators.pgpg import PGPGGenerator
@@ -141,6 +142,9 @@ class SSIM(nn.Module):
                 if cur_samples >= self.n_samples:
                     break_after = True
 
+                if hasattr(gen, 'resolution'):
+                    real_samples = transforms.Resize(size=gen.resolution)(real_samples)
+
                 # Get target (real) images
                 target_output = real_samples[target_index] if target_index is not None else real_samples
                 target_output = target_output.to(self.device)
@@ -153,16 +157,21 @@ class SSIM(nn.Module):
                 cur_batch_size = len(target_output)
 
                 # Generate fake images from conditions
-                gen_inputs = [real_samples[_i].to(self.device) for _i in condition_indices] if condition_indices \
-                    else torch.randn(cur_batch_size, z_dim, device=self.device)
-                fake_output = gen(*gen_inputs if type(gen_inputs) == list else gen_inputs)
-                if type(fake_output) == tuple or type(fake_output) == list:
+                gen_inputs = [real_samples[_i].to(self.device) for _i in condition_indices] \
+                    if condition_indices else [torch.randn(cur_batch_size, z_dim, device=self.device), ]
+                # gen_inputs = [gen_transforms(gen_input).to(self.device) for gen_input in gen_inputs] \
+                #     if condition_indices is not None else gen_inputs.to(self.device)
+                fake_output = gen(*gen_inputs)
+                fake_output_type = type(fake_output)
+                if fake_output_type != torch.Tensor and (type(fake_output) == tuple or type(fake_output) == list):
                     fake_output = fake_output[-1]
                 # if not skip_asserts:
                 #     assert fake_output.min() < 0, f'fake_output.min() < 0: FAILED, min={fake_output.min()}'
                 #     assert fake_output.min() >= -1, f'fake_output.min() >= -1: FAILED, min={fake_output.min()}'
                 #     assert fake_output.max() > 0, f'fake_output.max() > 0: FAILED, max={fake_output.max()}'
                 #     assert fake_output.max() <= 1, f'fake_output.max() <= 1: FAILED, max={fake_output.max()}'
+
+                # Check if
 
                 # Compute SSIM difference maps
                 ssim_maps_list.append(_ssim_map(target_output, fake_output, self.window, self.window_size, self.c_img))
