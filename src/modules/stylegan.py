@@ -360,6 +360,7 @@ class StyleGan(nn.Module, IGanGModule):
             if batch_size < 4:
                 return None, None
             real = real[0:batch_size]
+            self.logger.debug(f'Slicing real batch (from {(batch_size + batch_size_mod_4)} --> {batch_size})')
 
         ##########################################
         ########   Update Discriminator   ########
