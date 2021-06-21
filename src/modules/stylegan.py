@@ -227,6 +227,8 @@ class StyleGan(nn.Module, IGanGModule):
             del self.disc
             del self.disc_opt
             gc.collect()
+            if str(self.device).startswith('cuda') and torch.cuda.is_available():
+                torch.cuda.empty_cache()
             time.sleep(1.0)
         #   - Generator
         self.gen = StyleGanGenerator(c_out=self._configuration['shapes']['c_out'], resolution=resolution,
