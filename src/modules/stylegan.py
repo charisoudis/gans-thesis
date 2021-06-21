@@ -359,6 +359,7 @@ class StyleGan(nn.Module, IGanGModule):
             batch_size -= batch_size_mod_4
             if batch_size < 4:
                 return None, None
+            real = real[0:batch_size]
 
         ##########################################
         ########   Update Discriminator   ########
