@@ -156,7 +156,7 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         block = getattr(self, f'block{block_index}')
         x_new = fromRGB(x.clone())
         x_new = block(x_new)
-        if block_index == 0 or alpha >= 1.0:
+        if block_index == 0:
             return x_new
         # Mix old and new x
         if alpha >= 1.0:
