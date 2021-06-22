@@ -80,6 +80,8 @@ class ManualSeedReproducible(Reproducible):
             return Reproducible._seed
         # Set seeder value
         torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
         Reproducible._seed = seed
