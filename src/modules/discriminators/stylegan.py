@@ -1,3 +1,4 @@
+import gc
 import math
 import time
 from typing import Optional, List
@@ -238,6 +239,7 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         :param (str or torch.device or None) device: new network's device
         :return: a new StyleGanDiscriminator instance
         """
+        self.freeze(force=True)
         # Init new Discriminator network
         new_resolution = 2 * self.resolution
         new_locals = self.locals.copy()
@@ -251,6 +253,16 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
             getattr(new_disc, f'fromRGB{block_index}') \
                 .load_state_dict(getattr(self, f'fromRGB{block_index}').state_dict())
             getattr(new_disc, f'block{block_index}').load_state_dict(getattr(self, f'block{block_index}').state_dict())
+        # Flush old network
+        del self.downsample
+        for bi in range(2, int(math.log2(self.resolution)) + 1):
+            block_index = bi - 2
+            delattr(self, f'fromRGB{block_index}')
+            delattr(self, f'block{block_index}')
+        gc.collect()
+        if str(device).startswith('cuda') and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        time.sleep(1.0)
         # Return the initialized network
         return new_disc.to(device=device)
 

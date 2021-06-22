@@ -220,10 +220,10 @@ class StyleGan(nn.Module, IGanGModule):
                 batch_size = None
                 num_iters = 2
         self.logger.debug(f'[_init_gen_disc_opt_scheduler] num_iters:{num_iters} | batch_size={batch_size}')
-        #   - Free current networks
+        #   - Free current networks and save the grown ones
         if self.gen is not None:
-            self.gen.freeze(force=True)
-            self.disc.freeze(force=True)
+            new_gen = self.gen.grow(num_iters=num_iters, device=device)
+            new_disc = self.disc.grow(num_iters=num_iters, device=device)
             del self.gen
             del self.gen_opt
             del self.disc
@@ -232,28 +232,28 @@ class StyleGan(nn.Module, IGanGModule):
             if str(self.device).startswith('cuda') and torch.cuda.is_available():
                 torch.cuda.empty_cache()
             time.sleep(1.0)
-        #   - Generator
-        self.gen = StyleGanGenerator(c_out=self._configuration['shapes']['c_out'], resolution=resolution,
-                                     num_iters=num_iters, logger=self.logger, **self._configuration['gen'])
+            self.gen = new_gen.to(device)
+            self.disc = new_disc.to(device)
+        else:
+            #   - Generator
+            self.gen = StyleGanGenerator(c_out=self._configuration['shapes']['c_out'], resolution=resolution,
+                                         num_iters=num_iters, logger=self.logger, **self._configuration['gen'])
+            #   - Discriminator
+            self.disc = StyleGanDiscriminator(c_in=self._configuration['shapes']['c_in'], resolution=resolution,
+                                              num_iters=num_iters, logger=self.logger, **self._configuration['disc'])
+            #   - Move to GPU
+            if device is not None:
+                self.gen.to(device)
+                self.disc.to(device)
         self.gen.reset_freeze_state()
-        ################################################################################################################
-        ################################################# DEV LOGGING ##################################################
-        ################################################################################################################
-        # self.gen.plot_alpha_curve()
-        ################################################################################################################
-        #   - Discriminator
-        self.disc = StyleGanDiscriminator(c_in=self._configuration['shapes']['c_in'], resolution=resolution,
-                                          num_iters=num_iters, logger=self.logger, **self._configuration['disc'])
         self.disc.reset_freeze_state()
         ################################################################################################################
         ################################################# DEV LOGGING ##################################################
         ################################################################################################################
+        # self.gen.plot_alpha_curve()
         # self.disc.plot_alpha_curve()
         ################################################################################################################
-        #   - Move models to GPU
-        if device is not None:
-            self.gen.to(device)
-            self.disc.to(device)
+
         #   - Optimizers & LR Schedulers
         self.gen_opt, self.gen_opt_lr_scheduler = get_optimizer(self.gen, **self._configuration['gen_opt'])
         self.disc_opt, self.disc_opt_lr_scheduler = get_optimizer(self.disc, **self._configuration['disc_opt'])

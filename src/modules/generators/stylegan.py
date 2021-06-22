@@ -1,3 +1,4 @@
+import gc
 import math
 import time
 from typing import Optional, Tuple, List
@@ -286,6 +287,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         :param (str or torch.device or None) device: new network's device
         :return: a new StyleGanGenerator instance with doubled the resolution
         """
+        self.freeze(force=True)
         # Init new Generator network
         new_resolution = 2 * self.resolution
         new_locals = self.locals.copy()
@@ -305,6 +307,21 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                     .load_state_dict(getattr(self, f'upsample{block_index}_toRGB').state_dict())
                 getattr(self, f'block{block_index}_toRGB') \
                     .load_state_dict(getattr(self, f'block{block_index}_toRGB').state_dict())
+        # Flush old network
+        del self.constant
+        del self.block0
+        del self.block0_toRGB
+        for bi in range(3, int(math.log2(self.resolution)) + 1):
+            block_index = bi - 2
+            delattr(self, f'upsample{block_index}')
+            delattr(self, f'block{block_index}')
+            if bi == int(math.log2(self.resolution)):
+                delattr(self, f'upsample{block_index}_toRGB')
+                delattr(self, f'block{block_index}_toRGB')
+        gc.collect()
+        if str(device).startswith('cuda') and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        time.sleep(1.0)
         # Return the initialized network
         return new_gen.to(device=device)
 
