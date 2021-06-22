@@ -222,6 +222,8 @@ class StyleGan(nn.Module, IGanGModule):
         self.logger.debug(f'[_init_gen_disc_opt_scheduler] num_iters:{num_iters} | batch_size={batch_size}')
         #   - Free current networks
         if self.gen is not None:
+            self.gen.freeze(force=True)
+            self.disc.freeze(force=True)
             del self.gen
             del self.gen_opt
             del self.disc
@@ -233,6 +235,7 @@ class StyleGan(nn.Module, IGanGModule):
         #   - Generator
         self.gen = StyleGanGenerator(c_out=self._configuration['shapes']['c_out'], resolution=resolution,
                                      num_iters=num_iters, logger=self.logger, **self._configuration['gen'])
+        self.gen.reset_freeze_state()
         ################################################################################################################
         ################################################# DEV LOGGING ##################################################
         ################################################################################################################
@@ -241,6 +244,7 @@ class StyleGan(nn.Module, IGanGModule):
         #   - Discriminator
         self.disc = StyleGanDiscriminator(c_in=self._configuration['shapes']['c_in'], resolution=resolution,
                                           num_iters=num_iters, logger=self.logger, **self._configuration['disc'])
+        self.disc.reset_freeze_state()
         ################################################################################################################
         ################################################# DEV LOGGING ##################################################
         ################################################################################################################
@@ -435,6 +439,8 @@ class StyleGan(nn.Module, IGanGModule):
             self.gen.alpha_index += 1
             self.disc.alpha = self.disc.alpha_curve[self.disc.alpha_index]
             self.disc.alpha_index += 1
+            if self.gen.alpha_index == len(self.gen.alpha_curve):
+                self.logger.debug(f'Reached gen.alpha_curve\'s end (alpha_index={self.gen.alpha_index}, alpha=1.0)')
             ############################################################################################################
             ############################################### DEV LOGGING ################################################
             ############################################################################################################

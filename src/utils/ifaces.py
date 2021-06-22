@@ -707,17 +707,19 @@ class Evaluable(metaclass=abc.ABCMeta):
 
 class Freezable(metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def freeze(self) -> None:
+    def freeze(self, force: bool = False) -> None:
         """
         Freezes model (sets requires_grad=False to all learnable parameters)
+        :param (bool) force: set to True any intermediate checks before freezing the network.
         :return: None
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def unfreeze(self) -> None:
+    def unfreeze(self, force: bool = False) -> None:
         """
         Unfreezes model (sets requires_grad=True to all learnable parameters)
+        :param (bool) force: set to True any intermediate checks before freezing the network.
         :return: None
         """
         raise NotImplementedError
@@ -747,22 +749,35 @@ class BalancedFreezable(Freezable):
         self._freeze_requests_count: int = 0
         self._state = 'unfrozen'
 
-    def freeze(self) -> None:
-        self._freeze_requests_count += 1
-        if self._freeze_requests_count == 1:
-            assert isinstance(self, nn.Module)
+    def reset_freeze_state(self) -> None:
+        self.unfreeze(force=True)
+        self._freeze_requests_count = 0
+
+    def freeze(self, force: bool = False) -> None:
+        assert isinstance(self, nn.Module), 'self must be a nn.Module to apply freezing'
+        if force:
             for p in self.parameters():
                 p.requires_grad = False
-            self._state = 'frozen'
+        else:
+            self._freeze_requests_count += 1
+            if self._freeze_requests_count == 1:
+                for p in self.parameters():
+                    p.requires_grad = False
+                self._state = 'frozen'
 
-    def unfreeze(self) -> None:
-        self._freeze_requests_count -= 1
-        if self._freeze_requests_count == 0:
-            assert isinstance(self, nn.Module)
+    def unfreeze(self, force: bool = False) -> None:
+        assert isinstance(self, nn.Module), 'self must be a nn.Module to apply freezing'
+        if force:
             for p in self.parameters():
                 p.requires_grad = True
-            self._state = 'unfrozen'
-        assert self._freeze_requests_count >= 0, f'self.freeze_requests_count={self._freeze_requests_count}'
+        else:
+            self._freeze_requests_count -= 1
+            if self._freeze_requests_count == 0:
+                assert isinstance(self, nn.Module), 'self must be a nn.Module to apply unfreezing'
+                for p in self.parameters():
+                    p.requires_grad = True
+                self._state = 'unfrozen'
+            assert self._freeze_requests_count >= 0, f'self.freeze_requests_count={self._freeze_requests_count}'
 
 
 class Reproducible(metaclass=abc.ABCMeta):

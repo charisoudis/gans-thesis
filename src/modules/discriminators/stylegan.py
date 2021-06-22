@@ -13,7 +13,7 @@ from modules.partial.normalization import BatchStd
 from utils import pytorch
 from utils.command_line_logger import CommandLineLogger
 from utils.ifaces import BalancedFreezable, Verbosable
-from utils.pytorch import get_total_params, enable_verbose, get_gradient_penalty
+from utils.pytorch import get_total_params, get_gradient_penalty
 from utils.string import to_human_readable
 from utils.train import get_alpha_curve
 
@@ -137,7 +137,6 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
 
         # Get current alpha value
         alpha = self.alpha
-
         ################################################################################################################
         ################################################# DEV LOGGING ##################################################
         ################################################################################################################
@@ -154,22 +153,27 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         # Edge case: alpha == 1 or one block only
         fromRGB = getattr(self, f'fromRGB{block_index}')
         block = getattr(self, f'block{block_index}')
+        # self.logger.debug(f'x_new <-- block{block_index}(c_in={block.locals["c_in"]}, c_out={block.locals["c_out"]}) '
+        #                   f'<-- fromRGB{block_index} <-- x: {x.shape}')
         x_new = fromRGB(x.clone())
         x_new = block(x_new)
         if block_index == 0:
+            # self.logger.debug(f'x: {x_new.shape}')
             return x_new
         # Mix old and new x
-        if alpha >= 1.0:
-            x = x_new
-        else:
-            x = self.downsample(x)
-            x = getattr(self, f'fromRGB{block_index - 1}')(x)
-            x = (1.0 - alpha) * x + alpha * x_new
+        # self.logger.debug(f'x <- 1-alpha={(1-alpha)} - fromRGB{block_index - 1} <-- downsample <-- x: {x.shape}')
+        # self.logger.debug(f'x <- alpha={alpha} - x_new: {x_new.shape}')
+        x = self.downsample(x)
+        x = getattr(self, f'fromRGB{block_index - 1}')(x)
+        x = (1.0 - alpha) * x + alpha * x_new
         # Pass through the rest blocks
         for bi in reversed(range(2, int(math.log2(self.resolution)))):
             block_index = bi - 2
             block = getattr(self, f'block{block_index}')
+            # self.logger.debug(f'block{block_index}(c_in={block.locals["c_in"]}, c_out={block.locals["c_out"]}) <-- '
+            #                   f'x: {x.shape}')
             x = block(x)
+        # self.logger.debug(f'x: {x.shape}')
         return x
 
     def get_loss_on_batch(self, images: Tensor, is_real: bool, criterion: Optional[nn.modules.Module] = None) -> Tensor:
@@ -242,7 +246,6 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         new_locals['logger'] = self.logger
         new_disc = StyleGanDiscriminator(**new_locals)
         # Transfer parameter values
-        # new_disc.block0.load_state_dict(self.block0.state_dict())
         for bi in range(2, int(math.log2(self.resolution)) + 1):
             block_index = bi - 2
             getattr(new_disc, f'fromRGB{block_index}') \
@@ -257,66 +260,68 @@ if __name__ == '__main__':
     _resolution = 4
     _disc4 = StyleGanDiscriminator(resolution=_resolution, c_in=3, adv_criterion='Wasserstein',
                                    use_gradient_penalty=True)
-    print(f'Params: {to_human_readable(get_total_params(_disc4))}')
-    enable_verbose(_disc4)
+    print(f'4x4 Params: {to_human_readable(get_total_params(_disc4))}')
+    # enable_verbose(_disc4)
     # print(_disc4)
     time.sleep(0.5)
     _y = _disc4(torch.randn(4, 3, _disc4.resolution, _disc4.resolution))
     time.sleep(0.5)
-    print(_y.shape)
+    # print(_y.shape)
 
-    print(f'loss={_disc4.get_loss(real=torch.ones(4, 3, 4, 4), fake=torch.ones(4, 3, 4, 4))}')
-    exit(0)
+    # print(f'loss={_disc4.get_loss(real=torch.ones(4, 3, 4, 4), fake=torch.ones(4, 3, 4, 4))}')
+    # exit(0)
 
     # 8x8
     _disc8 = _disc4.grow()
-    print(f'Params: {to_human_readable(get_total_params(_disc8))}')
-    enable_verbose(_disc8)
+    print(f'8x8 Params: {to_human_readable(get_total_params(_disc8))}')
+    # enable_verbose(_disc8)
     # print(_disc8)
     time.sleep(0.5)
     _y = _disc8(torch.randn(4, 3, _disc8.resolution, _disc8.resolution))
     time.sleep(0.5)
-    print(_y.shape)
+    # print(_y.shape)
 
     # 16x16
     _disc16 = _disc8.grow()
-    print(f'Params: {to_human_readable(get_total_params(_disc16))}')
-    enable_verbose(_disc16)
+    print(f'16x16 Params: {to_human_readable(get_total_params(_disc16))}')
+    # enable_verbose(_disc16)
     # print(_disc16)
     time.sleep(0.5)
     _y = _disc16(torch.randn(4, 3, _disc16.resolution, _disc16.resolution))
     time.sleep(0.5)
-    print(_y.shape)
+    # print(_y.shape)
 
     # 32x32
     _disc32 = _disc16.grow()
-    print(f'Params: {to_human_readable(get_total_params(_disc32))}')
-    enable_verbose(_disc32)
+    print(f'32x32 Params: {to_human_readable(get_total_params(_disc32))}')
+    # enable_verbose(_disc32)
     # print(_disc32)
     time.sleep(0.5)
     _y = _disc32(torch.randn(4, 3, _disc32.resolution, _disc32.resolution))
     time.sleep(0.5)
-    print(_y.shape)
+    # print(_y.shape)
 
     # 64x64
     _disc64 = _disc32.grow()
-    print(f'Params: {to_human_readable(get_total_params(_disc64))}')
-    enable_verbose(_disc64)
+    print(f'64x64 Params: {to_human_readable(get_total_params(_disc64))}')
+    # enable_verbose(_disc64)
     # print(_disc64)
     time.sleep(0.5)
     _y = _disc64(torch.randn(4, 3, _disc64.resolution, _disc64.resolution))
     time.sleep(0.5)
-    print(_y.shape)
+    # print(_y.shape)
 
     # 128x128
     _disc128 = _disc64.grow()
-    print(f'Params: {to_human_readable(get_total_params(_disc128))}')
-    enable_verbose(_disc128)
+    print(f'128x128 Params: {to_human_readable(get_total_params(_disc128))}')
+    # enable_verbose(_disc128)
     # print(_disc128)
     time.sleep(0.5)
     _y = _disc128(torch.randn(4, 3, _disc128.resolution, _disc128.resolution))
     time.sleep(0.5)
-    print(_y.shape)
+    # print(_y.shape)
+
+    exit(0)
 
     # Compute loss
     _real = torch.randn(4, 3, 64, 64)

@@ -64,6 +64,8 @@ class StyleGanGeneratorBlock(nn.Module):
         :param (int) kernel_size: nn.Conv2d()'s kernel_size argument (defaults to 3)
         """
         super().__init__()
+        self.c_in = c_in
+        self.c_out = c_out
         self.conv_block = nn.Sequential(
             nn.Conv2d(c_in, c_out, kernel_size, padding=1),
             InjectNoise(c_out),
@@ -132,15 +134,15 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.constant = nn.Parameter(torch.ones(1, c_const, 4, 4))
         # Generator convolutional blocks
         self.block0 = StyleGanGeneratorBlock(c_in=c_const, c_out=c_hidden, w_dim=w_dim, kernel_size=kernel_size)
-        self.project0_block = nn.Conv2d(c_hidden, c_out, kernel_size=1)
+        self.block0_toRGB = nn.Conv2d(c_hidden, c_out, kernel_size=1)
         for bi in range(3, int(math.log2(resolution)) + 1):
             block_index = bi - 2
             setattr(self, f'upsample{block_index}', nn.Upsample(size=2 ** bi, mode='bilinear', align_corners=False))
             setattr(self, f'block{block_index}',
                     StyleGanGeneratorBlock(c_in=c_hidden, c_out=c_hidden, w_dim=w_dim, kernel_size=kernel_size))
             if bi == int(math.log2(resolution)):
-                setattr(self, f'project{block_index}_upsample', nn.Conv2d(c_hidden, c_out, kernel_size=1))
-                setattr(self, f'project{block_index}_block', nn.Conv2d(c_hidden, c_out, kernel_size=1))
+                setattr(self, f'upsample{block_index}_toRGB', nn.Conv2d(c_hidden, c_out, kernel_size=1))
+                setattr(self, f'block{block_index}_toRGB', nn.Conv2d(c_hidden, c_out, kernel_size=1))
         # Save args
         self.resolution = self.locals['resolution']
 
@@ -180,22 +182,54 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         #   - constant + first block
         x = self.constant
         x = self.block0(x, w)
+        ################################################################################################################
+        ################################################# DEV LOGGING ##################################################
+        ################################################################################################################
+        # self.logger.debug(f'x: {x.shape} <-- block0(c_in={self.block0.c_in},c_o={self.block0.c_out}, w) '
+        #                   f'<-- constant: {self.constant.shape}')
+        ################################################################################################################
         if resolution_log2 == 2:
-            return self.project0_block(x)
+            return self.block0_toRGB(x)
         #   - upsampling + conv blocks until the last (wherein the mixing happens)
         for bi in range(3, resolution_log2 + 1):
             block_index = bi - 2
             upsample = getattr(self, f'upsample{block_index}')
+            # x_shape = x.shape
             x = upsample(x)
+            ############################################################################################################
+            ############################################### DEV LOGGING ################################################
+            ############################################################################################################
+            # self.logger.debug(f'x: {x.shape} <-- upsample{block_index} <-- x: {x_shape}')
+            ############################################################################################################
             block = getattr(self, f'block{block_index}')
             if bi == int(math.log2(self.resolution)):
-                project_upsample = getattr(self, f'project{block_index}_upsample')
-                project_block = getattr(self, f'project{block_index}_block')
-                x_upsampled = project_upsample(x)
+                upsample_toRGB = getattr(self, f'upsample{block_index}_toRGB')
+                block_toRGB = getattr(self, f'block{block_index}_toRGB')
+                ########################################################################################################
+                ############################################# DEV LOGGING ##############################################
+                ########################################################################################################
+                # self.logger.debug(f'x <- alpha={alpha} - block{block_index}_toRGB(c_h={block_toRGB.in_channels},'
+                #                   f'c_o={block_toRGB.out_channels}) <-- block{block_index}(c_in={block.c_in},'
+                #                   f'c_o={block.c_out}, w) <-- x: {x.shape}')
+                ########################################################################################################
+                x_upsampled = upsample_toRGB(x)
+                ########################################################################################################
+                ############################################# DEV LOGGING ##############################################
+                ########################################################################################################
+                # self.logger.debug(f'x_upsampled <- 1-alpha={(1 - alpha)} - upsample{block_index}_toRGB('
+                #                   f'c_in={upsample_toRGB.in_channels},c_o={upsample_toRGB.out_channels}) <-- '
+                #                   f'x: {x.shape}')
+                ########################################################################################################
                 x = block(x, w)
-                x = project_block(x)
-                return x if alpha >= 1.0 else (1.0 - alpha) * x_upsampled + alpha * x
+                x = block_toRGB(x)
+                return (1.0 - alpha) * x_upsampled + alpha * x
+            # xs = x.shape
             x = block(x, w)
+            ############################################################################################################
+            ############################################### DEV LOGGING ################################################
+            ############################################################################################################
+            # self.logger.debug(f'x: {x.shape} <-- block{block_index}(c_in={block.c_in},c_o={block.c_out}) <-- x: {xs}')
+            ############################################################################################################
         return x
 
     def get_noise(self, batch_size: int, device: Optional[str or torch.device] = None) -> torch.Tensor:
@@ -228,14 +262,14 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         return gen_loss, fake.detach()
 
     def get_layer_attr_names(self) -> List[str]:
-        layer_names = ['block0', 'project0_block']
+        layer_names = ['block0', 'block0_toRGB']
         for bi in range(3, int(math.log2(self.resolution)) + 1):
             block_index = bi - 2
             layer_names.append(f'upsample{block_index}')
             layer_names.append(f'block{block_index}')
             if bi == int(math.log2(self.resolution)):
-                layer_names.append(f'project{block_index}_upsample')
-                layer_names.append(f'project{block_index}_block')
+                layer_names.append(f'upsample{block_index}_toRGB')
+                layer_names.append(f'block{block_index}_toRGB')
         return layer_names
 
     def plot_alpha_curve(self):
@@ -267,10 +301,10 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                 .load_state_dict(getattr(self, f'upsample{block_index}').state_dict())
             getattr(new_gen, f'block{block_index}').load_state_dict(getattr(self, f'block{block_index}').state_dict())
             if bi == int(math.log2(self.resolution)):
-                getattr(self, f'project{block_index}_upsample') \
-                    .load_state_dict(getattr(self, f'project{block_index}_upsample').state_dict())
-                getattr(self, f'project{block_index}_block') \
-                    .load_state_dict(getattr(self, f'project{block_index}_block').state_dict())
+                getattr(self, f'upsample{block_index}_toRGB') \
+                    .load_state_dict(getattr(self, f'upsample{block_index}_toRGB').state_dict())
+                getattr(self, f'block{block_index}_toRGB') \
+                    .load_state_dict(getattr(self, f'block{block_index}_toRGB').state_dict())
         # Return the initialized network
         return new_gen.to(device=device)
 
