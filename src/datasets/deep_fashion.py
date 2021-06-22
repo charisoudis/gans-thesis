@@ -514,9 +514,16 @@ class FISBDataset(Dataset, GDriveDataset):
         if not os.path.exists(self.h5_path):
             self.logger.error(f'Img.h5 file not found in image directory (tried: {self.h5_path})')
             raise FileNotFoundError(f'{self.h5_path} not found in image directory')
-        self.img_file = h5py.File(self.h5_path, 'r', driver='core' if load_in_memory else None)
+        # if load_in_memory:
+        #     self.img_file = h5py.File(self.h5_path, 'r', driver='core', backing_store=False)
+        # else:
+        #     self.img_file = h5py.File(self.h5_path, 'r')
+        self.img_file = h5py.File(self.h5_path, 'r')
         self.img_dataset: H5Dataset
-        self.img_dataset = self.img_file['ih']
+        if load_in_memory:
+            self.img_dataset = self.img_file['ih'][:]
+        else:
+            self.img_dataset = self.img_file['ih']
         self.img_mean = self.img_file['ih_mean']
         self.img_mean_max = np.max(self.img_mean)
         self.total_images_count = self.img_dataset.shape[0]
@@ -1524,7 +1531,7 @@ if __name__ == '__main__':
 
     # Init Dataset
     _dl = FISBDataloader(_datasets_groot, target_shape=128, target_channels=3, batch_size=1,
-                         pin_memory=False, log_level='debug')
+                         pin_memory=False, log_level='debug', load_in_memory=False)
 
     _img = _dl.dataset[1232]
     _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
