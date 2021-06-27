@@ -384,7 +384,7 @@ class StyleGan(nn.Module, IGanGModule):
                     disc_loss = self.disc.get_loss(real=real, fake=fake)
                 #   - backprop & update weights
                 if self.use_half_precision:
-                    self.grad_scaler.scale(disc_loss).backward()
+                    self.grad_scaler.scale(disc_loss).backward(retain_graph=True)
                     self.grad_scaler.step(self.disc_opt)
                 else:
                     disc_loss.backward(retain_graph=True)

@@ -278,7 +278,7 @@ if __name__ == '__main__':
     time.sleep(0.5)
     _y = _disc4(torch.randn(4, 3, _disc4.resolution, _disc4.resolution))
     time.sleep(0.5)
-    # print(_y.shape)
+    _disc4.logger.info(f'_y.shape={_y.shape}')
 
     # print(f'loss={_disc4.get_loss(real=torch.ones(4, 3, 4, 4), fake=torch.ones(4, 3, 4, 4))}')
     # exit(0)
@@ -291,7 +291,7 @@ if __name__ == '__main__':
     time.sleep(0.5)
     _y = _disc8(torch.randn(4, 3, _disc8.resolution, _disc8.resolution))
     time.sleep(0.5)
-    # print(_y.shape)
+    _disc8.logger.info(f'_y.shape={_y.shape}')
 
     # 16x16
     _disc16 = _disc8.grow()
@@ -301,7 +301,7 @@ if __name__ == '__main__':
     time.sleep(0.5)
     _y = _disc16(torch.randn(4, 3, _disc16.resolution, _disc16.resolution))
     time.sleep(0.5)
-    # print(_y.shape)
+    _disc16.logger.info(f'_y.shape={_y.shape}')
 
     # 32x32
     _disc32 = _disc16.grow()
@@ -311,7 +311,7 @@ if __name__ == '__main__':
     time.sleep(0.5)
     _y = _disc32(torch.randn(4, 3, _disc32.resolution, _disc32.resolution))
     time.sleep(0.5)
-    # print(_y.shape)
+    _disc32.logger.info(f'_y.shape={_y.shape}')
 
     # 64x64
     _disc64 = _disc32.grow()
@@ -321,7 +321,7 @@ if __name__ == '__main__':
     time.sleep(0.5)
     _y = _disc64(torch.randn(4, 3, _disc64.resolution, _disc64.resolution))
     time.sleep(0.5)
-    # print(_y.shape)
+    _disc64.logger.info(f'_y.shape={_y.shape}')
 
     # 128x128
     _disc128 = _disc64.grow()
@@ -331,7 +331,7 @@ if __name__ == '__main__':
     time.sleep(0.5)
     _y = _disc128(torch.randn(4, 3, _disc128.resolution, _disc128.resolution))
     time.sleep(0.5)
-    # print(_y.shape)
+    _disc128.logger.info(f'_y.shape={_y.shape}')
 
     exit(0)
 
