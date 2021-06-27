@@ -11,7 +11,7 @@ from PIL.Image import Image
 from matplotlib import pyplot as plt
 from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torchvision.transforms import Compose
+from torchvision.transforms import Compose, transforms
 
 from datasets.deep_fashion import FISBDataloader, FISBDataset
 from modules.discriminators.stylegan import StyleGanDiscriminator
@@ -234,6 +234,8 @@ class StyleGan(nn.Module, IGanGModule):
             time.sleep(1.0)
             self.gen = new_gen.to(device)
             self.disc = new_disc.to(device)
+            assert self.gen.resolution == self.disc.resolution == resolution, 'Requested resolution could not be' \
+                                                                              ' satisfied in a single grow() call'
         else:
             #   - Generator
             self.gen = StyleGanGenerator(c_out=self._configuration['shapes']['c_out'], resolution=resolution,
@@ -373,12 +375,12 @@ class StyleGan(nn.Module, IGanGModule):
         ##########################################
         with self.gen.frozen():
             disc_losses = []
-            for _ in range(self.disc_iters):
+            for i in range(self.disc_iters):
                 # Update discriminators
+                #   - zero-out discriminators' gradients (before backprop)
+                self.disc_opt.zero_grad()
+                #   - produce fake images & loss using half-precision (float16)
                 with torch.cuda.amp.autocast(enabled=self.use_half_precision):
-                    #   - zero-out discriminators' gradients (before backprop)
-                    self.disc_opt.zero_grad()
-                    #   - produce fake images & loss using half-precision (float16)
                     fake = self.gen(self.gen.get_noise(batch_size=batch_size, device=real.device))
                     #   - compute discriminator loss
                     disc_loss = self.disc.get_loss(real=real, fake=fake)
@@ -386,6 +388,9 @@ class StyleGan(nn.Module, IGanGModule):
                 if self.use_half_precision:
                     self.grad_scaler.scale(disc_loss).backward(retain_graph=True)
                     self.grad_scaler.step(self.disc_opt)
+                    #   - update grad_scaler if not in last loop
+                    if i < (self.disc_iters - 1):
+                        self.grad_scaler.update()
                 else:
                     disc_loss.backward(retain_graph=True)
                     self.disc_opt.step()
@@ -574,26 +579,27 @@ if __name__ == '__main__':
 
     _bs = 4
     _dl = FISBDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
-                         log_level=_log_level, batch_size=_bs, pin_memory=False)
-    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, z_dim=512,
-                              n_samples=4, batch_size=2, f1_k=1, device='cpu')
+                         log_level=_log_level, batch_size=_bs, pin_memory=True)
+    # _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, z_dim=512,
+    #                           n_samples=4, batch_size=2, f1_k=1, device='cuda')
 
     # Initialize model
     _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='default', chkpt_step=None, chkpt_epoch=None,
-                      dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
-    # _stgan._init_gen_disc_opt_scheduler(resolution=128)
-    # _stgan.use_half_precision = False
-    # print(_stgan.nparams_hr)
-    #
-    # _device = _stgan.device
-    # _x = next(iter(_dl))
-    # _disc_loss, _gen_loss = _stgan(_x.to(_device))
-    # print(_disc_loss, _gen_loss)
-    #
-    # _state_dict = _stgan.state_dict()
-    # torch.save(_state_dict, '/home/achariso/PycharmProjects/gans-thesis/src/checkpoint.pth')
+                      dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=None, device='cuda')
+    _stgan.disc_iters = 2
+    _stgan._init_gen_disc_opt_scheduler(resolution=8, device='cuda')
+    _stgan.use_half_precision = True
+    print(_stgan.nparams_hr)
 
-    _metrics = _evaluator.evaluate(gen=_stgan.gen, show_progress=True)
+    _device = _stgan.device
+    _x = next(iter(_dl))
+    _disc_loss, _gen_loss = _stgan(transforms.Resize(size=8)(_x).to(_device))
+    print(_disc_loss, _gen_loss)
+
+    _state_dict = _stgan.state_dict()
+    torch.save(_state_dict, '/home/achariso/PycharmProjects/gans-thesis/src/checkpoint.pth')
+
+    # _metrics = _evaluator.evaluate(gen=_stgan.gen, show_progress=True)
     exit(0)
 
     _img = _stgan.visualize()
