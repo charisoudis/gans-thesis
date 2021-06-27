@@ -375,10 +375,10 @@ class StyleGan(nn.Module, IGanGModule):
             disc_losses = []
             for _ in range(self.disc_iters):
                 # Update discriminators
-                #   - zero-out discriminators' gradients (before backprop)
-                self.disc_opt.zero_grad()
-                #   - produce fake images & loss using half-precision (float16)
                 with torch.cuda.amp.autocast(enabled=self.use_half_precision):
+                    #   - zero-out discriminators' gradients (before backprop)
+                    self.disc_opt.zero_grad()
+                    #   - produce fake images & loss using half-precision (float16)
                     fake = self.gen(self.gen.get_noise(batch_size=batch_size, device=real.device))
                     #   - compute discriminator loss
                     disc_loss = self.disc.get_loss(real=real, fake=fake)
