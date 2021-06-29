@@ -13,6 +13,7 @@ from modules.discriminators.stylegan import StyleGanDiscriminator
 from modules.partial.encoding import NoiseMappingNetwork
 from modules.partial.normalization import AdaptiveInstanceNorm2d
 from utils.command_line_logger import CommandLineLogger
+from utils.distributions import TruncatedStandardNormal
 from utils.ifaces import BalancedFreezable, Verbosable
 from utils.pytorch import get_total_params, enable_verbose
 from utils.string import to_human_readable
@@ -102,7 +103,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
     def __init__(self, z_dim: int = 512, map_hidden_dim: int = 512, map_n_blocks: int = 4, w_dim: int = 512,
                  c_const: int = 512, c_hidden: int = 1024, c_out: int = 3, resolution: int = 128,
                  kernel_size: int = 3, alpha_multiplier: float = 10.0, num_iters: int = 1,
-                 logger: Optional[CommandLineLogger] = None):
+                 logger: Optional[CommandLineLogger] = None, truncation: Optional[float] = None):
         """
         StyleGanGenerator class constructor.
         :param (int) z_dim: size of the noise vector (defaults to 512)
@@ -118,6 +119,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                                          (1=linear, ..., 10=smooth, ..., 1000=delta)
         :param (int) num_iters: number of iterations
         :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
+        :param (optional) truncation: a float from 0 to 1
         """
         # Save arguments
         self.locals = locals()
@@ -151,6 +153,12 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.alpha_curve = get_alpha_curve(num_iters=num_iters, alpha_multiplier=alpha_multiplier)
         self.alpha_index = 0
         self.alpha = self.alpha_curve[self.alpha_index]
+
+        # Truncation trick
+        if truncation is not None:
+            self.dist = TruncatedStandardNormal(a=-truncation, b=truncation)
+        else:
+            self.dist = None
 
         self.logger = logger if logger is not None else \
             CommandLineLogger(log_level='debug', name=self.__class__.__name__)
@@ -240,7 +248,9 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         :param (str or torch.device or None) device: vector's device
         :return: a torch.Tensor object of shape (N, z_dim)
         """
-        return torch.randn(batch_size, self.locals['z_dim'], device=device)
+        if self.dist is None:
+            return torch.randn(batch_size, self.locals['z_dim'], device=device)
+        return self.dist.sample((batch_size, self.locals['z_dim'])).to(device)
 
     def get_loss(self, batch_size: int, disc: StyleGanDiscriminator,
                  adv_criterion: Optional[nn.modules.Module] = None) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -329,7 +339,11 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
 # noinspection DuplicatedCode
 if __name__ == '__main__':
     # 4x4
-    _stgen4 = StyleGanGenerator(resolution=4)
+    _stgen4 = StyleGanGenerator(resolution=4, truncation=1.0)
+    # _noise = _stgen4.get_noise(1024, 'cpu')
+    # fig, axs = plt.subplots(1, 1, sharey=True, tight_layout=True)
+    # axs.hist(_noise.view(-1).numpy(), bins=100)
+    # plt.show()
     _stdisc4 = StyleGanDiscriminator(resolution=4, c_in=3, adv_criterion='Wasserstein', use_gradient_penalty=True)
     print(to_human_readable(get_total_params(_stgen4)))
     enable_verbose(_stgen4)
