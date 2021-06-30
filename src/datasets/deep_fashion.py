@@ -15,6 +15,7 @@ import torch
 from IPython import get_ipython
 from PIL import Image, UnidentifiedImageError
 from h5py import Dataset as H5Dataset
+from matplotlib import ticker
 from scipy.interpolate import make_interp_spline
 from torch import Tensor
 # noinspection PyProtectedMember
@@ -481,7 +482,7 @@ class FISBDataset(Dataset, GDriveDataset):
 
     def __init__(self, dataset_fs_folder_or_root: FilesystemFolder, image_transforms: Optional[Compose] = None,
                  load_in_memory: bool = False, verbose: bool = True, log_level: str = 'info',
-                 logger: Optional[CommandLineLogger] = None):
+                 logger: Optional[CommandLineLogger] = None, min_color: Optional[str] = None):
         """
         FISBDataset class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download / use
@@ -491,6 +492,7 @@ class FISBDataset(Dataset, GDriveDataset):
         :param (bool) verbose: set to False to disable messages regarding Dataset initialization etc. (defaults to True)
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         :param (optional) logger: `utils.command_line_logger.CommandLineLogger` or None to instantiate a new one
+        :param (optional) min_color: hex code of the minimum background color (to filter out images with dark bg)
         """
         # Instantiate `torch.utils.data.Dataset` class
         Dataset.__init__(self)
@@ -514,10 +516,6 @@ class FISBDataset(Dataset, GDriveDataset):
         if not os.path.exists(self.h5_path):
             self.logger.error(f'Img.h5 file not found in image directory (tried: {self.h5_path})')
             raise FileNotFoundError(f'{self.h5_path} not found in image directory')
-        # if load_in_memory:
-        #     self.img_file = h5py.File(self.h5_path, 'r', driver='core', backing_store=False)
-        # else:
-        #     self.img_file = h5py.File(self.h5_path, 'r')
         self.img_file = h5py.File(self.h5_path, 'r')
         self.img_dataset: H5Dataset
         if load_in_memory:
@@ -537,6 +535,35 @@ class FISBDataset(Dataset, GDriveDataset):
             self.crops = json.load(json_fp)
             assert len(self.crops) == self.total_images_count, \
                 f'self.crops has {len(self.crops)} instead of {self.total_images_count}: ERROR'
+
+        # Load backgrounds.json file
+        self.backgrounds_json_path = os.path.join(self.root, 'backgrounds.json')
+        with open(self.backgrounds_json_path, 'r') as json_fp:
+            self.backgrounds = json.load(json_fp)
+            background_counts = sum([len(indices) for indices in self.backgrounds.values()])
+            assert background_counts == self.total_images_count, \
+                f'self.backgrounds has {background_counts} instead of {self.total_images_count}: ERROR'
+
+        # Filter image by background color
+        if min_color is not None:
+            colors = sorted(self.backgrounds.keys())
+            min_color = min_color[1:].upper() if min_color.startswith('#') else min_color.upper()
+            min_color_index = [c[0] for c in enumerate(colors) if c[1] >= min_color]
+            if len(min_color_index) > 0:
+                min_color_index = min_color_index[0]
+                self.indices = []
+                for ci in range(min_color_index, len(colors)):
+                    self.logger.debug(f'Adding indices from color "{colors[ci]}"')
+                    self.indices += self.backgrounds[colors[ci]]
+            else:
+                self.logger.critical(f'No indices for minimum color "{min_color}"')
+                self.indices = list(range(self.total_images_count))
+        else:
+            self.indices = list(range(self.total_images_count))
+        self.total_images_count = len(self.indices)
+        if verbose:
+            self.logger.debug(f'[COLOR_FILTER] Found {to_human_readable(self.total_images_count)} total images ' +
+                              f'in the Fashion Synthesis Benchmark dataset')
 
         ################################################################################################################
         ################################################# DEV LOGGING ##################################################
@@ -568,13 +595,14 @@ class FISBDataset(Dataset, GDriveDataset):
         # return self.IMAGE_R
         ################################################################################################################
         # Create PIL Image object
-        img = self.img_mean_max * self.img_dataset[index] + self.img_mean
+        real_index = self.indices[index]
+        img = self.img_mean_max * self.img_dataset[real_index] + self.img_mean
         img = img / np.max(img)
         image = Image.fromarray((255 * img).astype(np.uint8).swapaxes(2, 0), 'RGB')
         # Apply transforms
         image = self.transforms(image)
         # Crop (costs on average less than 2ms)
-        crop = self.crops[index]
+        crop = self.crops[real_index]
         return FISBDataset.crop_to_bounds(image, h_from=crop['h_from'], h_until=crop['h_until'],
                                           w_from=crop['w_from'], w_until=crop['w_until'], upscale_size=image.shape[2])
 
@@ -648,7 +676,7 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
                  target_channels: Optional[int] = None, norm_mean: Optional[float] = None,
                  norm_std: Optional[float] = None, batch_size: int = 8, shuffle: bool = True, verbose: bool = True,
                  seed: int = 42, pin_memory: bool = True, splits: Optional[list] = None,
-                 log_level: str = 'info', logger: Optional[CommandLineLogger] = None):
+                 log_level: str = 'info', logger: Optional[CommandLineLogger] = None, min_color: Optional[str] = None):
         """
         FISBDataloader class constructor.
         :param (FilesystemFolder) dataset_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` object to download/use
@@ -672,6 +700,7 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
                                   percentages
         :param (str) log_level: see `utils.command_line_logger.CommandLineLogger`
         :param (optional) logger: `utils.command_line_logger.CommandLineLogger` or None to instantiate a new one
+        :param (optional) min_color: hex code of the minimum background color (to filter out images with dark bg)
         """
         self.locals = locals()
         del self.locals['self']
@@ -695,7 +724,7 @@ class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
         else:
             _entire_dataset = FISBDataset(dataset_fs_folder_or_root=dataset_fs_folder_or_root, verbose=verbose,
                                           image_transforms=image_transforms, log_level=log_level, logger=logger,
-                                          load_in_memory=load_in_memory)
+                                          load_in_memory=load_in_memory, min_color=min_color)
         self._entire_dataset = _entire_dataset
         # Perform train/test split
         if splits:
@@ -1318,6 +1347,47 @@ class FISBScraper:
                 assert len(self.crops) == self.total_images_count, \
                     f'self.crops has {len(self.crops)} instead of {self.total_images_count}: ERROR'
 
+        self.backgrounds = None
+        self.backgrounds_json_path = os.path.join(self.root, 'backgrounds.json')
+        if os.path.exists(self.crops_json_path):
+            with open(self.backgrounds_json_path, 'r') as json_fp:
+                self.backgrounds = json.load(json_fp)
+                background_counts = sum([len(indices) for indices in self.backgrounds.values()])
+                assert background_counts == self.total_images_count, \
+                    f'self.backgrounds has {background_counts} instead of {self.total_images_count}: ERROR'
+
+    @staticmethod
+    def get_background_color(image: Tensor, w_start: int or tuple = (10, 105), h_start: int = 5, w_band: int = 15,
+                             h_band: int = 10, index: Optional[int] = None, bin_band: int = 5):
+        # print(image.shape)
+        _w_start = w_start[0] if type(w_start) == tuple else w_start
+        image_slice = image[:, :, (_w_start - 1):(_w_start + w_band + 1)]
+        image_slice_avg = torch.mean(image_slice, dim=0)
+        image_slice_avg = torch.stack([image_slice_avg, image_slice_avg, image_slice_avg], dim=0)
+        image_slice_avg[0, 0, 0] = torch.min(image)
+        image_slice_avg[-1, -1, -1] = torch.max(image)
+        image_slice_avg = ToTensorOrPass()(image_slice_avg)[:, h_start:(h_start + h_band), 1:-1]
+        image_slice_avg_pil = transforms.ToPILImage()(image_slice_avg)
+        # Get colors
+        image_colors = image_slice_avg_pil.getcolors()
+        # try:
+        #     assert len(image_colors) == 1, f'len(image_colors)={len(image_colors)}: {image_colors}'
+        # except AssertionError as e:
+        #     if len(w_start) > 1:
+        #         return FISBScraper.get_background_color(image=image, w_start=w_start[1:len(w_start)], h_start=h_start,
+        #                                                 w_band=w_band, h_band=h_band, index=index, bin_band=bin_band)
+        #     # print(str(e))
+        #     # image = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])(image)
+        #     # plt.imshow(image)
+        #     # plt.title(f'Index #{index}')
+        #     # plt.show()
+        #     # plt.imshow(image_slice_avg_pil)
+        #     # plt.title(f'{image_colors}')
+        #     # plt.show()
+        image_colors = sorted(image_colors, key=lambda entry: entry[0])
+        rgb_value = bin_band * round(image_colors[-1][-1][-1] / bin_band)
+        return ('%02x%02x%02x' % (rgb_value, rgb_value, rgb_value)).upper()
+
     def forward(self) -> None:
         """
         Method for completing a forward pass in scraping DeepFashion FISB images:
@@ -1325,7 +1395,9 @@ class FISBScraper:
         """
         time.sleep(1.0)
         self.crops = []
+        self.backgrounds = {}
         for index in self.tqdm(range(self.total_images_count), file=sys.stdout):
+            index = 20819
             # Fetch image
             img_h5 = self.img_dataset[index]
             img = self.img_mean_max * img_h5 + self.img_mean
@@ -1337,7 +1409,7 @@ class FISBScraper:
             #   - height
             crop_until_top = FISBScraper.should_crop_top(img, crop_shape=list(range(1, 20)))
             keep_from_h = crop_until_top + 1 if crop_until_top is not False else 0
-            crop_from_bottom = FISBScraper.should_crop_bottom(img, target_shape=list(range(107, 127)))
+            crop_from_bottom = FISBScraper.should_crop_bottom(img, target_shape=list(range(90, 127)))
             keep_until_h = crop_from_bottom - 1 if crop_from_bottom is not False else (img.shape[1] - 1)
             keep_h = keep_until_h - keep_from_h + 1
             diff_h = img.shape[1] - keep_h
@@ -1352,10 +1424,22 @@ class FISBScraper:
                 'upscale_size': img.shape[2]
             }
             self.crops.append(crop_dict)
+            # Crop image and get background
+            image = FISBDataset.crop_to_bounds(img, h_from=crop_dict['h_from'], h_until=crop_dict['h_until'],
+                                               w_from=crop_dict['w_from'], w_until=crop_dict['w_until'],
+                                               upscale_size=img.shape[2])
+            background_color = self.__class__.get_background_color(image, index=index, bin_band=10)
+            if background_color not in self.backgrounds.keys():
+                self.backgrounds[background_color] = []
+            self.backgrounds[background_color].append(index)
 
         # Save crops dict
         with open(self.crops_json_path, 'w') as json_fp:
             json.dump(self.crops, json_fp, indent=4)
+
+        # Save crops dict
+        with open(self.backgrounds_json_path, 'w') as json_fp:
+            json.dump(self.backgrounds, json_fp, indent=4)
 
     def backward(self) -> None:
         """
@@ -1393,6 +1477,17 @@ class FISBScraper:
             y_smooth = make_interp_spline(x, y, k=3)(x_smooth)
             plt.plot(x_smooth, y_smooth)
             plt.show()
+
+        if self.backgrounds is None:
+            raise RuntimeError('self.backgrounds is None: Exiting now...')
+        colors = sorted(self.backgrounds.keys())
+        indices_per_color = [len(self.backgrounds[color]) for color in colors]
+        fig, ax = plt.subplots()
+        ax.plot(range(len(colors)), indices_per_color, '-o')
+        plt.xticks(range(len(colors)), labels=colors, rotation=45)
+        loc = ticker.MultipleLocator(base=2.0)
+        ax.xaxis.set_major_locator(loc)
+        plt.show()
 
     @staticmethod
     def should_crop_top(t: torch.Tensor, crop_shape: int or tuple = 10) -> int or False:
@@ -1521,8 +1616,10 @@ class FISBScraper:
 
 
 if __name__ == '__main__':
-    # if click.confirm('Do you want to (re)scrape the dataset now?', default=True):
+    # if click.confirm('Do you want to (re)scrape the ICRB dataset now?', default=True):
     #     ICRBScraper.run(forward_pass=True, backward_pass=True, hq=False)
+    # if click.confirm('Do you want to (re)scrape the FISB dataset now?', default=True):
+    FISBScraper.run(forward_pass=False, backward_pass=True)
 
     # Init Google Drive stuff
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
@@ -1531,12 +1628,16 @@ if __name__ == '__main__':
 
     # Init Dataset
     _dl = FISBDataloader(_datasets_groot, target_shape=128, target_channels=3, batch_size=1,
-                         pin_memory=False, log_level='debug', load_in_memory=False)
+                         pin_memory=False, log_level='debug', load_in_memory=False, min_color='#f0f0f0')
 
-    _img = _dl.dataset[1232]
-    _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
-    plt.imshow(_plt_transforms(_img.squeeze(dim=0)))
-    plt.show()
+    # Index 54886 is dark
+    print(f'len(_dl.dataset)={len(_dl.dataset)}')
+    for _i in np.random.randint(0, len(_dl.dataset), 10):
+        _img = _dl.dataset[_i]
+        _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
+        plt.imshow(_plt_transforms(_img.squeeze(dim=0)))
+        plt.title(f'Index #{str(_i).zfill(4)}')
+        plt.show()
 
     # # Print first image from each dataset
     # from matplotlib import pyplot as plt
