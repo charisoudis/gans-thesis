@@ -519,10 +519,11 @@ class StyleGan(nn.Module, IGanGModule):
         # Convert to grid of images
         ncols = 3
         nrows = 2
-        grid = create_img_grid(images=torch.stack([
+        upsample = nn.Upsample(size=self._configuration['resolutions']['max'])
+        grid = create_img_grid(images=upsample(torch.stack([
             real_images[0], real_images[1], real_images[2],
             fake_images[0], fake_images[1], fake_images[2],
-        ]), ncols=ncols, gen_transforms=self.gen_transforms)
+        ])), ncols=ncols, gen_transforms=self.gen_transforms)
 
         # Plot
         return plot_grid(grid=grid, figsize=(ncols, nrows),
