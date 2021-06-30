@@ -506,10 +506,11 @@ class StyleGan(nn.Module, IGanGModule):
         # Fetch images
         assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could not find dataset from model'
         real_images = []
+        resize = transforms.Resize(size=self.gen.resolution)
         with self.gen.frozen():
             fake_images = self.gen(self.gen.get_noise(batch_size=3, device=self.device)).detach().cpu()
             for index in indices:
-                real_images.append(self.evaluator.dataset[index].cpu())
+                real_images.append(resize(self.evaluator.dataset[index].cpu()))
 
         # Resize
         if self.gen.resolution != real_images[0].shape[-1]:
