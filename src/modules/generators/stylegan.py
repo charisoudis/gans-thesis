@@ -46,7 +46,7 @@ class InjectNoise(nn.Module):
         # Noise :   (N,1,W,H)
         # Weight:   (N,C,1,1)
         batch_size, c_in, h, w = x.shape
-        noise_shape = (batch_size, 1, h, w)
+        noise_shape = (batch_size, 1, w, h)
         noise = torch.randn(noise_shape, device=x.device)
         return x + self.weight * noise
 
