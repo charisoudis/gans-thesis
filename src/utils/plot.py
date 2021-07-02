@@ -110,6 +110,7 @@ def ensure_matplotlib_fonts_exist(groot: GDriveFolder, force_rebuild: bool = Fal
         rebuild = True
     if rebuild:
         # Rebuild system font cache
+        os.system('apt install fontconfig -y')
         os.system('fc-cache -fv')
         # Rebuild matplotlib font cache
         os.system('rm ~/.cache/matplotlib -rf')
