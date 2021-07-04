@@ -119,7 +119,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                                          (1=linear, ..., 10=smooth, ..., 1000=delta)
         :param (int) num_iters: number of iterations
         :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
-        :param (optional) truncation: a float from 0 to 1
+        :param (optional) truncation: a float from 0 to 1 to truncate z-space normal prior
         """
         # Save arguments
         self.locals = locals()

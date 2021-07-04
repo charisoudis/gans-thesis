@@ -33,10 +33,10 @@ def to_human_readable(number: int, size_format: str = '%.1f', return_number: boo
     :param return_number: set to True to return input number after human-readable and inside parentheses
     :return: human-readable formatted string
     """
-    string = humanize.naturalsize(number, format=size_format)
-    string = string.replace('.0', '').replace('Byte', '').replace('kB', 'K').rstrip('Bs').replace(' ', '')
-    string = string.replace('G', 'B')  # billions
-    return string + (f' ({number})' if return_number else '')
+    num_string = humanize.naturalsize(number, format=size_format)
+    num_string = num_string.replace('.0', '').replace('Byte', '').replace('kB', 'K').rstrip('Bs').replace(' ', '')
+    num_string = num_string.replace('G', 'B')  # billions
+    return num_string + (f' ({number})' if return_number else '')
 
 
 def get_random_string(length: int) -> str:

@@ -1,6 +1,5 @@
 import gc
 import math
-import os
 import time
 from typing import Tuple, Optional, Sequence
 
@@ -505,11 +504,21 @@ class StyleGan(nn.Module, IGanGModule):
     def visualize_indices(self, indices: int or Sequence) -> Image:
         # Fetch images
         assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could not find dataset from model'
+        fake_images = []
         real_images = []
         resize = transforms.Resize(size=self.gen.resolution)
         with self.gen.frozen():
-            fake_images = self.gen(self.gen.get_noise(batch_size=3, device=self.device)).detach().cpu()
+            # fake_images = self.gen(self.gen.get_noise(batch_size=len(indices), device=self.device)).detach().cpu()
+            gen_truncation = self.gen.locals.get('truncation', None)
+            if not gen_truncation:
+                gen_truncation = 3
             for index in indices:
+                # fake image
+                noise_multiplier = sorted((-1*gen_truncation, index, gen_truncation))[1]
+                print(noise_multiplier)
+                noise = noise_multiplier * torch.randn(1, self.gen.locals['z_dim'], device=self.device)
+                fake_images.append(self.gen(noise).detach().squeeze(0).cpu())
+                # real image
                 real_images.append(resize(self.evaluator.dataset[index].cpu()))
 
         # Resize
@@ -581,32 +590,33 @@ if __name__ == '__main__':
 
     _bs = 4
     _dl = FISBDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
-                         log_level=_log_level, batch_size=_bs, pin_memory=True)
-    # _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, z_dim=512,
-    #                           n_samples=4, batch_size=2, f1_k=1, device='cuda')
+                         log_level=_log_level, batch_size=_bs, pin_memory=False)
+    # _evaluator = None
+    _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, z_dim=512,
+                              n_samples=4, batch_size=2, f1_k=1, device='cpu')
 
     # Initialize model
     _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='default', chkpt_step=None, chkpt_epoch=None,
-                      dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=None, device='cuda')
+                      dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
     _stgan.disc_iters = 2
-    _stgan._init_gen_disc_opt_scheduler(resolution=8, device='cuda')
-    _stgan.use_half_precision = True
-    print(_stgan.nparams_hr)
+    _stgan._init_gen_disc_opt_scheduler(resolution=8, device='cpu')
+    # _stgan.use_half_precision = True
+    # print(_stgan.nparams_hr)
+    #
+    # _device = _stgan.device
+    # _x = next(iter(_dl))
+    # _disc_loss, _gen_loss = _stgan(transforms.Resize(size=8)(_x).to(_device))
+    # print(_disc_loss, _gen_loss)
+    #
+    # _state_dict = _stgan.state_dict()
+    # torch.save(_state_dict, '/home/achariso/PycharmProjects/gans-thesis/src/checkpoint.pth')
+    #
+    # # _metrics = _evaluator.evaluate(gen=_stgan.gen, show_progress=True)
+    # exit(0)
 
-    _device = _stgan.device
-    _x = next(iter(_dl))
-    _disc_loss, _gen_loss = _stgan(transforms.Resize(size=8)(_x).to(_device))
-    print(_disc_loss, _gen_loss)
-
-    _state_dict = _stgan.state_dict()
-    torch.save(_state_dict, '/home/achariso/PycharmProjects/gans-thesis/src/checkpoint.pth')
-
-    # _metrics = _evaluator.evaluate(gen=_stgan.gen, show_progress=True)
-    exit(0)
-
-    _img = _stgan.visualize()
-    with open('/home/achariso/Pictures/Thesis/stgan_sample.png', 'wb') as _img_fp:
-        _img.save(_img_fp)
-        os.system('xdg-open /home/achariso/Pictures/Thesis/stgan_sample.png')
+    _img = _stgan.visualize(reproducible=True)
+    # with open('/home/achariso/Pictures/Thesis/stgan_sample.png', 'wb') as _img_fp:
+    #     _img.save(_img_fp)
+    #     os.system('xdg-open /home/achariso/Pictures/Thesis/stgan_sample.png')
     plt.imshow(_img)
     plt.show()

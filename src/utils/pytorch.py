@@ -1,6 +1,8 @@
+import math
 import os
 from typing import Any, Optional
 
+import humanize
 import numpy as np
 import scipy.optimize
 import torch
@@ -61,6 +63,19 @@ def enable_verbose(model: nn.Module, logger: Optional[CommandLineLogger] = None)
             _layer.register_forward_hook(lambda _l, _, _out: logger.debug(f"{_name}: {_out.shape}"))
     # Flag model
     model.verbose_enabled = True
+
+
+def get_gpu_memory_gb(gpu_index: int = 0) -> int:
+    """
+    Returns total memory capacity in GB of GPU indexed at :attr:`gpu_index`.
+    :param (int) gpu_index: index of GPU device (defaults to 0)
+    :return: an integer object with the number of GB of total GPU memory (attention: not the free/available but the
+             total memory is returned)
+    """
+    total_memory = torch.cuda.get_device_properties(gpu_index).total_memory  # bytes
+    total_memory_gb_str = humanize.filesize.naturalsize(total_memory, binary=True, gnu=True)  # e.g. "23.7G"
+    total_memory_gb = float(total_memory_gb_str[0:-1])  # e.g. float(23.7)
+    return math.ceil(total_memory_gb)
 
 
 def get_gradient(disc: nn.Module, real: torch.Tensor, fake: torch.Tensor, epsilon: torch.Tensor) -> torch.Tensor:
