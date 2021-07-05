@@ -515,7 +515,6 @@ class StyleGan(nn.Module, IGanGModule):
             for index in indices:
                 # fake image
                 noise_multiplier = sorted((-1*gen_truncation, index, gen_truncation))[1]
-                print(noise_multiplier)
                 noise = noise_multiplier * torch.randn(1, self.gen.locals['z_dim'], device=self.device)
                 fake_images.append(self.gen(noise).detach().squeeze(0).cpu())
                 # real image
