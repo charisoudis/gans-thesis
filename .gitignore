@@ -11,3 +11,4 @@
 .matplotlib.rc
 other_state_dicts.pth
 *.pth
+__pycache__
