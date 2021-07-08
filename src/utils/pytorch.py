@@ -1,6 +1,6 @@
 import math
 import os
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import humanize
 import numpy as np
@@ -255,6 +255,55 @@ class MatrixSquareRoot(Function):
             grad_mat_sqrt = scipy.linalg.solve_sylvester(mat_sqrt, mat_sqrt, gm)
             grad_input = torch.from_numpy(grad_mat_sqrt).to(grad_output)
         return grad_input
+
+
+class ReceptiveFieldCalculator:
+    """
+    Class to calculate the receptive field of a CNN.
+    Source: https://rubikscode.net/2020/05/18/receptive-field-arithmetic-for-convolutional-neural-networks/
+    """
+
+    @staticmethod
+    def calculate(architecture, input_image_size, print_results: bool = False) -> int:
+        input_layer = ('input_layer', input_image_size, 1, 1, 0.5)
+        if print_results:
+            ReceptiveFieldCalculator.print_layer_info(input_layer)
+
+        current_layer = []
+        for key in architecture:
+            current_layer = ReceptiveFieldCalculator.calculate_layer_info(architecture[key], input_layer, key)
+            if print_results:
+                ReceptiveFieldCalculator.print_layer_info(current_layer)
+            input_layer = current_layer
+
+        return current_layer[2] if len(current_layer) > 2 else -1
+
+    @staticmethod
+    def print_layer_info(layer):
+        print(f'------')
+        print(f'{layer[0]}: n = {layer[1]}; r = {layer[2]}; j = {layer[3]}; start = {layer[4]}')
+        print(f'------')
+
+    @staticmethod
+    def calculate_layer_info(current_layer, input_layer, layer_name) -> Tuple[int, int, int, int, int]:
+        n_in = input_layer[1]
+        j_in = input_layer[2]
+        r_in = input_layer[3]
+        start_in = input_layer[4]
+
+        k = current_layer[0]
+        s = current_layer[1]
+        p = current_layer[2]
+
+        n_out = math.floor((n_in - k + 2 * p) / s) + 1
+        padding = (n_out - 1) * s - n_in + k
+        p_right = math.ceil(padding / 2)
+        p_left = math.floor(padding / 2)
+
+        j_out = j_in * s
+        r_out = r_in + (k - 1) * j_in
+        start_out = start_in + ((k - 1) / 2 - p_left) * j_in
+        return layer_name, n_out, j_out, r_out, start_out
 
 
 class ToTensorOrPass(transforms.ToTensor):

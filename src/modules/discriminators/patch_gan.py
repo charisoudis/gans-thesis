@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from typing import Optional, List
 
 import torch
@@ -8,7 +9,7 @@ from modules.partial.decoding import FeatureMapLayer, ChannelsProjectLayer
 from modules.partial.encoding import ContractingBlock
 from utils.command_line_logger import CommandLineLogger
 from utils.ifaces import BalancedFreezable, Verbosable
-from utils.pytorch import get_total_params
+from utils.pytorch import get_total_params, ReceptiveFieldCalculator
 from utils.string import to_human_readable
 
 
@@ -58,6 +59,9 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
                 ChannelsProjectLayer(c_hidden * 2 ** (n_contracting_blocks - 1), 1, use_spectral_norm=use_spectral_norm)
             )
 
+        # Save args
+        self.use_upfeature = use_upfeature
+        self.n_contracting_blocks = n_contracting_blocks
         self.logger = CommandLineLogger(name=self.__class__.__name__) if logger is None else logger
         self.adv_criterion = getattr(nn, f'{adv_criterion}Loss')() if adv_criterion is not None else None
         self.verbose_enabled = False
@@ -115,9 +119,26 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
     def get_layer_attr_names(self) -> List[str]:
         return ['patch_gan_discriminator', ]
 
+    def get_receptive_field(self, w_in: int) -> int:
+        """
+        Returns the receptive field of each of the elements in the output matrix.
+        :param (int) w_in: width of input images (ass. that it equals the height)
+        :return: an integer object containing the receptive field value
+        """
+        # Construct architecture dict
+        current_arch = []
+        if self.use_upfeature:
+            current_arch.append(('uf', [7, 1, 3]))
+        for bi in range(self.n_contracting_blocks):
+            current_arch.append((f'contr_block_{bi}', [3, 2, 1]))
+        current_arch.append(('pj', [1, 1, 0]))
+        current_arch_dict = OrderedDict(current_arch)
+        # Calculate and return
+        return min(w_in, ReceptiveFieldCalculator.calculate(current_arch_dict, w_in))
+
 
 if __name__ == '__main__':
-    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=5, use_spectral_norm=True)
+    __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=5, use_spectral_norm=True, adv_criterion='BCE')
     _real = torch.randn(1, 3, 64, 64)
     _fake = torch.randn(1, 3, 64, 64)
     _condition = torch.randn(1, 3, 64, 64)
@@ -125,3 +146,8 @@ if __name__ == '__main__':
     # print(__disc)
     _loss = __disc.get_loss(real=_real, fake=_fake, condition=_condition, real_unassoc=_real_unassoc)
     print(_loss)
+    print(_loss)
+
+    _w_in = 64
+    _rf = __disc.get_receptive_field(w_in=_w_in)
+    print(f'Receptive Field for input {_w_in}x{_w_in}: {_rf}x{_rf}')

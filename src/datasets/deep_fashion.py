@@ -9,6 +9,7 @@ from typing import Optional, Tuple, Union
 
 import click
 import h5py
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -603,8 +604,11 @@ class FISBDataset(Dataset, GDriveDataset):
         image = self.transforms(image)
         # Crop (costs on average less than 2ms)
         crop = self.crops[real_index]
-        return FISBDataset.crop_to_bounds(image, h_from=crop['h_from'], h_until=crop['h_until'],
-                                          w_from=crop['w_from'], w_until=crop['w_until'], upscale_size=image.shape[2])
+        cropped_image = FISBDataset.crop_to_bounds(image, h_from=crop['h_from'], h_until=crop['h_until'],
+                                                   w_from=crop['w_from'], w_until=crop['w_until'],
+                                                   upscale_size=image.shape[2])
+        # return torch.cat((image, cropped_image), dim=2)
+        return cropped_image
 
     def __len__(self) -> int:
         """
@@ -1465,6 +1469,12 @@ class FISBScraper:
                     probs_dict[k_value] = 1 / self.total_images_count
                 else:
                     probs_dict[k_value] += 1 / self.total_images_count
+
+        # Set matplotlib params
+        matplotlib.rcParams["font.family"] = 'JetBrains Mono'
+        # Configure matplotlib for pretty plots
+        plt.rcParams["font.family"] = 'JetBrains Mono'
+
         # Output probs
         for k in keys:
             probs_dict = locals()[f'{k}_probs']
@@ -1475,19 +1485,48 @@ class FISBScraper:
             y = [float(v) for v in probs_dict.values()]
             # spl = make_interp_spline(x, 7, k=3)
             y_smooth = make_interp_spline(x, y, k=3)(x_smooth)
-            plt.plot(x_smooth, y_smooth)
-            plt.show()
+
+            # Create a new figure
+            plt.figure(figsize=(10, 5), dpi=300, clear=True)
+            # Set data
+            plt.plot(x_smooth, y_smooth, '-.', color='#2a9ceb')
+            plt.plot(x, y, 'o', color='#1f77b4')
+            # Set title
+            plt_title = f'{k} Frequencies'
+            plt_subtitle = f'FISBScraper::backward()'
+            plt.suptitle(f'{plt_title}', y=0.97, fontsize=12, fontweight='bold')
+            plt.title(f'{plt_subtitle}', pad=10., fontsize=10, )
+            # Get PIL image
+            plt.savefig(f'fisb_{k}_freqs.svg')
+            # pil_img = pltfig_to_pil(plt.gcf())
+            # pil_img.save(f'{k}_freqs.png')
 
         if self.backgrounds is None:
             raise RuntimeError('self.backgrounds is None: Exiting now...')
         colors = sorted(self.backgrounds.keys())
         indices_per_color = [len(self.backgrounds[color]) for color in colors]
-        fig, ax = plt.subplots()
-        ax.plot(range(len(colors)), indices_per_color, '-o')
-        plt.xticks(range(len(colors)), labels=colors, rotation=45)
+        # Create a new figure
+        fig, ax = plt.subplots(figsize=(10, 5), dpi=300, clear=True)
+        # Set data
+        x = range(len(colors))
+        y = indices_per_color
+        x_smooth = np.linspace(min(x), max(x), 300)
+        y_smooth = make_interp_spline(x, y, k=3)(x_smooth)
+        ax.plot(x_smooth, y_smooth, '-.', color='#2a9ceb')
+        ax.plot(x, y, 'o', color='#1f77b4')
+        plt.xticks(x, labels=[f'#{c}' for c in colors], rotation=45)
         loc = ticker.MultipleLocator(base=2.0)
         ax.xaxis.set_major_locator(loc)
-        plt.show()
+        # Set title
+        plt_title = f'Image Background Frequencies'
+        plt_subtitle = f'FISBScraper::backward()'
+        plt.suptitle(f'{plt_title}', y=0.97, fontsize=12, fontweight='bold')
+        plt.title(f'{plt_subtitle}', pad=10., fontsize=10, )
+        # Get PIL image
+        plt.savefig(f'fisb_background_freqs.svg')
+        # pil_img = pltfig_to_pil(plt.gcf())
+        # pil_img.save(f'background_freqs.png')
+        # plt.show()
 
     @staticmethod
     def should_crop_top(t: torch.Tensor, crop_shape: int or tuple = 10) -> int or False:
@@ -1619,7 +1658,8 @@ if __name__ == '__main__':
     # if click.confirm('Do you want to (re)scrape the ICRB dataset now?', default=True):
     #     ICRBScraper.run(forward_pass=True, backward_pass=True, hq=False)
     # if click.confirm('Do you want to (re)scrape the FISB dataset now?', default=True):
-    FISBScraper.run(forward_pass=False, backward_pass=True)
+    #     FISBScraper.run(forward_pass=False, backward_pass=True)
+    # exit(0)
 
     # Init Google Drive stuff
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
@@ -1628,14 +1668,17 @@ if __name__ == '__main__':
 
     # Init Dataset
     _dl = FISBDataloader(_datasets_groot, target_shape=128, target_channels=3, batch_size=1,
-                         pin_memory=False, log_level='debug', load_in_memory=False, min_color='#f0f0f0')
+                         pin_memory=False, log_level='debug', load_in_memory=False)
+                         # min_color='#f0f0f0')
 
     # Index 54886 is dark
     print(f'len(_dl.dataset)={len(_dl.dataset)}')
-    for _i in np.random.randint(0, len(_dl.dataset), 10):
+    for _i in np.random.randint(0, len(_dl.dataset), 20):
         _img = _dl.dataset[_i]
         _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
-        plt.imshow(_plt_transforms(_img.squeeze(dim=0)))
+        _img = _plt_transforms(_img.squeeze(dim=0))
+        _img.save(f'{str(_i).zfill(4)}.jpg')
+        plt.imshow(_img)
         plt.title(f'Index #{str(_i).zfill(4)}')
         plt.show()
 
