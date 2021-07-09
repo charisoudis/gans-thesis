@@ -216,11 +216,8 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                             for _k in _keys:
                                 if _k not in all_keys:
                                     all_keys.append(_k)
-                        for dk in chkpt_dict.keys():
-                            if dk not in all_keys:
-                                del chkpt_dict[dk]
-
-                        torch.save(chkpt_dict, epoch_chkpt.path.replace('.pth', '__stripped.pth'))
+                        stripped_dict = {aki: chkpt_dict[aki] for aki in all_keys}
+                        torch.save(stripped_dict, epoch_chkpt.path.replace('.pth', '__stripped.pth'))
                         self.logger.debug(f'{epoch_chkpt.path}: Stripped!')
                         # return after extracting dirs
                         del chkpt_dict
