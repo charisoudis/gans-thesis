@@ -211,6 +211,8 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                     del chkpt_dict
                     gc.collect()
                     time.sleep(1)
+                    return
+
                 # Process it and append to images data
                 for ki, key_or_keys in enumerate(dict_keys):
                     _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
