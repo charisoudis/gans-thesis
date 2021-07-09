@@ -1,6 +1,8 @@
 import abc
+import gc
 import json
 import os
+import time
 from abc import ABCMeta
 from typing import Optional, Union, Dict, List, Sequence, Tuple
 
@@ -188,6 +190,20 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
             for epoch_chkpt in epoch_chkpts:
                 # Load chkpt file
                 chkpt_dict = torch.load(epoch_chkpt.path, map_location='cpu')
+                if 'gen' in chkpt_dict.keys():
+                    del chkpt_dict['gen']
+                if 'gen_a_to_b' in chkpt_dict.keys():
+                    del chkpt_dict['gen_a_to_b']
+                if 'gen_b_to_a' in chkpt_dict.keys():
+                    del chkpt_dict['gen_b_to_a']
+                if 'disc' in chkpt_dict.keys():
+                    del chkpt_dict['disc']
+                if 'disc_r' in chkpt_dict.keys():
+                    del chkpt_dict['disc_r']
+                if 'disc_a' in chkpt_dict.keys():
+                    del chkpt_dict['disc_a']
+                if 'disc_b' in chkpt_dict.keys():
+                    del chkpt_dict['disc_b']
                 # Process it and append to images data
                 for ki, key_or_keys in enumerate(dict_keys):
                     _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
@@ -202,6 +218,9 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                             losses_dict[_ii][_k][epoch].append(np.NaN)
                         else:
                             losses_dict[_ii][_k][epoch].append(chkpt_dict[_k])
+                del chkpt_dict
+                gc.collect()
+                time.sleep(1)
 
         # Set matplotlib params
         matplotlib.rcParams["font.family"] = 'JetBrains Mono'
