@@ -9,6 +9,7 @@ class CycleGANDiscriminator(PatchGANDiscriminator):
     CycleGANDiscriminator Class:
     CycleGAN uses PatchGAN discriminator so this class simply acts as an alias of
     `modules.discriminators.patch_gan.PatchGANDiscriminator`.
+    THIS CLASS WAS NEVER USED. INSTEAD USED PatchGANDiscriminator DIRECTLY.
     """
 
     def __init__(self, c_in: int, c_hidden: int = 8, logger: Optional[CommandLineLogger] = None):

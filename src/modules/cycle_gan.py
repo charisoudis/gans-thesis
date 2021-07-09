@@ -641,11 +641,11 @@ if __name__ == '__main__':
     plt.show()
 
 
-    # print('Number of parameters: gen_a_to_b=' + _ccgan.gen_a_to_b.nparams_hr)
-    # print('Number of parameters: gen_b_to_a=' + _ccgan.gen_b_to_a.nparams_hr)
-    # print('Number of parameters: disc_a=' + _ccgan.disc_a.nparams_hr)
-    # print('Number of parameters: disc_b=' + _ccgan.disc_b.nparams_hr)
-    # print('Number of parameters: TOTAL=' + _ccgan.nparams_hr)
+    print('Number of parameters: gen_a_to_b=' + _ccgan.gen_a_to_b.nparams_hr)
+    print('Number of parameters: gen_b_to_a=' + _ccgan.gen_b_to_a.nparams_hr)
+    print('Number of parameters: disc_a=' + _ccgan.disc_a.nparams_hr)
+    print('Number of parameters: disc_b=' + _ccgan.disc_b.nparams_hr)
+    print('Number of parameters: TOTAL=' + _ccgan.nparams_hr)
     #
     # _img = _ccgan.visualize(reproducible=(300, 1001))
     # plt.imshow(_img)

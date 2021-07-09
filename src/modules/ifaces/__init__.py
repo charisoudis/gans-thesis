@@ -245,9 +245,6 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 gc.collect()
                 time.sleep(1)
 
-        if extract_dicts:
-            return
-
         # Set matplotlib params
         matplotlib.rcParams["font.family"] = 'JetBrains Mono'
         # Configure matplotlib for pretty plots
@@ -415,6 +412,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                                              filename_suffix)
                 is_update = os.path.exists(filepath)
                 pil_img.save(filepath)
+                self.logger.debug(f'Metric file saved in {filepath}.')
                 # Upload to Google Drive
                 vis_metrics_folder.upload_file(local_filename=filepath, in_parallel=False, is_update=is_update)
                 self.logger.debug(f'Metric file from {filepath} uploaded successfully!')
@@ -424,6 +422,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 if is_update:
                     os.remove(svg_filepath)
                 plt.savefig(svg_filepath)
+                self.logger.debug(f'Metric SVG file saved in {svg_filepath}.')
                 vis_metrics_folder.upload_file(local_filename=svg_filepath, in_parallel=False, is_update=is_update)
                 self.logger.debug(f'Loss image from {svg_filepath} uploaded successfully!')
             if preview:
