@@ -314,7 +314,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
         assert isinstance(self, FilesystemModel), 'Model must implement utils.ifaces.FilesystemFolder to visualize' + \
                                                   'metrics and upload produced images to cloud'
         # Init metric lists
-        x, fids, iss, f1s, ssims = ([], [], [], [], [])
+        x, fids, iss, prs, rcs, f1s, ssims = ([], [], [], [], [], [], [])
         epoch_metrics_dict = self.list_all_metrics()
         for epoch, epoch_metrics in epoch_metrics_dict.items():
             # Check if file is in local filesystem and is a metric file
@@ -343,6 +343,8 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 fids.append(metrics['fid'])
                 iss.append(metrics['is'])
                 f1s.append(metrics['f1'] if not np.isnan(metrics['f1']) else 0)
+                prs.append(metrics['precision'] if not np.isnan(metrics['precision']) else 0)
+                rcs.append(metrics['recall'] if not np.isnan(metrics['recall']) else 0)
                 ssims.append(metrics['ssim'])
                 # Set correct x value
                 x.append(x_init + _fi * x_step)
@@ -361,7 +363,8 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
 
         # Save metric plots as images & display inline
         _returns = []
-        for metric_name, metric_data in zip(('  FID', '  IS', '  F1', '  SSIM'), (fids, iss, f1s, ssims)):
+        for metric_name, metric_data in zip(('  FID', '  IS', '  F1', '  PRECISION', '  RECALL', '  SSIM'),
+                                            (fids, iss, f1s, prs, rcs, ssims)):
             # Create a new figure
             plt.figure(figsize=(10, 5), dpi=300, clear=True)
             # Set data

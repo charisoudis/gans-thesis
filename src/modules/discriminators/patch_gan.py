@@ -101,6 +101,7 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         # Proceed with loss calculation
         predictions_on_real = self(real, condition)
         predictions_on_fake = self(fake, condition)
+        print(predictions_on_fake.shape)
         # print('DISC OUTPUT SHAPE: ' + str(predictions_on_fake.shape))
         if type(criterion) == torch.nn.modules.loss.BCELoss:
             predictions_on_real = nn.Sigmoid()(predictions_on_real)
@@ -139,15 +140,16 @@ class PatchGANDiscriminator(nn.Module, BalancedFreezable, Verbosable):
 
 if __name__ == '__main__':
     __disc = PatchGANDiscriminator(c_in=6, n_contracting_blocks=5, use_spectral_norm=True, adv_criterion='BCE')
-    _real = torch.randn(1, 3, 64, 64)
-    _fake = torch.randn(1, 3, 64, 64)
-    _condition = torch.randn(1, 3, 64, 64)
-    _real_unassoc = torch.randn(1, 3, 64, 64)
+    _w_in = 128
+    
+    _real = torch.randn(1, 3, _w_in, _w_in)
+    _fake = torch.randn(1, 3, _w_in, _w_in)
+    _condition = torch.randn(1, 3, _w_in, _w_in)
+    _real_unassoc = torch.randn(1, 3, _w_in, _w_in)
     # print(__disc)
     _loss = __disc.get_loss(real=_real, fake=_fake, condition=_condition, real_unassoc=_real_unassoc)
     print(_loss)
     print(_loss)
 
-    _w_in = 64
     _rf = __disc.get_receptive_field(w_in=_w_in)
     print(f'Receptive Field for input {_w_in}x{_w_in}: {_rf}x{_rf}')
