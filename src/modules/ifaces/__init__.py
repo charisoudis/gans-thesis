@@ -137,7 +137,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
         raise NotImplementedError
 
     def visualize_losses(self, dict_keys: tuple, upload: bool = False, preview: bool = False,
-                         colors: Optional[List[Tuple[str, str]]] = None) -> List[Image]:
+                         colors: Optional[List[Tuple[str, str]]] = None, extract_dicts: bool = False) -> List[Image]:
         """
         Fetch the losses from every checkpoint and plot them nicely.
         :param (tuple) dict_keys: e.g. ('gen_loss', 'disc_loss') --> 2 images, each with the respective loss
@@ -204,6 +204,9 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                     del chkpt_dict['disc_a']
                 if 'disc_b' in chkpt_dict.keys():
                     del chkpt_dict['disc_b']
+                if extract_dicts:
+                    torch.save(chkpt_dict, epoch_chkpt.path.replace('.pth', '__stripped.pth'))
+                    self.logger.debug(f'{epoch_chkpt.path}: Stripped!')
                 # Process it and append to images data
                 for ki, key_or_keys in enumerate(dict_keys):
                     _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
