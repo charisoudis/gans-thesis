@@ -290,7 +290,11 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 ax.tick_params(axis='y')
 
                 # Remove NaNs
-                curve_y = unnanify(np.array(curve_y))
+                try:
+                    curve_y = unnanify(np.array(curve_y))
+                except Exception as e:
+                    self.logger.critical(str(e))
+                    print(curve_y)
 
                 # Plot curve (smooth line + actual points)
                 x_new = np.linspace(curve_x[0], curve_x[-1], 300)
