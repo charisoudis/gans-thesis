@@ -20,7 +20,8 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import create_img_grid, plot_grid
-from utils.pytorch import enable_verbose
+from utils.pytorch import enable_verbose, get_total_params
+from utils.string import to_human_readable
 from utils.train import weights_init_naive, get_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
 
 
@@ -438,6 +439,17 @@ if __name__ == '__main__':
     _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
                  dataset_len=len(_dataset), chkpt_epoch=None, log_level=_log_level,
                  evaluator=_evaluator, device='cpu')
+
+    print('gen.g1 params: ' + to_human_readable(get_total_params(_pgpg.gen.g1)))
+    print('gen.g2 params: ' + to_human_readable(get_total_params(_pgpg.gen.g2)))
+    print('gen params: ' + to_human_readable(get_total_params(_pgpg.gen)))
+    print('disc params: ' + to_human_readable(get_total_params(_pgpg.disc)))
+    print('total params: ' + to_human_readable(get_total_params(_pgpg)))
+
+    get_total_params(_pgpg.gen.g1, print_table=True, sort_desc=True)
+
+    exit(0)
+
     enable_verbose(_pgpg.disc)
     # print(_pgpg)
     # exit(0)

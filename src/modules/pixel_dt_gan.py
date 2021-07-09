@@ -21,7 +21,8 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import create_img_grid, plot_grid
-from utils.pytorch import enable_verbose
+from utils.pytorch import enable_verbose, get_total_params
+from utils.string import to_human_readable
 from utils.train import weights_init_naive, get_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
 
 
@@ -473,6 +474,13 @@ if __name__ == '__main__':
     # print(chkpt.keys())
     _pxldt = PixelDTGan(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dataset),
                         chkpt_epoch=None, log_level=_log_level, evaluator=_evaluator, device='cpu')
+
+    print('gen params: ' + to_human_readable(get_total_params(_pxldt.gen)))
+    print('disc_r params: ' + to_human_readable(get_total_params(_pxldt.disc_r)))
+    print('disc_a params: ' + to_human_readable(get_total_params(_pxldt.disc_a)))
+    print('total params: ' + _pxldt.nparams_hr)
+    exit(0)
+
     _pxldt.load_state_dict(c, strict=False)
     # print(_pxldt)
 

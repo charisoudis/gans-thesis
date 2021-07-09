@@ -164,7 +164,8 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
             # Check if file is in local filesystem and is a chkpt file
             _files = []
             for _f in epoch_chkpts:
-                if isinstance(_f, FilesystemFile) and _f.name.endswith('.pth'):
+                if isinstance(_f, FilesystemFile) and _f.name.endswith('.pth') and \
+                        not _f.name.endswith('__stripped.pth'):
                     if not _f.is_downloaded:  # and not _f.download(in_parallel=False, show_progress=True):
                         pass
                         # raise FileNotFoundError('File not found in GoogleDrive or FAILed to download')
@@ -189,29 +190,43 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
             epoch_chkpt: FilesystemFile
             for epoch_chkpt in epoch_chkpts:
                 # Load chkpt file
-                chkpt_dict = torch.load(epoch_chkpt.path, map_location='cpu')
-                if 'gen' in chkpt_dict.keys():
-                    del chkpt_dict['gen']
-                if 'gen_a_to_b' in chkpt_dict.keys():
-                    del chkpt_dict['gen_a_to_b']
-                if 'gen_b_to_a' in chkpt_dict.keys():
-                    del chkpt_dict['gen_b_to_a']
-                if 'disc' in chkpt_dict.keys():
-                    del chkpt_dict['disc']
-                if 'disc_r' in chkpt_dict.keys():
-                    del chkpt_dict['disc_r']
-                if 'disc_a' in chkpt_dict.keys():
-                    del chkpt_dict['disc_a']
-                if 'disc_b' in chkpt_dict.keys():
-                    del chkpt_dict['disc_b']
-                if extract_dicts:
-                    torch.save(chkpt_dict, epoch_chkpt.path.replace('.pth', '__stripped.pth'))
-                    self.logger.debug(f'{epoch_chkpt.path}: Stripped!')
-                    # return after extracting dirs
-                    del chkpt_dict
-                    gc.collect()
-                    time.sleep(1)
-                    continue
+                stripped_path = epoch_chkpt.path.replace('.pth', '__stripped.pth')
+                if os.path.exists(stripped_path):
+                    chkpt_dict = torch.load(stripped_path, map_location='cpu')
+                else:
+                    chkpt_dict = torch.load(epoch_chkpt.path, map_location='cpu')
+                    if 'gen' in chkpt_dict.keys():
+                        del chkpt_dict['gen']
+                    if 'gen_a_to_b' in chkpt_dict.keys():
+                        del chkpt_dict['gen_a_to_b']
+                    if 'gen_b_to_a' in chkpt_dict.keys():
+                        del chkpt_dict['gen_b_to_a']
+                    if 'disc' in chkpt_dict.keys():
+                        del chkpt_dict['disc']
+                    if 'disc_r' in chkpt_dict.keys():
+                        del chkpt_dict['disc_r']
+                    if 'disc_a' in chkpt_dict.keys():
+                        del chkpt_dict['disc_a']
+                    if 'disc_b' in chkpt_dict.keys():
+                        del chkpt_dict['disc_b']
+                    if extract_dicts:
+                        all_keys = []
+                        for ki, key_or_keys in enumerate(dict_keys):
+                            _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
+                            for _k in _keys:
+                                if _k not in all_keys:
+                                    all_keys.append(_k)
+                        for dk in chkpt_dict.keys():
+                            if dk not in all_keys:
+                                del chkpt_dict[dk]
+
+                        torch.save(chkpt_dict, epoch_chkpt.path.replace('.pth', '__stripped.pth'))
+                        self.logger.debug(f'{epoch_chkpt.path}: Stripped!')
+                        # return after extracting dirs
+                        del chkpt_dict
+                        gc.collect()
+                        time.sleep(1)
+                        continue
 
                 # Process it and append to images data
                 for ki, key_or_keys in enumerate(dict_keys):
