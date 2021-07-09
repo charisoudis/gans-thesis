@@ -211,7 +211,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                     del chkpt_dict
                     gc.collect()
                     time.sleep(1)
-                    return
+                    continue
 
                 # Process it and append to images data
                 for ki, key_or_keys in enumerate(dict_keys):
@@ -230,6 +230,9 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 del chkpt_dict
                 gc.collect()
                 time.sleep(1)
+
+        if extract_dicts:
+            return
 
         # Set matplotlib params
         matplotlib.rcParams["font.family"] = 'JetBrains Mono'
