@@ -17,6 +17,7 @@ from scipy.interpolate import make_interp_spline
 from torch import Tensor
 
 from utils.command_line_logger import CommandLineLogger
+from utils.data import unnanify
 from utils.filesystems.gdrive import GDriveModel
 from utils.ifaces import FilesystemModel, Configurable, Evaluable, Visualizable, FilesystemFolder, FilesystemFile
 from utils.plot import pltfig_to_pil
@@ -236,6 +237,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                             losses_dict[_ii][_k][epoch] = []
                         #   - check if key exists
                         if _k not in chkpt_dict.keys():
+                            # check if there exists a previous value
                             losses_dict[_ii][_k][epoch].append(np.NaN)
                         else:
                             losses_dict[_ii][_k][epoch].append(chkpt_dict[_k])
@@ -291,6 +293,9 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 else:
                     ax.set_ylabel(curve_name)
                 ax.tick_params(axis='y')
+
+                # Remove NaNs
+                curve_y = unnanify(curve_y)
 
                 # Plot curve (smooth line + actual points)
                 x_new = np.linspace(curve_x[0], curve_x[-1], 300)

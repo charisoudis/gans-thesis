@@ -164,3 +164,16 @@ def unzip_file(zip_filepath: str) -> bool:
     return True if 0 == os.system(f'unzip -q "{zip_filepath}" -d ' +
                                   f'"{zip_filepath.replace("/" + os.path.basename(zip_filepath), "")}"') \
         else False
+
+
+def unnanify(y: np.ndarray) -> np.ndarray:
+    """
+    Remove NaNs from np array.
+    (source: https://stackoverflow.com/a/6520696/13634700)
+    :param (np.ndarray) y: input 1d array
+    :return: an 1d array as np.ndarray object
+    """
+    nans, x = np.isnan(y), lambda z: z.nonzero()[0]
+    y_out = y.copy()
+    y_out[nans] = np.interp(x(nans), x(~nans), y_out[~nans])
+    return y_out
