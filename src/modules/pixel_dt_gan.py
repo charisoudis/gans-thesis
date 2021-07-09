@@ -21,6 +21,7 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import create_img_grid, plot_grid
+from utils.pytorch import enable_verbose
 from utils.train import weights_init_naive, get_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
 
 
@@ -481,6 +482,9 @@ if __name__ == '__main__':
     # #         _pgpg.gforward(_i_1.shape[0])
     # #
     # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
+
+    enable_verbose(_pxldt.disc_a)
+    print(f'rf={_pxldt.disc_a.get_receptive_field(64)}')
 
     _device = _pxldt.device
     _x, _y = next(iter(_dl))

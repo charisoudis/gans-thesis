@@ -8,6 +8,7 @@ from modules.discriminators.patch_gan import PatchGANDiscriminator
 from modules.generators.unet import UNETWithSkipConnections
 from utils.filesystems.local import LocalFolder, LocalCapsule
 from utils.ifaces import Freezable
+from utils.pytorch import enable_verbose
 
 
 class PGPGGenerator1(UNETWithSkipConnections):
@@ -108,6 +109,8 @@ class PGPGGenerator(nn.Module, Freezable):
             configuration = self.DefaultConfiguration
 
         g1_conf = configuration['g1']
+        # g1_conf['n_contracting_blocks'] = 4
+        # g1_conf['c_hidden'] = 16
         self.g1 = PGPGGenerator1(c_in=c_in, c_out=c_out, c_hidden=g1_conf['c_hidden'],
                                  n_contracting_blocks=g1_conf['n_contracting_blocks'],
                                  c_bottleneck_down=g1_conf['c_bottleneck_down'], w_in=w_in, h_in=h_in,
@@ -208,6 +211,8 @@ if __name__ == '__main__':
     __dl = ICRBCrossPoseDataloader(
         dataset_fs_folder_or_root=__datasets_folder,
         batch_size=1, target_shape=128, target_channels=__target_channels, pin_memory=False)
+
+    enable_verbose(__gen.g1)
     for _, __images in enumerate(__dl):
         __x, __y, __y_pose = __images
         print(__x.shape)

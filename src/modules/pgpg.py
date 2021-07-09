@@ -20,6 +20,7 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import create_img_grid, plot_grid
+from utils.pytorch import enable_verbose
 from utils.train import weights_init_naive, get_optimizer, get_optimizer_lr_scheduler, set_optimizer_lr
 
 
@@ -435,8 +436,9 @@ if __name__ == '__main__':
 
     # Initialize model
     _pgpg = PGPG(model_fs_folder_or_root=_models_groot, config_id='128_MSE_256_6_4_5_none_none_1e4_true_false_false',
-                 dataset_len=len(_dataset), chkpt_epoch='latest', log_level=_log_level,
+                 dataset_len=len(_dataset), chkpt_epoch=None, log_level=_log_level,
                  evaluator=_evaluator, device='cpu')
+    enable_verbose(_pgpg.disc)
     # print(_pgpg)
     # exit(0)
 

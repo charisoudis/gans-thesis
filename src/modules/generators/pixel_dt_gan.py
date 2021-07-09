@@ -54,7 +54,7 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
             # Encoding (aka contracting) blocks
             *[ContractingBlock(c_hidden * 2 ** i, kernel_size=5, activation='lrelu', padding=2, use_norm=True,
                                use_dropout=(use_dropout and i < n_contracting_blocks // 2),
-                               norm_type='batch') for i in range(0, n_contracting_blocks - 2)],
+                               norm_type='batch') for i in range(n_contracting_blocks - 2)],
 
             # Bottleneck
             ContractingBlock(c_in=c_hidden * 2 ** (n_contracting_blocks - 2), c_out=c_bottleneck, stride=1, padding=0,

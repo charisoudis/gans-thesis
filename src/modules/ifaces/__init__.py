@@ -279,6 +279,14 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 # Upload to Google Drive
                 vis_losses_folder.upload_file(local_filename=filepath, in_parallel=False, is_update=is_update)
                 self.logger.debug(f'Loss image from {filepath} uploaded successfully!')
+                # Upload svg
+                svg_filepath = filepath.replace(".jpg", ".svg")
+                is_update = os.path.exists(svg_filepath)
+                if is_update:
+                    os.remove(svg_filepath)
+                plt.savefig(svg_filepath)
+                vis_losses_folder.upload_file(local_filename=svg_filepath, in_parallel=False, is_update=is_update)
+                self.logger.debug(f'Loss image from {svg_filepath} uploaded successfully!')
             if preview:
                 plt.show()
         return _returns
@@ -359,6 +367,14 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 # Upload to Google Drive
                 vis_metrics_folder.upload_file(local_filename=filepath, in_parallel=False, is_update=is_update)
                 self.logger.debug(f'Metric file from {filepath} uploaded successfully!')
+                # Upload svg
+                svg_filepath = filepath.replace(".jpg", ".svg")
+                is_update = os.path.exists(svg_filepath)
+                if is_update:
+                    os.remove(svg_filepath)
+                plt.savefig(svg_filepath)
+                vis_metrics_folder.upload_file(local_filename=svg_filepath, in_parallel=False, is_update=is_update)
+                self.logger.debug(f'Loss image from {svg_filepath} uploaded successfully!')
             if preview:
                 plt.show()
         return _returns
