@@ -207,6 +207,10 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
                 if extract_dicts:
                     torch.save(chkpt_dict, epoch_chkpt.path.replace('.pth', '__stripped.pth'))
                     self.logger.debug(f'{epoch_chkpt.path}: Stripped!')
+                    # return after extracting dirs
+                    del chkpt_dict
+                    gc.collect()
+                    time.sleep(1)
                 # Process it and append to images data
                 for ki, key_or_keys in enumerate(dict_keys):
                     _keys = (key_or_keys,) if type(key_or_keys) == str else key_or_keys
