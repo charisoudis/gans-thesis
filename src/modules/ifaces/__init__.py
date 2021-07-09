@@ -401,6 +401,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
             plt_subtitle = f'{filename_suffix.replace("_", " to ").replace("=", ": ").replace(".jpg", "")}'
             plt.suptitle(f'{plt_title}', y=0.97, fontsize=12, fontweight='bold')
             plt.title(f'{plt_subtitle}', pad=10., fontsize=10, )
+            plt.xlabel('epoch')
             # Get PIL image
             pil_img = pltfig_to_pil(plt.gcf())
             _returns.append(pil_img)
