@@ -241,7 +241,9 @@ if __name__ == '__main__':
                                pin_memory=False, log_level='debug')
 
     # Print first image from each dataset
-    _bag, _shoe = next(iter(_dl))
+    _dli = iter(_dl)
+    _bag, _shoe = next(_dli)
+    _bag, _shoe = next(_dli)
     _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
     plt.imshow(_plt_transforms(_bag.squeeze(dim=0)))
     plt.show()

@@ -387,6 +387,9 @@ class GDriveModel(FilesystemModel):
         self.epoch = state['epoch']
         self.epoch_inc = state['epoch_inc']
         self._counter = state['_counter']
+        if 'batch_size' not in state.keys():
+            bs = int(input('"batch_size" key not exists in state.keys(). batch_size='))
+            state['batch_size'] = bs
         self._batch_size = state['batch_size']
         self.logger.debug(f'Loading gforward state: {str(state)}')
 

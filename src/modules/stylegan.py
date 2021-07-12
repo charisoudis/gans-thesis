@@ -20,6 +20,8 @@ from utils.filesystems.local import LocalCapsule, LocalFolder
 from utils.ifaces import FilesystemFolder
 from utils.metrics import GanEvaluator
 from utils.plot import create_img_grid, plot_grid
+from utils.pytorch import get_total_params
+from utils.string import to_human_readable
 from utils.train import get_optimizer, weights_init_naive, set_optimizer_lr
 
 
@@ -589,7 +591,7 @@ if __name__ == '__main__':
 
     _bs = 4
     _dl = FISBDataloader(dataset_fs_folder_or_root=_datasets_groot, image_transforms=_gen_transforms,
-                         log_level=_log_level, batch_size=_bs, pin_memory=False)
+                         log_level=_log_level, batch_size=_bs, pin_memory=False, min_color='#f0f0f0')
     # _evaluator = None
     _evaluator = GanEvaluator(model_fs_folder_or_root=_models_root, gen_dataset=_dl.dataset, z_dim=512,
                               n_samples=4, batch_size=2, f1_k=1, device='cpu')
@@ -599,6 +601,15 @@ if __name__ == '__main__':
                       dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
     _stgan.disc_iters = 2
     _stgan._init_gen_disc_opt_scheduler(resolution=8, device='cpu')
+    _stgan._init_gen_disc_opt_scheduler(resolution=16, device='cpu')
+    _stgan._init_gen_disc_opt_scheduler(resolution=32, device='cpu')
+    _stgan._init_gen_disc_opt_scheduler(resolution=64, device='cpu')
+    _stgan._init_gen_disc_opt_scheduler(resolution=128, device='cpu')
+
+    print('Number of parameters: gen=' + to_human_readable(get_total_params(_stgan.gen)))   # 58.5M
+    print('Number of parameters: disc=' + to_human_readable(get_total_params(_stgan.disc))) # 11.3M
+    print('Number of parameters: TOTAL=' + _stgan.nparams_hr)                               # 69.8M
+
     # _stgan.use_half_precision = True
     # print(_stgan.nparams_hr)
     #
