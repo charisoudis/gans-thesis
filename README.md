@@ -16,6 +16,7 @@ _In order to achieve our goals, we train four models based on the Generative Adv
 ### Report \& Presentation
 - Final report PDF may be found here: https://thanasis.charisoudis.gr/pdf/gans-thesis-report.pdf
 - Presentation PDF (handout) may be found here: https://thanasis.charisoudis.gr/pdf/gans-thesis-presentation.pdf
+- Corresponding publication: _not-yet finalized_
 
 
 ## Regarding the code
