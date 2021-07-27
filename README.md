@@ -26,7 +26,7 @@ Open any of the provided notebooks (path: <code>notebooks/\*/\*.ipynb</code>) on
 Alternatively, you may run the <code>.py</code> files inside <code>src</code> directory, using the extensive comments as guidance.
 
 ## Code Stats
-| Total Lines (.py) | Source Code Lines (%) | Comment Lines % | Blank Lines (%) | Notebook Lines (.ipynb) | 
+| Total Lines (.py) | Source Code Lines (%) | Comment Lines (%) | Blank Lines (%) | Notebook Lines (.ipynb) | 
 | :---------------: | :-------------------: | :-------------: | :-------------: | :---------------------: |
 | 15612 | 8403 (54%) | 5529 (35%) | 1680 (11%) | 6945 |
 
