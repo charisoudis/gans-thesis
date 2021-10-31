@@ -60,10 +60,12 @@ class ExpandingBlock(nn.Module):
         c_out = c_in // 2 if c_out is None else c_out
 
         # Upscaling layer using transposed convolution
+        # noinspection PyTypeChecker
         self.upscale = nn.ConvTranspose2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding,
                                           output_padding=output_padding)
         _layers = []
         if use_skip:
+            # noinspection PyTypeChecker
             _layers.append(nn.Conv2d(c_in, c_out, kernel_size=3, padding=1))
 
         if use_norm:
@@ -128,12 +130,14 @@ class UNETExpandingBlock(nn.Module):
         """
         super(UNETExpandingBlock, self).__init__()
         # Up-sample + convolution (instead of transposed convolution)
+        # noinspection PyTypeChecker
         self.upsample_and_1st_conv = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
             nn.Conv2d(c_in, c_in // 2, kernel_size=2)
         )
         # Then, the output is concatenated with encoder's output at same level
         # Then, the rest of the ExpandingBlock architecture follows
+        # noinspection PyTypeChecker
         self._2nd_and_3rd_conv = nn.Sequential(
             # 2nd convolution layer
             nn.Conv2d(c_in, c_in // 2, kernel_size=3, padding=1),
@@ -191,6 +195,7 @@ class FeatureMapLayer(nn.Module):
         :param c_in: number of output channels
         """
         super(FeatureMapLayer, self).__init__()
+        # noinspection PyTypeChecker
         self.feature_map_block = nn.Conv2d(c_in, c_out, kernel_size=7, padding=3, padding_mode='reflect')
 
     def forward(self, x: Tensor) -> Tensor:
@@ -221,6 +226,7 @@ class ChannelsProjectLayer(nn.Module):
         :param (int) padding: nn.Conv2d's padding argument
         """
         super(ChannelsProjectLayer, self).__init__()
+        # noinspection PyTypeChecker
         self.feature_map_block = nn.Conv2d(c_in, c_out, stride=1, kernel_size=1, padding=padding)
         if use_spectral_norm:
             self.feature_map_block = nn.utils.spectral_norm(self.feature_map_block)

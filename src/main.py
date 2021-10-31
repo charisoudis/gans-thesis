@@ -11,6 +11,7 @@ from datasets.deep_fashion import ICRBCrossPoseDataset
 from modules.discriminators.cycle_gan import CycleGANDiscriminator
 from modules.generators.cycle_gan import CycleGANGenerator
 from utils.command_line_logger import CommandLineLogger
+from utils.filesystems.local import LocalFolder, LocalCapsule
 from utils.train import train_test_split
 
 
@@ -41,6 +42,7 @@ def main():
     logger.info('execution started')
 
     tensor_in = torch.ones(10, 1, 28, 28, device='cpu')
+    # noinspection PyTypeChecker
     tensor_out = nn.Conv2d(in_channels=1, out_channels=10, kernel_size=3, stride=2, padding=1).to('cpu')(tensor_in)
     logger.info('tensor_out.shape = ' + str([*tensor_out.shape]))
     logger.info('tensor_out.max = ' + str(tensor_out.detach().cpu().max().item()))
@@ -48,7 +50,8 @@ def main():
 
 # noinspection DuplicatedCode
 def preview_icrb_images() -> None:
-    dataset = ICRBCrossPoseDataset(image_transforms=transforms.Compose([transforms.ToTensor()]), pose=True)
+    dataset = ICRBCrossPoseDataset(image_transforms=transforms.Compose([transforms.ToTensor()]), pose=True,
+                                   dataset_fs_folder_or_root=LocalFolder.root(LocalCapsule(local_root='.datasets')))
 
     # Split dataset into training and test subsets
     train_set, test_set = train_test_split(dataset, splits=[90, 10])

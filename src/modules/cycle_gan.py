@@ -1,5 +1,5 @@
 import os
-from typing import Tuple, Optional, Sequence
+from typing import Tuple, Optional, Sequence, Union
 
 import click
 import numpy as np
@@ -333,7 +333,7 @@ class CycleGAN(nn.Module, IGanGModule):
         }
 
     def forward(self, real_a: Tensor, real_b: Tensor, lambda_identity: float = 0.1, lambda_cycle: float = 10) \
-            -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+            -> Tuple[Tensor, Tensor]:
         """
         Forward pass through the entire CycleGAN model.
         :param real_a: batch of images from real dataset of domain A
@@ -347,7 +347,7 @@ class CycleGAN(nn.Module, IGanGModule):
             self.gforward(real_a.shape[0])
 
         #############################################
-        ########   Update Discriminator(s)   ########
+        # ######   Update Discriminator(s)   ########
         #############################################
         # with self.gen_a_to_b.frozen():
         #     with self.gen_b_to_a.frozen():
@@ -404,7 +404,7 @@ class CycleGAN(nn.Module, IGanGModule):
                     self.disc_b_opt_lr_scheduler.step()
 
         #############################################
-        ########     Update Generator(s)     ########
+        # ######     Update Generator(s)     ########
         #############################################
         # with self.disc_a.frozen():
         #     with self.disc_b.frozen():
@@ -519,7 +519,7 @@ class CycleGAN(nn.Module, IGanGModule):
     # -------------
     #
 
-    def visualize_indices(self, indices: int or Sequence) -> Image:
+    def visualize_indices(self, indices: Union[int, tuple, Sequence]) -> Image:
         # Fetch images
         assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could not find dataset from model'
         real_a_images = []
@@ -564,8 +564,8 @@ class CycleGAN(nn.Module, IGanGModule):
         return plot_grid(grid=grid, figsize=(ncols, nrows),
                          footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)} | '
                                     f'i={indices}',
-                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
-                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses).item(), 3))}, ' +
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses).item(), 3))}')
 
     def visualize(self, reproducible: bool = False) -> Image:
         if reproducible:
@@ -593,8 +593,8 @@ class CycleGAN(nn.Module, IGanGModule):
         # Plot
         return plot_grid(grid=grid.numpy(), figsize=(ncols, nrows),
                          footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}',
-                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
-                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses).item(), 3))}, ' +
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses).item(), 3))}')
 
 
 if __name__ == '__main__':
@@ -639,7 +639,6 @@ if __name__ == '__main__':
         os.system('xdg-open /home/achariso/Pictures/Thesis/ccgan_sample.png')
     plt.imshow(_img)
     plt.show()
-
 
     print('Number of parameters: gen_a_to_b=' + _ccgan.gen_a_to_b.nparams_hr)
     print('Number of parameters: gen_b_to_a=' + _ccgan.gen_b_to_a.nparams_hr)

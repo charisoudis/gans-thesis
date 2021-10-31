@@ -9,6 +9,7 @@ from typing import Union, Optional, List, Sequence, Dict
 import torch
 import yaml
 from PIL.Image import Image
+from torch.utils.data import Sampler
 
 from utils.command_line_logger import CommandLineLogger
 from utils.data import ResumableRandomSampler
@@ -39,7 +40,8 @@ class GDriveDataset(FilesystemDataset):
             if type(zip_filename) == list else self.dataset_gfolder.file_by_name(zip_filename)
         assert self.zip_gfile is not None, f'zip_filename={zip_filename} NOT FOUND in Google Drive folder root'
 
-    def fetch_and_unzip(self, in_parallel: bool = False, show_progress: bool = False) -> Union[ApplyResult, bool]:
+    def fetch_and_unzip(self, in_parallel: bool = False,
+                        show_progress: bool = False) -> Union[list[Union[ApplyResult, bool]], ApplyResult, bool]:
         if self.is_fetched_and_unzipped():
             if hasattr(self, 'logger') and isinstance(self.logger, CommandLineLogger):
                 self.logger.debug('Dataset is fetched and unzipped!')
@@ -432,7 +434,8 @@ class GDriveModel(FilesystemModel):
                              f'{self.initial_step}')
             self.epoch_inc = False
 
-    def update_batch_size(self, new_batch_size: int, sampler_instance: Optional[ResumableRandomSampler] = None) -> None:
+    def update_batch_size(self, new_batch_size: int,
+                          sampler_instance: Optional[Union[ResumableRandomSampler, Sampler]] = None) -> None:
         """
         Updates default (checkpoint's) batch size to given while also correcting the `perm_index` value in sampler.
         :param (int) new_batch_size: new batch size

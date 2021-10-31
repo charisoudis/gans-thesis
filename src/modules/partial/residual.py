@@ -20,6 +20,7 @@ class ResidualBlock(nn.Module):
         :param h_dim: (when norm_type=='AdaIN'): number of neurons in hidden layers of AdaIN's transformation MLPs
         """
         super(ResidualBlock, self).__init__()
+        # noinspection PyTypeChecker
         self.conv1 = nn.Conv2d(c_in, c_in, kernel_size=3, padding=1, padding_mode='reflect')
         # Use InstanceNorm2d instead of BatchNorm2d because different images in batch may contain
         # very different styles and thus BatchNorm2 will average those tending to create blurry results
@@ -27,6 +28,7 @@ class ResidualBlock(nn.Module):
             nn.InstanceNorm2d(c_in) if norm_type == 'IN' else AdaptiveInstanceNorm2d(c_in, s_dim, h_dim)
         )
         self.activation = nn.ReLU()
+        # noinspection PyTypeChecker
         self.conv2 = nn.Conv2d(c_in, c_in, kernel_size=3, padding=1, padding_mode='reflect')
         self.norm2 = nn.BatchNorm2d(c_in) if norm_type == 'BN' else (
             nn.InstanceNorm2d(c_in) if norm_type == 'IN' else AdaptiveInstanceNorm2d(c_in, s_dim, h_dim)

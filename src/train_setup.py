@@ -14,10 +14,10 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.plot import ensure_matplotlib_fonts_exist
 
 ##########################################
-###         Parse CLI Arguments        ###
+# #         Parse CLI Arguments        ###
 ##########################################
 parser = argparse.ArgumentParser(description='Trains GAN model in PyTorch.')
-parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda',],
+parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
                     help='execution device (\'cpu\', or \'cuda\')')
 parser.add_argument('--log_level', type=str, default='debug', choices=['debug', 'info', 'warning', 'error', 'critical'],
                     help='default log level (\'debug\', \'info\', \'warning\', \'error\' or \'critical\')')
@@ -32,7 +32,7 @@ parser.add_argument('--run_locally', action='store_true',
 args = parser.parse_args()
 
 ##########################################
-###     Environment Initialization     ###
+# #     Environment Initialization     ###
 ##########################################
 run_locally = True
 if in_notebook() and not args.run_locally:
@@ -53,7 +53,7 @@ else:
     local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
     if not os.path.exists(local_gdrive_root):
         run_locally = False
-        local_gdrive_root = '/workspace/GoogleDrive'    # vast.ai
+        local_gdrive_root = '/workspace/GoogleDrive'  # vast.ai
         if not os.path.exists(local_gdrive_root):
             local_gdrive_root = input('local_gdrive_root = ')
 assert os.path.exists(local_gdrive_root), f'local_gdrive_root={local_gdrive_root} NOT FOUND'
@@ -71,7 +71,7 @@ os.environ['TRAIN_LOG_LEVEL'] = log_level
 seed = ManualSeedReproducible.manual_seed(args.seed)
 
 ##########################################
-###  GDrive Filesystem Initialization  ###
+# #  GDrive Filesystem Initialization  ###
 ##########################################
 #   - define FilesystemFolder to interact with files/folders under the root folder on Google Drive
 if exec_env == 'colab':

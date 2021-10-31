@@ -3,7 +3,7 @@ click
 torch>=1.7.0
 torchvision
 humanize
-matplotlib==3.3.1
+matplotlib
 colorlog
 prettytable
 requests
@@ -12,10 +12,11 @@ numpy
 Pillow
 ipython
 scipy
-httplib2==0.15.0
+httplib2
 oauth2client
 google-api-python-client
 pydrive
 tensorboard
-pyyaml>=5.1
+pyyaml
 h5py
+yaml

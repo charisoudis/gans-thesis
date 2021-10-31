@@ -6,7 +6,7 @@ import time
 from datetime import datetime as dt, timedelta
 from io import BufferedWriter, BufferedRandom
 from multiprocessing.pool import ApplyResult, ThreadPool
-from typing import Optional, List, Tuple, Union, Type
+from typing import Optional, List, Tuple, Union, Type, TextIO
 
 import httplib2
 from apiclient import errors as pydrive_errors
@@ -21,7 +21,6 @@ from pydrive.drive import GoogleDrive
 from pydrive.files import ApiRequestError, FileNotUploadedError, FileNotDownloadableError, GoogleDriveFile
 from pydrive.settings import InvalidConfigError
 from requests import post as post_request
-from typing.io import TextIO
 
 from utils.command_line_logger import CommandLineLogger
 from utils.data import unzip_file
@@ -98,8 +97,10 @@ class GDriveCapsule(FilesystemCapsule):
             if 'web' in _client_dict.keys():
                 _client_dict = _client_dict['web']
 
-        token_expires_at = dt.fromisoformat(_client_dict['access_token_expires_at']) if 'access_token_expires_at' in \
-            _client_dict.keys() else dt.fromtimestamp(0.0)
+        if 'access_token_expires_at' in _client_dict.keys():
+            token_expires_at = dt.fromisoformat(_client_dict['access_token_expires_at'])
+        else:
+            token_expires_at = dt.fromtimestamp(0.0)
         now = dt.utcnow()
         should_refresh = 'access_token' not in _client_dict.keys() or \
                          'access_token_expires_at' not in _client_dict.keys() or \
@@ -499,7 +500,7 @@ class GMediaIoDownload(MediaIoBaseDownload):
     # By default, the files will be downloaded in 10MB chunks
     DefaultChunkSizeInMB = 1
 
-    def __init__(self, fp: BufferedWriter or BufferedRandom or TextIO, file_request: HttpRequest,
+    def __init__(self, fp: Union[BufferedWriter, BufferedRandom, TextIO], file_request: HttpRequest,
                  bytes_written: int = 0):
         """
         GMediaIoDownload class constructor.
@@ -747,8 +748,8 @@ class GDriveFilesystem(Filesystem):
             # with self.tqdm(disable=not show_progress, total=100, unit='%') as progress_bar:
             with self.tqdm(
                     disable=not show_progress,
-                    unit="B",           # unit string to be displayed.
-                    unit_scale=True,    # let tqdm to determine the scale in kilo, mega..etc.
+                    unit="B",  # unit string to be displayed.
+                    unit_scale=True,  # let tqdm to determine the scale in kilo, mega..etc.
                     unit_divisor=1024,  # is used when unit_scale is true
                     total=http_request.resumable.size(),
                     initial=http_request.resumable_progress,

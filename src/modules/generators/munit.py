@@ -61,6 +61,7 @@ class MUNITContentEncoder(nn.Module):
         :param use_instance_norm: flag on to use/skip InstanceNorm2d before activation
         :return: torch.nn.Sequential
         """
+        # noinspection PyTypeChecker
         return nn.Sequential(
             nn.ReflectionPad2d(padding=padding),
             nn.utils.spectral_norm(
@@ -138,6 +139,7 @@ class MUNITDecoder(nn.Module):
         )
 
         # Rest layers of MUNIT generator's decoder network
+        # noinspection PyTypeChecker
         self.munit_decoder_rest_layers = nn.Sequential(
             # Upsampling blocks
             *[self.get_upsampling_block(c_in // (2 ** i), c_in // 2 ** (i + 1)) for i in range(n_upsampling_blocks)],
@@ -172,6 +174,7 @@ class MUNITDecoder(nn.Module):
         :param padding: padding parameter of Conv2d layer
         :return: torch.nn.Sequential
         """
+        # noinspection PyTypeChecker
         return nn.Sequential(
             nn.Upsample(scale_factor=2),
             nn.ReflectionPad2d(padding=padding),

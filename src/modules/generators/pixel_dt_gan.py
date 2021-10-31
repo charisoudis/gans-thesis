@@ -93,6 +93,7 @@ class PixelDTGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         # FIX: Update keys for expanding block
         state_dict = ExpandingBlock.fix_state_dict(state_dict)
         # Load model state
+        # noinspection PyTypeChecker
         nn.Module.load_state_dict(self, state_dict=state_dict, strict=strict)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

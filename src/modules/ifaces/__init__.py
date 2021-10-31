@@ -90,6 +90,7 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
         :return: an `int` object
         """
         if not self._nparams:
+            # noinspection PyTypeChecker
             self._nparams = get_total_params(self)
         return self._nparams
 
@@ -149,6 +150,8 @@ class IModule(FilesystemModel, Configurable, Evaluable, Visualizable, metaclass=
         :param (optional) colors: a list of tuples wherein the first is the color of the line and the second is the
                                   color of the point (default to None == [(blue1, blue2), (orange1, orange2),
                                                                           (green1, green2), (purple1, purple2), (greys)]
+        :param (bool) extract_dicts: set to True to save stripped versions of model checkpoints in separate files for
+                                     reusability
         :return: a list of PIL.Image objects
         """
         assert isinstance(self, FilesystemModel), 'Model must implement utils.ifaces.FilesystemFolder to visualize' + \

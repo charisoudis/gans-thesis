@@ -251,7 +251,7 @@ class StyleGan(nn.Module, IGanGModule):
         self.gen.reset_freeze_state()
         self.disc.reset_freeze_state()
         ################################################################################################################
-        ################################################# DEV LOGGING ##################################################
+        # ############################################### DEV LOGGING ##################################################
         ################################################################################################################
         # self.gen.plot_alpha_curve()
         # self.disc.plot_alpha_curve()
@@ -372,7 +372,7 @@ class StyleGan(nn.Module, IGanGModule):
             self.logger.debug(f'Slicing real batch (from {(batch_size + batch_size_mod_4)} --> {real.shape[0]})')
 
         ##########################################
-        ########   Update Discriminator   ########
+        # ######   Update Discriminator   ########
         ##########################################
         with self.gen.frozen():
             disc_losses = []
@@ -403,14 +403,14 @@ class StyleGan(nn.Module, IGanGModule):
                         self.disc_opt_lr_scheduler.step()
                 disc_losses.append(disc_loss.detach())
                 ########################################################################################################
-                ############################################# DEV LOGGING ##############################################
+                # ########################################### DEV LOGGING ##############################################
                 ########################################################################################################
                 # disc_losses.append(torch.tensor(0.0))
                 ########################################################################################################
             disc_loss = torch.mean(torch.stack(disc_losses))
 
         ##########################################
-        ########     Update Generator     ########
+        # ######     Update Generator     ########
         ##########################################
         with self.disc.frozen():
             #   - zero-out generators' gradients
@@ -448,7 +448,7 @@ class StyleGan(nn.Module, IGanGModule):
             if self.gen.alpha_index == len(self.gen.alpha_curve):
                 self.logger.debug(f'Reached gen.alpha_curve\'s end (alpha_index={self.gen.alpha_index}, alpha=1.0)')
             ############################################################################################################
-            ############################################### DEV LOGGING ################################################
+            # ############################################# DEV LOGGING ################################################
             ############################################################################################################
             # self.logger.debug(f'self.disc.alpha_index={self.disc.alpha_index}')
             ############################################################################################################
@@ -516,7 +516,7 @@ class StyleGan(nn.Module, IGanGModule):
                 gen_truncation = 3
             for index in indices:
                 # fake image
-                noise_multiplier = sorted((-1*gen_truncation, index, gen_truncation))[1]
+                noise_multiplier = sorted((-1 * gen_truncation, index, gen_truncation))[1]
                 noise = noise_multiplier * torch.randn(1, self.gen.locals['z_dim'], device=self.device)
                 fake_images.append(self.gen(noise).detach().squeeze(0).cpu())
                 # real image
@@ -539,11 +539,12 @@ class StyleGan(nn.Module, IGanGModule):
         return plot_grid(grid=grid, figsize=(ncols, nrows),
                          footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)} | '
                                     f'i={indices}',
-                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
-                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses).item(), 3))}, ' +
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses).item(), 3))}')
 
     def visualize(self, reproducible: bool = False) -> Image:
         if reproducible:
+            # noinspection PyTypeChecker
             return self.visualize_indices(indices=self.reproducible_indices)
 
         # Get first & last sample from saved images in self
@@ -567,8 +568,8 @@ class StyleGan(nn.Module, IGanGModule):
         # Plot
         return plot_grid(grid=grid.numpy(), figsize=(ncols, nrows),
                          footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}',
-                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
-                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses).item(), 3))}, ' +
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses).item(), 3))}')
 
 
 if __name__ == '__main__':
@@ -597,6 +598,7 @@ if __name__ == '__main__':
                               n_samples=4, batch_size=2, f1_k=1, device='cpu')
 
     # Initialize model
+    # noinspection PyTypeChecker
     _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='default', chkpt_step=None, chkpt_epoch=None,
                       dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
     _stgan.disc_iters = 2
@@ -606,9 +608,9 @@ if __name__ == '__main__':
     _stgan._init_gen_disc_opt_scheduler(resolution=64, device='cpu')
     _stgan._init_gen_disc_opt_scheduler(resolution=128, device='cpu')
 
-    print('Number of parameters: gen=' + to_human_readable(get_total_params(_stgan.gen)))   # 58.5M
-    print('Number of parameters: disc=' + to_human_readable(get_total_params(_stgan.disc))) # 11.3M
-    print('Number of parameters: TOTAL=' + _stgan.nparams_hr)                               # 69.8M
+    print('Number of parameters: gen=' + to_human_readable(get_total_params(_stgan.gen)))  # 58.5M
+    print('Number of parameters: disc=' + to_human_readable(get_total_params(_stgan.disc)))  # 11.3M
+    print('Number of parameters: TOTAL=' + _stgan.nparams_hr)  # 69.8M
 
     # _stgan.use_half_precision = True
     # print(_stgan.nparams_hr)

@@ -28,6 +28,7 @@ class StyleGanDiscriminatorBlock(nn.Module):
 
         self.is_initial_block = is_initial_block
         if self.is_initial_block:
+            # noinspection PyTypeChecker
             self.disc_block = nn.Sequential(
                 BatchStd(),
                 nn.Conv2d(c_in + 1, c_out, kernel_size=3, stride=1, padding=1),
@@ -38,6 +39,7 @@ class StyleGanDiscriminatorBlock(nn.Module):
                 nn.Linear(c_out * (initial_shape - 1) ** 2, 1)
             )
         else:
+            # noinspection PyTypeChecker
             self.disc_block = nn.Sequential(
                 nn.Conv2d(c_in, c_out, kernel_size=3, stride=1, padding=1),
                 nn.LeakyReLU(0.2),
@@ -139,7 +141,7 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         # Get current alpha value
         alpha = self.alpha
         ################################################################################################################
-        ################################################# DEV LOGGING ##################################################
+        # ############################################### DEV LOGGING ##################################################
         ################################################################################################################
         # if abs(alpha - 0.5) < 1e-3:
         #     self.logger.debug(f'[DISC] alpha={alpha} (alpha_index={self.alpha_index}, len()={len(self.alpha_curve)})')

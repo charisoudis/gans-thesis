@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Sequence
+from typing import Optional, Tuple, Sequence, Union
 
 import click
 import numpy as np
@@ -229,6 +229,7 @@ class PGPG(nn.Module, IGanGModule):
         #       [NEW KEY] "g1.contract1.unet_contracting_block.0.contracting_block.0.weight"
         gen_state_dict = UNETContractingBlock.fix_state_dict(state_dict['gen'])
         # Load model checkpoints
+        # noinspection PyTypeChecker
         self.gen.load_state_dict(gen_state_dict)
         self.gen_opt.load_state_dict(state_dict['gen_opt'])
         self.disc.load_state_dict(state_dict['disc'])
@@ -287,7 +288,7 @@ class PGPG(nn.Module, IGanGModule):
             self.gforward(image_1.shape[0])
 
         ##########################################
-        ########   Update Discriminator   ########
+        # ######   Update Discriminator   ########
         ##########################################
         with self.gen.frozen():
             self.disc_opt.zero_grad()  # Zero out discriminator gradient (before backprop)
@@ -304,7 +305,7 @@ class PGPG(nn.Module, IGanGModule):
                     self.disc_opt_lr_scheduler.step()
 
         ##########################################
-        ########     Update Generator     ########
+        # ######     Update Generator     ########
         ##########################################
         with self.disc.frozen():
             self.gen_opt.zero_grad()
@@ -350,7 +351,7 @@ class PGPG(nn.Module, IGanGModule):
     # -------------
     #
 
-    def visualize_indices(self, indices: int or Sequence) -> Image:
+    def visualize_indices(self, indices: Union[int, tuple, Sequence]) -> Image:
         # Fetch images
         assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could not find dataset from model'
         images = []
@@ -371,8 +372,8 @@ class PGPG(nn.Module, IGanGModule):
         return plot_grid(grid=grid, figsize=(ncols, nrows),
                          footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)} | '
                                     f'indices={indices}',
-                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, '
-                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses).item(), 3))}, '
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses).item(), 3))}')
 
     def visualize(self, reproducible: bool = False) -> Image:
         if reproducible:
@@ -402,8 +403,8 @@ class PGPG(nn.Module, IGanGModule):
         # Plot
         return plot_grid(grid=grid, figsize=(ncols, nrows),
                          footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}',
-                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, '
-                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses), 3))}')
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses).item(), 3))}, '
+                                    f'disc_loss={"{0:0.3f}".format(round(np.mean(self.disc_losses).item(), 3))}')
 
 
 if __name__ == '__main__':

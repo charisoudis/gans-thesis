@@ -67,6 +67,7 @@ class InceptionV3(nn.Module, IGModule):
         :param strict: see `nn.Module.load_state_dict()`
         :return: see `nn.Module.load_state_dict()`
         """
+        # noinspection PyTypeChecker
         return self.inception_v3.load_state_dict(state_dict=state_dict, strict=strict)
 
     def load_configuration(self, configuration: dict) -> None:

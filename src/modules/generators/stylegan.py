@@ -68,6 +68,7 @@ class StyleGanGeneratorBlock(nn.Module):
         super().__init__()
         self.c_in = c_in
         self.c_out = c_out
+        # noinspection PyTypeChecker
         self.conv_block = nn.Sequential(
             nn.Conv2d(c_in, c_out, kernel_size, padding=1),
             InjectNoise(c_out),
@@ -137,6 +138,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.constant = nn.Parameter(torch.ones(1, c_const, 4, 4))
         # Generator convolutional blocks
         self.block0 = StyleGanGeneratorBlock(c_in=c_const, c_out=c_hidden, w_dim=w_dim, kernel_size=kernel_size)
+        # noinspection PyTypeChecker
         self.block0_toRGB = nn.Conv2d(c_hidden, c_out, kernel_size=1)
         for bi in range(3, int(math.log2(resolution)) + 1):
             block_index = bi - 2
@@ -144,7 +146,9 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
             setattr(self, f'block{block_index}',
                     StyleGanGeneratorBlock(c_in=c_hidden, c_out=c_hidden, w_dim=w_dim, kernel_size=kernel_size))
             if bi == int(math.log2(resolution)):
+                # noinspection PyTypeChecker
                 setattr(self, f'upsample{block_index}_toRGB', nn.Conv2d(c_hidden, c_out, kernel_size=1))
+                # noinspection PyTypeChecker
                 setattr(self, f'block{block_index}_toRGB', nn.Conv2d(c_hidden, c_out, kernel_size=1))
         # Save args
         self.resolution = self.locals['resolution']
@@ -173,7 +177,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         # Get current alpha value
         alpha = self.alpha
         ################################################################################################################
-        ################################################# DEV LOGGING ##################################################
+        # ############################################### DEV LOGGING ##################################################
         ################################################################################################################
         # if abs(alpha - 0.5) < 1e-3:
         #     self.logger.debug(f'[GEN] alpha={alpha} (alpha_index={self.alpha_index}, len()={len(self.alpha_curve)})')
@@ -192,7 +196,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         x = self.constant
         x = self.block0(x, w)
         ################################################################################################################
-        ################################################# DEV LOGGING ##################################################
+        # ############################################### DEV LOGGING ##################################################
         ################################################################################################################
         # self.logger.debug(f'x: {x.shape} <-- block0(c_in={self.block0.c_in},c_o={self.block0.c_out}, w) '
         #                   f'<-- constant: {self.constant.shape}')
@@ -206,7 +210,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
             # x_shape = x.shape
             x = upsample(x)
             ############################################################################################################
-            ############################################### DEV LOGGING ################################################
+            # ############################################# DEV LOGGING ################################################
             ############################################################################################################
             # self.logger.debug(f'x: {x.shape} <-- upsample{block_index} <-- x: {x_shape}')
             ############################################################################################################
@@ -215,7 +219,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                 upsample_toRGB = getattr(self, f'upsample{block_index}_toRGB')
                 block_toRGB = getattr(self, f'block{block_index}_toRGB')
                 ########################################################################################################
-                ############################################# DEV LOGGING ##############################################
+                # ########################################### DEV LOGGING ##############################################
                 ########################################################################################################
                 # self.logger.debug(f'x <- alpha={alpha} - block{block_index}_toRGB(c_h={block_toRGB.in_channels},'
                 #                   f'c_o={block_toRGB.out_channels}) <-- block{block_index}(c_in={block.c_in},'
@@ -223,7 +227,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                 ########################################################################################################
                 x_upsampled = upsample_toRGB(x)
                 ########################################################################################################
-                ############################################# DEV LOGGING ##############################################
+                # ########################################### DEV LOGGING ##############################################
                 ########################################################################################################
                 # self.logger.debug(f'x_upsampled <- 1-alpha={(1 - alpha)} - upsample{block_index}_toRGB('
                 #                   f'c_in={upsample_toRGB.in_channels},c_o={upsample_toRGB.out_channels}) <-- '
@@ -235,7 +239,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
             # xs = x.shape
             x = block(x, w)
             ############################################################################################################
-            ############################################### DEV LOGGING ################################################
+            # ############################################# DEV LOGGING ################################################
             ############################################################################################################
             # self.logger.debug(f'x: {x.shape} <-- block{block_index}(c_in={block.c_in},c_o={block.c_out}) <-- x: {xs}')
             ############################################################################################################

@@ -32,6 +32,7 @@ class ContractingBlock(nn.Module):
         """
         super(ContractingBlock, self).__init__()
         c_out = c_in * 2 if not c_out else c_out
+        # noinspection PyTypeChecker
         _layers = [nn.Conv2d(c_in, c_out, kernel_size=kernel_size, padding=padding, stride=stride,
                              padding_mode=padding_mode), ]
         if use_norm:

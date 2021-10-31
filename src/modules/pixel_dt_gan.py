@@ -1,5 +1,5 @@
 import json
-from typing import Optional, Tuple, Sequence
+from typing import Optional, Tuple, Sequence, Union
 
 import click
 import matplotlib.pyplot as plt
@@ -302,7 +302,7 @@ class PixelDTGan(nn.Module, IGanGModule):
             self.gforward(img_s.shape[0])
 
         ##########################################
-        ########  Update Discriminators   ########
+        # ######  Update Discriminators   ########
         ##########################################
         with self.gen.frozen():
             disc_loss = {'r': None, 'a': None}
@@ -335,7 +335,7 @@ class PixelDTGan(nn.Module, IGanGModule):
                 self.img_t_prev = img_t.clone()
 
         ##########################################
-        ########     Update Generator     ########
+        # ######     Update Generator     ########
         ##########################################
         with self.disc_r.frozen(), self.disc_a.frozen():
             self.gen_opt.zero_grad()
@@ -384,7 +384,7 @@ class PixelDTGan(nn.Module, IGanGModule):
     # -------------
     #
 
-    def visualize_indices(self, indices: int or Sequence) -> Image:
+    def visualize_indices(self, indices: Union[int, tuple, Sequence]) -> Image:
         # Fetch images
         assert hasattr(self, 'evaluator') and hasattr(self.evaluator, 'dataset'), 'Could not find dataset from model'
         images = []
@@ -405,9 +405,9 @@ class PixelDTGan(nn.Module, IGanGModule):
         return plot_grid(grid=grid, figsize=(ncols, nrows),
                          footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)} | '
                                     f'i={indices}',
-                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
-                                    f'disc_loss=(r: {"{0:0.3f}".format(round(np.mean(self.disc_r_losses), 3))}, ' +
-                                    f'a: {"{0:0.3f}".format(round(np.mean(self.disc_a_losses), 3))})')
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses).item(), 3))}, ' +
+                                    f'disc_loss=(r: {"{0:0.3f}".format(round(np.mean(self.disc_r_losses).item(), 3))}' +
+                                    f', a: {"{0:0.3f}".format(round(np.mean(self.disc_a_losses).item(), 3))})')
 
     def visualize(self, reproducible: bool = False) -> Image:
         if reproducible:
@@ -433,9 +433,9 @@ class PixelDTGan(nn.Module, IGanGModule):
         # Plot
         return plot_grid(grid=grid.numpy(), figsize=(ncols, nrows),
                          footnote_l=f'epoch={str(self.epoch).zfill(3)} | step={str(self.step).zfill(10)}',
-                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses), 3))}, ' +
-                                    f'disc_loss=(r: {"{0:0.3f}".format(round(np.mean(self.disc_r_losses), 3))}, ' +
-                                    f'a: {"{0:0.3f}".format(round(np.mean(self.disc_a_losses), 3))})')
+                         footnote_r=f'gen_loss={"{0:0.3f}".format(round(np.mean(self.gen_losses).item(), 3))}, ' +
+                                    f'disc_loss=(r: {"{0:0.3f}".format(round(np.mean(self.disc_r_losses).item(), 3))}' +
+                                    f', a: {"{0:0.3f}".format(round(np.mean(self.disc_a_losses).item(), 3))})')
 
 
 if __name__ == '__main__':
@@ -469,7 +469,8 @@ if __name__ == '__main__':
                               f1_k=1)
 
     # Initialize model
-    c = torch.load('/home/achariso/PycharmProjects/gans-thesis/.gdrive/Models/model_name=pixeldtgan/Checkpoints/epoch=220/0000055800.pth', 'cpu')
+    c = torch.load('/home/achariso/PycharmProjects/gans-thesis/.gdrive/Models/model_name=pixeldtgan/Checkpoints/' +
+                   'epoch=220/0000055800.pth', 'cpu')
     print(json.dumps(list(c['gen'].keys()), indent=4))
     # print(chkpt.keys())
     _pxldt = PixelDTGan(model_fs_folder_or_root=_models_groot, config_id='default', dataset_len=len(_dataset),
@@ -499,7 +500,7 @@ if __name__ == '__main__':
     _disc_r_loss, _disc_a_loss, _gen_loss = _pxldt(_x.to(_device), _y.to(_device))
     print(_disc_r_loss, _disc_a_loss, _gen_loss)
 
-    _img = _pxldt.visualize(reproducible=(300, 1001))
+    _img = _pxldt.visualize(reproducible=True)
     plt.imshow(_img)
     plt.show()
     # _img.show()

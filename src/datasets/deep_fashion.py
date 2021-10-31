@@ -476,7 +476,7 @@ class FISBDataset(Dataset, GDriveDataset):
     NormalizeStd = 0.5
 
     ################################################################################################################
-    ################################################# DEV LOGGING ##################################################
+    # ############################################### DEV LOGGING ##################################################
     ################################################################################################################
     # IMAGE_R = None
     ################################################################################################################
@@ -567,7 +567,7 @@ class FISBDataset(Dataset, GDriveDataset):
                               f'in the Fashion Synthesis Benchmark dataset')
 
         ################################################################################################################
-        ################################################# DEV LOGGING ##################################################
+        # ###############################################  DEV LOGGING  ################################################
         ################################################################################################################
         # self.IMAGE_R = torch.randn(3, 128, 128)
         ################################################################################################################
@@ -591,7 +591,7 @@ class FISBDataset(Dataset, GDriveDataset):
         :return: an image from ICRB dataset as a torch.Tensor object
         """
         ################################################################################################################
-        ################################################# DEV LOGGING ##################################################
+        # ############################################### DEV LOGGING ##################################################
         ################################################################################################################
         # return self.IMAGE_R
         ################################################################################################################
@@ -908,25 +908,25 @@ class ICRBScraper:
             'id': int(os.path.basename(_i[0]).replace('id_', '')),
             'path': _i[0],
             'images': [_f for _f in _i[2] if _f.endswith('.jpg')],
-        }, [_i for _i in list(os.walk(self.img_dir_path)) if '/id_' in _i[0]]))
+        }, [i for i in list(os.walk(self.img_dir_path)) if '/id_' in i[0]]))
         id_dirs_list = sorted(id_dirs_list, key=lambda _i: _i['id'])
 
         # Search for duplicates
         duplicates_list = {}
-        for _i in range(len(id_dirs_list)):
-            _id = id_dirs_list[_i]['id']
+        for i in range(len(id_dirs_list)):
+            _id = id_dirs_list[i]['id']
             _id_str = str(_id)
-            while _i < len(id_dirs_list) - 1 and _id == id_dirs_list[_i + 1]['id']:
+            while i < len(id_dirs_list) - 1 and _id == id_dirs_list[i + 1]['id']:
                 if _id_str not in duplicates_list.keys():
                     duplicates_list[_id_str] = [{
-                        'path': id_dirs_list[_i]['path'],
-                        'images': id_dirs_list[_i]['images'],
+                        'path': id_dirs_list[i]['path'],
+                        'images': id_dirs_list[i]['images'],
                     }, ]
                 duplicates_list[_id_str].append({
-                    'path': id_dirs_list[_i + 1]['path'],
-                    'images': id_dirs_list[_i + 1]['images'],
+                    'path': id_dirs_list[i + 1]['path'],
+                    'images': id_dirs_list[i + 1]['images'],
                 })
-                _i += 1
+                i += 1
 
         # print(json.dumps(duplicates_list, indent=4))
         duplicates_count = len(duplicates_list.keys())
@@ -935,7 +935,7 @@ class ICRBScraper:
         # Resolve duplicates
         with self.tqdm(total=duplicates_count, file=sys.stdout) as progress_bar:
             for _id, _dirs in duplicates_list.items():
-                _count_list = [len(_i['images']) for _i in _dirs]
+                _count_list = [len(i['images']) for i in _dirs]
                 _target_images_count = max(_count_list)
                 _target_index = _count_list.index(_target_images_count)
 
@@ -1173,15 +1173,15 @@ class ICRBScraper:
 
         # Prefix images
         _key_prefix = mode.replace('info', '')
-        for _i, _name in enumerate(_dict[f'{_key_prefix}images']):
-            _dict[f'{_key_prefix}images'][_i] = f'{prefix}{_name}'
+        for i, _name in enumerate(_dict[f'{_key_prefix}images']):
+            _dict[f'{_key_prefix}images'][i] = f'{prefix}{_name}'
         for _k, _v in list(_dict[f'{_key_prefix}image_groups'].items()):
             _dict[f'{_key_prefix}image_groups'][f'{prefix}{_k}'] = _dict[f'{_key_prefix}image_groups'][_k].copy()
             del _dict[f'{_key_prefix}image_groups'][_k]
         if mode == 'posable_info':
-            for _i, _pair in enumerate(_dict['posable_image_pairs']):
-                _dict['posable_image_pairs'][_i][0] = f'{prefix}{_pair[0]}'
-                _dict['posable_image_pairs'][_i][1] = f'{prefix}{_pair[1]}'
+            for i, _pair in enumerate(_dict['posable_image_pairs']):
+                _dict['posable_image_pairs'][i][0] = f'{prefix}{_pair[0]}'
+                _dict['posable_image_pairs'][i][1] = f'{prefix}{_pair[1]}'
 
         return _dict
 
@@ -1360,6 +1360,7 @@ class FISBScraper:
                 assert background_counts == self.total_images_count, \
                     f'self.backgrounds has {background_counts} instead of {self.total_images_count}: ERROR'
 
+    # noinspection PyUnusedLocal
     @staticmethod
     def get_background_color(image: Tensor, w_start: int or tuple = (10, 105), h_start: int = 5, w_band: int = 15,
                              h_band: int = 10, index: Optional[int] = None, bin_band: int = 5):
@@ -1401,7 +1402,6 @@ class FISBScraper:
         self.crops = []
         self.backgrounds = {}
         for index in self.tqdm(range(self.total_images_count), file=sys.stdout):
-            index = 20819
             # Fetch image
             img_h5 = self.img_dataset[index]
             img = self.img_mean_max * img_h5 + self.img_mean
@@ -1529,7 +1529,13 @@ class FISBScraper:
         # plt.show()
 
     @staticmethod
-    def should_crop_top(t: torch.Tensor, crop_shape: int or tuple = 10) -> int or False:
+    def should_crop_top(t: torch.Tensor, crop_shape: Union[int, list] = 10) -> int or False:
+        """
+        Check whether the image in given tensor should be cropped, be checking if the area to be cropped is ones only.
+        :param (torch.Tensor) t: input image as a torch.Tensor object with CxHxW order
+        :param (int or list) crop_shape: crop height and width of image (or sequence of crop shapes for multiple checks)
+        :return: the found target shape if one found, otherwise False is returned
+        """
         if type(crop_shape) == int:
             crop_shape = (crop_shape,)
         crop_shape.sort(reverse=True)
@@ -1552,11 +1558,11 @@ class FISBScraper:
         return False
 
     @staticmethod
-    def should_crop_bottom(t: torch.Tensor, target_shape: int or tuple = 110) -> int or False:
+    def should_crop_bottom(t: torch.Tensor, target_shape: Union[int, list] = 110) -> int or False:
         """
         Check whether the image in given tensor should be cropped, be checking if the area to be cropped is ones only.
         :param (torch.Tensor) t: input image as a torch.Tensor object with CxHxW order
-        :param (int or tuple) target_shape: target height and width of image (or sequence of target shapes for multiple
+        :param (int or list) target_shape: target height and width of image (or sequence of target shapes for multiple
                                             checks)
         :return: the found target shape if one found, otherwise False is returned
         """
@@ -1669,7 +1675,7 @@ if __name__ == '__main__':
     # Init Dataset
     _dl = FISBDataloader(_datasets_groot, target_shape=128, target_channels=3, batch_size=1,
                          pin_memory=False, log_level='debug', load_in_memory=False)
-                         # min_color='#f0f0f0')
+    # min_color='#f0f0f0')
 
     # Index 54886 is dark
     print(f'len(_dl.dataset)={len(_dl.dataset)}')

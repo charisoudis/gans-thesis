@@ -48,7 +48,9 @@ class MUNIT(nn.Module):
 
         # Optimizers
         # Attention: In this version of MUNIT we jointly train both generators and jointly train both discriminators
+        # noinspection PyTypeChecker
         self.gen_opt, _ = get_optimizer(self.gen_a, self.gen_b, lr=1e-2)
+        # noinspection PyTypeChecker
         self.disc_opt, _ = get_optimizer(self.disc_a, self.disc_b, lr=1e-2)
         # Optimizer LR Schedulers
         self.lr_scheduler_type = lr_scheduler_type

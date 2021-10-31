@@ -297,6 +297,7 @@ class ReceptiveFieldCalculator:
 
         n_out = math.floor((n_in - k + 2 * p) / s) + 1
         padding = (n_out - 1) * s - n_in + k
+        # noinspection PyUnusedLocal
         p_right = math.ceil(padding / 2)
         p_left = math.floor(padding / 2)
 
