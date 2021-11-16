@@ -36,7 +36,7 @@ class GDriveCapsule(FilesystemCapsule):
     """
 
     def __init__(self, local_gdrive_root: str, use_refresh_token: bool = False, use_http_cache: bool = False,
-                 update_credentials: bool = False):
+                 update_credentials: bool = False, project_root: str = '/'):
         """
         :param (str) local_gdrive_root: absolute path to the local directory where Google Drive files will be synced to
         :param (bool) use_refresh_token: set to True to use refresh token found inside the `client_secrets.json` file,
@@ -45,10 +45,11 @@ class GDriveCapsule(FilesystemCapsule):
         :param (bool) use_http_cache: set to True to have the Http client cache HTTP requests based on response headers
         :param (bool) update_credentials: set to True to have json file updated with new access_token/token expiry
                                           if a new token was generated
+        :param (str) project_root: relative path to folder considered as root for the project
         """
         self.logger = CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'), name=self.__class__.__name__)
-        self.local_root = local_gdrive_root
-        self.client_secrets_filepath = f'{local_gdrive_root}/client_secrets.json'
+        self.local_root = f'{local_gdrive_root}{project_root}'.rstrip('/')
+        self.client_secrets_filepath = f'{self.local_root}/client_secrets.json'
         self.update_credentials = update_credentials
 
         # Create a pydrive.drive.GoogleAuth instance
@@ -60,7 +61,7 @@ class GDriveCapsule(FilesystemCapsule):
             self.credentials = self.get_client_dict(update_credentials=update_credentials)
             # Get authenticated Http client
             self.gservice, self.ghttp, self.gcredentials = self.get_service(
-                cache_root=f'{local_gdrive_root}/.http_cache' if use_http_cache else None
+                cache_root=f'{self.local_root}/.http_cache' if use_http_cache else None
             )
             # and set the correct resource and http instances
             self.pydrive_auth.credentials = self.gcredentials

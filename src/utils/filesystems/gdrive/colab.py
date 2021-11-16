@@ -10,12 +10,13 @@ class ColabCapsule(LocalCapsule):
     will submit HTTP request for the various needed operations (e.g. download/upload/list ops).
     """
 
-    def __init__(self, local_gdrive_root: str = '/content/drive/MyDrive'):
+    def __init__(self, local_gdrive_root: str = '/content/drive/MyDrive', project_root: str = '/'):
         """
         ColabCapsule class constructor.
         :param (str) local_gdrive_root: absolute path to the local directory where Google Drive files will be synced to
+        :param (str) project_root: relative path to folder considered as root for the project
         """
-        super(ColabCapsule, self).__init__(local_root=local_gdrive_root)
+        super(ColabCapsule, self).__init__(local_root=f'{local_gdrive_root}{project_root}'.rstrip('/'))
 
 
 class ColabFile(LocalFile):

@@ -29,6 +29,9 @@ parser.add_argument('-use_refresh_token', action='store_true',
                     help='if set will use client_secrets.json to connect to Google Drive, else will ask for auth code')
 parser.add_argument('--run_locally', action='store_true',
                     help='flag must be present to start local running (aka first pass run)')
+# New GDrive root (e.g. "/Education/AUTH/COURSES/10th Semester - Thesis/ThesisGStorage")
+parser.add_argument('--gdrive_new_root', type=str, default='/',
+                    help='Relative path of Google Drive folder to be considered as root')
 args = parser.parse_args()
 
 ##########################################
