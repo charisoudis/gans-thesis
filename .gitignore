@@ -2,6 +2,8 @@
 *.json
 *.bak
 .gdrive/*
+.gdrive_personal/*
+.gdrive_personal
 .ipynb_checkpoints
 .ipynb_checkpoints/*
 .http_cache

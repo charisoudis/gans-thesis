@@ -30,8 +30,8 @@ parser.add_argument('-use_refresh_token', action='store_true',
 parser.add_argument('--run_locally', action='store_true',
                     help='flag must be present to start local running (aka first pass run)')
 # New GDrive root (e.g. "/Education/AUTH/COURSES/10th Semester - Thesis/ThesisGStorage")
-parser.add_argument('--gdrive_new_root', type=str, default='/',
-                    help='Relative path of Google Drive folder to be considered as root')
+parser.add_argument('--gdrive_which', type=str, default='auth',
+                    help='Choose which Google Drive will be used as a storage devices (one of "personal", "auth")')
 args = parser.parse_args()
 
 ##########################################
@@ -41,6 +41,9 @@ run_locally = True
 if in_notebook() and not args.run_locally:
     run_locally = False  # local runs are performed vis IDE runs (and thus terminal)
 os.environ['TRAIN_ENV'] = 'local' if run_locally else 'nonlocal'
+
+# Get relative path from Google Drive's root to thesis folder
+cloud_root = None if args.gdrive_which == 'auth' else '/Education/AUTH/COURSES/10th Semester - Thesis/ThesisGStorage'
 
 # Check if running inside Colab or Kaggle
 if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
@@ -95,7 +98,7 @@ else:
     gcapsule = GDriveCapsule(local_gdrive_root=local_gdrive_root, use_http_cache=True, update_credentials=True,
                              use_refresh_token=use_refresh_token)
     fs = GDriveFilesystem(gcapsule=gcapsule)
-    groot = GDriveFolder.root(capsule_or_fs=fs, update_cache=True)
+    groot = GDriveFolder.root(capsule_or_fs=fs, update_cache=True, cloud_root=cloud_root)
 #   - define immediate sub-folders of root folder
 # print(json.dumps(groot.subfolders, indent=4))
 datasets_groot = groot.subfolder_by_name('Datasets')

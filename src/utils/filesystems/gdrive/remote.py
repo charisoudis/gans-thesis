@@ -479,16 +479,28 @@ class GDriveFolder(FilesystemFolder):
                             cloud_parent=cloud_parent, update_cache=update_cache)
 
     @staticmethod
-    def root(capsule_or_fs: Union[GDriveCapsule, 'GDriveFilesystem'], update_cache: bool = False) -> 'GDriveFolder':
+    def root(capsule_or_fs: Union[GDriveCapsule, 'GDriveFilesystem'], update_cache: bool = False,
+             cloud_root: Union[GoogleDriveFile, str] = None) -> 'GDriveFolder':
         """
         Get the an `utils.gdrive.GDriveFolder` instance to interact with Google Drive's root folder.
         :param capsule_or_fs: see `utils.ifaces.FilesystemFolder::instance` method
         :param update_cache: see `utils.ifaces.FilesystemFolder::instance` method
+        :param cloud_root: either a
         :return: an `utils.gdrive.GDriveFolder` instance
         """
         fs = capsule_or_fs if isinstance(capsule_or_fs, GDriveFilesystem) else GDriveFilesystem(gcapsule=capsule_or_fs)
-        return GDriveFolder(fs=fs, local_root=fs.local_root, cloud_root=None, cloud_parent=None,
-                            update_cache=update_cache)
+        gf = GDriveFolder(fs=fs, local_root=fs.local_root,
+                          cloud_root=cloud_root if not type(cloud_root) == str else None, cloud_parent=None,
+                          update_cache=update_cache)
+        # Set correct root via relative path
+        if type(cloud_root) == str:
+            folder_names = cloud_root.strip('/').split('/')
+            sf, spf = gf, None
+            for fn in folder_names:
+                sf, spf = sf.subfolder_by_name(folder_name=fn, recursive=False), sf
+                assert sf is not None
+            return sf
+        return gf
 
 
 class GMediaIoDownload(MediaIoBaseDownload):
@@ -805,7 +817,11 @@ class GDriveFilesystem(Filesystem):
 
 
 if __name__ == '__main__':
-    _gc = GDriveCapsule(local_gdrive_root='/home/achariso/PycharmProjects/gans-thesis/.gdrive', use_refresh_token=True)
+    GDRIVE_WHICH = 'personal'  # 'personal', 'auth'
+    _cloud_root = None if GDRIVE_WHICH == 'auth' else '/Education/AUTH/COURSES/10th Semester - Thesis/ThesisGStorage'
+    _gd_suffix = '_personal' if GDRIVE_WHICH == 'personal' else ''
+    _gc = GDriveCapsule(local_gdrive_root=f'/home/achariso/PycharmProjects/gans-thesis/.gdrive{_gd_suffix}',
+                        use_refresh_token=True)
     _gfs = GDriveFilesystem(gcapsule=_gc)
-    _gf = GDriveFolder.root(_gfs, update_cache=True)
-    _gf.upload_file(local_filename='0000037800.json', show_progress=True)
+    _gf = GDriveFolder.root(_gfs, update_cache=True, cloud_root=_cloud_root)
+    _gf.upload_file(local_filename='main.py', show_progress=True)
