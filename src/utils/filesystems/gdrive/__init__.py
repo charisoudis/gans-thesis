@@ -41,7 +41,7 @@ class GDriveDataset(FilesystemDataset):
         assert self.zip_gfile is not None, f'zip_filename={zip_filename} NOT FOUND in Google Drive folder root'
 
     def fetch_and_unzip(self, in_parallel: bool = False,
-                        show_progress: bool = False) -> Union[list[Union[ApplyResult, bool]], ApplyResult, bool]:
+                        show_progress: bool = False) -> Union[List[Union[ApplyResult, bool]], ApplyResult, bool]:
         if self.is_fetched_and_unzipped():
             if hasattr(self, 'logger') and isinstance(self.logger, CommandLineLogger):
                 self.logger.debug('Dataset is fetched and unzipped!')
