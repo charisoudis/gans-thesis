@@ -14,7 +14,7 @@ from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.plot import ensure_matplotlib_fonts_exist
 
 ##########################################
-# #         Parse CLI Arguments        ###
+###         Parse CLI Arguments        ###
 ##########################################
 parser = argparse.ArgumentParser(description='Trains GAN model in PyTorch.')
 parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
@@ -35,15 +35,17 @@ parser.add_argument('--gdrive_which', type=str, default='auth',
 args = parser.parse_args()
 
 ##########################################
-# #     Environment Initialization     ###
+###     Environment Initialization     ###
 ##########################################
 run_locally = True
 if in_notebook() and not args.run_locally:
     run_locally = False  # local runs are performed vis IDE runs (and thus terminal)
 os.environ['TRAIN_ENV'] = 'local' if run_locally else 'nonlocal'
 
-# Get relative path from Google Drive's root to thesis folder
-cloud_root = None if args.gdrive_which == 'auth' else '/Education/AUTH/COURSES/10th Semester - Thesis/ThesisGStorage'
+# ID of Google Drive folder to be considered as project root
+#   - auth: the entire drive will be used for thesis storage (so no root change would be done)
+#   - personal: thesis storage is inside a single directory of my personal Google Drive --> this id must be provided
+cloud_root = None if args.gdrive_which == 'auth' else '12IiDRSnj6r7Jd66Yxz3ZZTn9EFW-Qnqu'
 
 # Check if running inside Colab or Kaggle
 if 'google.colab' in sys.modules or 'google.colab' in str(get_ipython()) or 'COLAB_GPU' in os.environ:
@@ -77,7 +79,7 @@ os.environ['TRAIN_LOG_LEVEL'] = log_level
 seed = ManualSeedReproducible.manual_seed(args.seed)
 
 ##########################################
-# #  GDrive Filesystem Initialization  ###
+###  GDrive Filesystem Initialization  ###
 ##########################################
 #   - define FilesystemFolder to interact with files/folders under the root folder on Google Drive
 if exec_env == 'colab':

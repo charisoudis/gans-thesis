@@ -401,9 +401,9 @@ class GDriveModel(FilesystemModel):
 
     @batch_size.setter
     def batch_size(self, batch_size: int) -> None:
-        # # Save new value
+        ### Save new value
         # self._batch_size = batch_size
-        # # Check for changes: Base case
+        ### Check for changes: Base case
         # if self._batch_size is None or self._batch_size == batch_size:
         #
         #     return

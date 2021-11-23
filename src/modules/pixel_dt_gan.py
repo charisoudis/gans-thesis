@@ -302,7 +302,7 @@ class PixelDTGan(nn.Module, IGanGModule):
             self.gforward(img_s.shape[0])
 
         ##########################################
-        # ######  Update Discriminators   ########
+        ########  Update Discriminators   ########
         ##########################################
         with self.gen.frozen():
             disc_loss = {'r': None, 'a': None}
@@ -335,7 +335,7 @@ class PixelDTGan(nn.Module, IGanGModule):
                 self.img_t_prev = img_t.clone()
 
         ##########################################
-        # ######     Update Generator     ########
+        ########     Update Generator     ########
         ##########################################
         with self.disc_r.frozen(), self.disc_a.frozen():
             self.gen_opt.zero_grad()
@@ -443,7 +443,7 @@ if __name__ == '__main__':
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
     _log_level = 'debug'
 
-    # # Via GoogleDrive API
+    ### Via GoogleDrive API
     # _groot = GDriveFolder.root(capsule_or_fs=GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True,
     #                                                        update_credentials=True, use_refresh_token=True),
     #                            update_cache=True)
@@ -485,12 +485,12 @@ if __name__ == '__main__':
     _pxldt.load_state_dict(c, strict=False)
     # print(_pxldt)
 
-    # # for _e in range(3):
-    # #     _pgpg.logger.info(f'current epoch: {_e}')
-    # #     for _i_1, _i_2, _p_2, in iter(_dl):
-    # #         _pgpg.gforward(_i_1.shape[0])
-    # #
-    # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
+    ### for _e in range(3):
+    ###     _pgpg.logger.info(f'current epoch: {_e}')
+    ###     for _i_1, _i_2, _p_2, in iter(_dl):
+    ###         _pgpg.gforward(_i_1.shape[0])
+    ###
+    ### print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
 
     enable_verbose(_pxldt.disc_a)
     print(f'rf={_pxldt.disc_a.get_receptive_field(64)}')

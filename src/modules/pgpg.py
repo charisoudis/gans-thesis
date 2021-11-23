@@ -288,7 +288,7 @@ class PGPG(nn.Module, IGanGModule):
             self.gforward(image_1.shape[0])
 
         ##########################################
-        # ######   Update Discriminator   ########
+        ########   Update Discriminator   ########
         ##########################################
         with self.gen.frozen():
             self.disc_opt.zero_grad()  # Zero out discriminator gradient (before backprop)
@@ -305,7 +305,7 @@ class PGPG(nn.Module, IGanGModule):
                     self.disc_opt_lr_scheduler.step()
 
         ##########################################
-        # ######     Update Generator     ########
+        ########     Update Generator     ########
         ##########################################
         with self.disc.frozen():
             self.gen_opt.zero_grad()
@@ -412,7 +412,7 @@ if __name__ == '__main__':
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
     _log_level = 'debug'
 
-    # # Via GoogleDrive API
+    ### Via GoogleDrive API
     # _groot = GDriveFolder.root(capsule_or_fs=GDriveCapsule(local_gdrive_root=_local_gdrive_root, use_http_cache=True,
     #                                                        update_credentials=True, use_refresh_token=True),
     #                            update_cache=True)
@@ -455,12 +455,12 @@ if __name__ == '__main__':
     # print(_pgpg)
     # exit(0)
 
-    # # for _e in range(3):
-    # #     _pgpg.logger.info(f'current epoch: {_e}')
-    # #     for _i_1, _i_2, _p_2, in iter(_dl):
-    # #         _pgpg.gforward(_i_1.shape[0])
-    # #
-    # # print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
+    ### for _e in range(3):
+    ###     _pgpg.logger.info(f'current epoch: {_e}')
+    ###     for _i_1, _i_2, _p_2, in iter(_dl):
+    ###         _pgpg.gforward(_i_1.shape[0])
+    ###
+    ### print(json.dumps(_pgpg.list_configurations(only_keys=('title',)), indent=4))
 
     _device = _pgpg.device
     _x, _y, _y_pose = next(iter(_dl))

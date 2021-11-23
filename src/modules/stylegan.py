@@ -251,7 +251,7 @@ class StyleGan(nn.Module, IGanGModule):
         self.gen.reset_freeze_state()
         self.disc.reset_freeze_state()
         ################################################################################################################
-        # ############################################### DEV LOGGING ##################################################
+        ################################################# DEV LOGGING ##################################################
         ################################################################################################################
         # self.gen.plot_alpha_curve()
         # self.disc.plot_alpha_curve()
@@ -372,7 +372,7 @@ class StyleGan(nn.Module, IGanGModule):
             self.logger.debug(f'Slicing real batch (from {(batch_size + batch_size_mod_4)} --> {real.shape[0]})')
 
         ##########################################
-        # ######   Update Discriminator   ########
+        ########   Update Discriminator   ########
         ##########################################
         with self.gen.frozen():
             disc_losses = []
@@ -403,14 +403,14 @@ class StyleGan(nn.Module, IGanGModule):
                         self.disc_opt_lr_scheduler.step()
                 disc_losses.append(disc_loss.detach())
                 ########################################################################################################
-                # ########################################### DEV LOGGING ##############################################
+                ############################################# DEV LOGGING ##############################################
                 ########################################################################################################
                 # disc_losses.append(torch.tensor(0.0))
                 ########################################################################################################
             disc_loss = torch.mean(torch.stack(disc_losses))
 
         ##########################################
-        # ######     Update Generator     ########
+        ########     Update Generator     ########
         ##########################################
         with self.disc.frozen():
             #   - zero-out generators' gradients
@@ -448,7 +448,7 @@ class StyleGan(nn.Module, IGanGModule):
             if self.gen.alpha_index == len(self.gen.alpha_curve):
                 self.logger.debug(f'Reached gen.alpha_curve\'s end (alpha_index={self.gen.alpha_index}, alpha=1.0)')
             ############################################################################################################
-            # ############################################# DEV LOGGING ################################################
+            ############################################### DEV LOGGING ################################################
             ############################################################################################################
             # self.logger.debug(f'self.disc.alpha_index={self.disc.alpha_index}')
             ############################################################################################################
@@ -623,7 +623,7 @@ if __name__ == '__main__':
     # _state_dict = _stgan.state_dict()
     # torch.save(_state_dict, '/home/achariso/PycharmProjects/gans-thesis/src/checkpoint.pth')
     #
-    # # _metrics = _evaluator.evaluate(gen=_stgan.gen, show_progress=True)
+    ### _metrics = _evaluator.evaluate(gen=_stgan.gen, show_progress=True)
     # exit(0)
 
     _img = _stgan.visualize(reproducible=True)

@@ -18,7 +18,7 @@ from utils.metrics import GanEvaluator
 torch.cuda.empty_cache()
 
 ###################################
-# #  Hyper-parameters settings  ###
+###  Hyper-parameters settings  ###
 ###################################
 #   - training
 n_epochs = 300
@@ -40,7 +40,7 @@ z_dim = 512
 stgan_config_id = f'default_z{z_dim}'  # close to DiscoGAN paper + half precision
 
 ###################################
-# #   Dataset Initialization    ###
+###   Dataset Initialization    ###
 ###################################
 #   - image transforms:
 #     If target_shape is different from load one, resize & crop. If target_shape is different from load shape,
@@ -69,7 +69,7 @@ _real = next(iter(dataloader))
 assert tuple(_real.shape) == (batch_size, target_channels, target_shape, target_shape)
 
 ###################################
-# #    Models Initialization    ###
+###    Models Initialization    ###
 ###################################
 #   - initialize evaluator instance (used to run GAN evaluation metrics: FID, IS, PRECISION, RECALL, F1 and SSIM)
 evaluator = GanEvaluator(model_fs_folder_or_root=models_groot, gen_dataset=dataset, z_dim=z_dim, device=exec_device,
@@ -89,7 +89,7 @@ except NameError:
 stgan = StyleGan(model_fs_folder_or_root=models_groot, config_id=stgan_config_id, dataset_len=len(dataset),
                  chkpt_epoch=stgan_chkpt_step, evaluator=evaluator, device=exec_device, log_level=log_level)
 ########################################################################################################################
-# ################################################### DEV LOGGING ######################################################
+##################################################### DEV LOGGING ######################################################
 ########################################################################################################################
 # stgan._init_gen_disc_opt_scheduler(resolution=64)
 ########################################################################################################################
@@ -117,7 +117,7 @@ if 'dataloader' in stgan.other_state_dicts.keys():
 stgan.update_batch_size(batch_size, sampler_instance=dataloader.sampler)
 
 ###################################
-# #       Training Loop         ###
+###       Training Loop         ###
 ###################################
 #   - get the correct tqdm instance
 exec_tqdm = get_tqdm()
@@ -158,7 +158,7 @@ for epoch in range(stgan.epoch, n_epochs):
         disc_loss, gen_loss = stgan(real)
 
         ################################################################################################################
-        # ############################################### DEV LOGGING ##################################################
+        ################################################# DEV LOGGING ##################################################
         ################################################################################################################
         # break
         ################################################################################################################
@@ -219,7 +219,7 @@ if async_results:
 stgan.logger.info('[training loop] DONE')
 
 ########################################################################################################################
-# ################################################### DEV LOGGING ######################################################
+##################################################### DEV LOGGING ######################################################
 ########################################################################################################################
 # img = stgan.visualize()
 # img.show()

@@ -13,7 +13,7 @@ from utils.ifaces import FilesystemDataset
 from utils.metrics import GanEvaluator
 
 ###################################
-# #  Hyper-parameters settings  ###
+###  Hyper-parameters settings  ###
 ###################################
 #   - training
 n_epochs = 100
@@ -35,7 +35,7 @@ skip_pose_norm = True
 pgpg_config_id = f'{target_shape}_MSE_256_6_4_5_none_none_1e4_true_false_false'  # as proposed in the original paper
 
 ###################################
-# #   Dataset Initialization    ###
+###   Dataset Initialization    ###
 ###################################
 #   - image transforms:
 #     If target_shape is different from load one, resize & crop. If target_shape is different from load shape,
@@ -66,7 +66,7 @@ assert tuple(_image_2.shape) == (batch_size, target_channels, target_shape, targ
 assert tuple(_dense_pose_2.shape) == (batch_size, target_channels, target_shape, target_shape)
 
 ###################################
-# #    Models Initialization    ###
+###    Models Initialization    ###
 ###################################
 #   - initialize evaluator instance (used to run GAN evaluation metrics: FID, IS, PRECISION, RECALL, F1 and SSIM)
 evaluator = GanEvaluator(model_fs_folder_or_root=models_groot, gen_dataset=dataloader.test_set, target_index=1,
@@ -98,7 +98,7 @@ if 'dataloader' in pgpg.other_state_dicts.keys():
     pgpg.logger.debug(f'Loaded dataloader state! Current pem_index={dataloader.get_state()["perm_index"]}')
 
 ###################################
-# #       Training Loop         ###
+###       Training Loop         ###
 ###################################
 #   - get the correct tqdm instance
 exec_tqdm = get_tqdm()

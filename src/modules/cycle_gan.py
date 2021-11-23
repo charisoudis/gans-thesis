@@ -347,7 +347,7 @@ class CycleGAN(nn.Module, IGanGModule):
             self.gforward(real_a.shape[0])
 
         #############################################
-        # ######   Update Discriminator(s)   ########
+        ########   Update Discriminator(s)   ########
         #############################################
         # with self.gen_a_to_b.frozen():
         #     with self.gen_b_to_a.frozen():
@@ -404,7 +404,7 @@ class CycleGAN(nn.Module, IGanGModule):
                     self.disc_b_opt_lr_scheduler.step()
 
         #############################################
-        # ######     Update Generator(s)     ########
+        ########     Update Generator(s)     ########
         #############################################
         # with self.disc_a.frozen():
         #     with self.disc_b.frozen():
@@ -445,27 +445,27 @@ class CycleGAN(nn.Module, IGanGModule):
 
         return disc_loss, gen_loss
 
-        # # Erase previous gradients
+        ### Erase previous gradients
         # self.gen_opt.zero_grad()
         # self.disc_opt.zero_grad()
-        # # Produce fake images for discriminators
+        ### Produce fake images for discriminators
         # with no_grad():
         #     fake_a = self.gen_b_to_a(real_b)
         #     fake_b = self.gen_a_to_b(real_a)
-        # # Update discriminator A
+        ### Update discriminator A
         # disc_a_loss = self.disc_a.get_loss(real=real_a, fake=fake_a, criterion=nn.MSELoss())
         # disc_a_loss.backward(retain_graph=True)
         # self.disc_a_opt.step()
-        # # Update discriminator B
+        ### Update discriminator B
         # disc_b_loss = self.disc_b.get_loss(real=real_b, fake=fake_b, criterion=nn.MSELoss())
         # disc_b_loss.backward(retain_graph=True)
         # self.disc_b_opt.step()
-        # # Update generators
+        ### Update generators
         # gen_loss, fake_a, fake_b = self.get_gen_loss(real_a, real_b, lambda_identity=lambda_identity,
         #                                              lambda_cycle=lambda_cycle)
         # gen_loss.backward()
         # self.gen_opt.step()
-        # # Update LR (if needed)
+        ### Update LR (if needed)
         # if self.lr_scheduler_type is not None:
         #     self.disc_a_opt_lr_scheduler.step(metrics=disc_a_loss) if self.lr_scheduler_type == 'on_plateau' \
         #         else self.disc_a_opt_lr_scheduler.step()
@@ -649,9 +649,9 @@ if __name__ == '__main__':
     # _img = _ccgan.visualize(reproducible=(300, 1001))
     # plt.imshow(_img)
     # plt.show()
-    # # _img.show()
-    # # _img.show()
-    # # with open('sample.png', 'wb') as fp:
-    # #     _img.save(fp)
-    # #     _pxldt.logger.debug('Image saved.')
+    ### _img.show()
+    ### _img.show()
+    ### with open('sample.png', 'wb') as fp:
+    ###     _img.save(fp)
+    ###     _pxldt.logger.debug('Image saved.')
     # exit(0)

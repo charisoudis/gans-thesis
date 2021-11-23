@@ -116,7 +116,7 @@ class GDriveCapsule(FilesystemCapsule):
             'client_secret': _client_dict['client_secret'],
             'refresh_token': _client_dict['refresh_token']
         }).json()
-        # print(response)
+        print(response)
         _client_dict['access_token'] = response['access_token']
         expires_in = int(response['expires_in'])
         _client_dict['access_token_expires_at'] = (dt.utcnow() + timedelta(seconds=expires_in)).isoformat()
@@ -480,26 +480,29 @@ class GDriveFolder(FilesystemFolder):
 
     @staticmethod
     def root(capsule_or_fs: Union[GDriveCapsule, 'GDriveFilesystem'], update_cache: bool = False,
-             cloud_root: Union[GoogleDriveFile, str] = None) -> 'GDriveFolder':
+             cloud_root: Optional[Union[GoogleDriveFile, str]] = None) -> 'GDriveFolder':
         """
         Get the an `utils.gdrive.GDriveFolder` instance to interact with Google Drive's root folder.
         :param capsule_or_fs: see `utils.ifaces.FilesystemFolder::instance` method
         :param update_cache: see `utils.ifaces.FilesystemFolder::instance` method
-        :param cloud_root: either a
+        :param cloud_root: either a string with the relative path to the new root or a pydrive.files.GoogleDriveFile
+                           instance with the cloud folder to be considered as Google Drive root
         :return: an `utils.gdrive.GDriveFolder` instance
         """
         fs = capsule_or_fs if isinstance(capsule_or_fs, GDriveFilesystem) else GDriveFilesystem(gcapsule=capsule_or_fs)
-        gf = GDriveFolder(fs=fs, local_root=fs.local_root,
-                          cloud_root=cloud_root if not type(cloud_root) == str else None, cloud_parent=None,
-                          update_cache=update_cache)
-        # Set correct root via relative path
-        if type(cloud_root) == str:
-            folder_names = cloud_root.strip('/').split('/')
-            sf, spf = gf, None
-            for fn in folder_names:
-                sf, spf = sf.subfolder_by_name(folder_name=fn, recursive=False), sf
-                assert sf is not None
-            return sf
+        cloud_root_ob = cloud_root if type(cloud_root) == GoogleDriveFile else \
+            fs.gcapsule.pydrive.CreateFile({'id': cloud_root})
+        gf = GDriveFolder(fs=fs, local_root=fs.local_root, cloud_root=cloud_root_ob, update_cache=update_cache)
+        if cloud_root is not None:
+            gf.cloud_root['title'] = 'None'
+        ### Set correct root via relative path
+        # if type(cloud_root) == str:
+        #     folder_names = cloud_root.strip('/').split('/')
+        #     sf, spf = gf, None
+        #     for fn in folder_names:
+        #         sf, spf = sf.subfolder_by_name(folder_name=fn, recursive=False), sf
+        #         assert sf is not None
+        #     return sf
         return gf
 
 
@@ -818,10 +821,9 @@ class GDriveFilesystem(Filesystem):
 
 if __name__ == '__main__':
     GDRIVE_WHICH = 'personal'  # 'personal', 'auth'
-    _cloud_root = None if GDRIVE_WHICH == 'auth' else '/Education/AUTH/COURSES/10th Semester - Thesis/ThesisGStorage'
     _gd_suffix = '_personal' if GDRIVE_WHICH == 'personal' else ''
     _gc = GDriveCapsule(local_gdrive_root=f'/home/achariso/PycharmProjects/gans-thesis/.gdrive{_gd_suffix}',
-                        use_refresh_token=True)
+                        use_refresh_token=True, update_credentials=True)
     _gfs = GDriveFilesystem(gcapsule=_gc)
-    _gf = GDriveFolder.root(_gfs, update_cache=True, cloud_root=_cloud_root)
-    _gf.upload_file(local_filename='main.py', show_progress=True)
+    _gf = GDriveFolder.root(_gfs, update_cache=True, cloud_root='12IiDRSnj6r7Jd66Yxz3ZZTn9EFW-Qnqu')
+    _gf.upload_file(local_filename='client_secrets.json', show_progress=True)
