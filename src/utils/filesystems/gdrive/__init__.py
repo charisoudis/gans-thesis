@@ -704,7 +704,8 @@ class GDriveModel(FilesystemModel):
         if epoch not in self.chkpts_epoch_gfolders.keys():
             raise FileNotFoundError(f'epoch="{epoch}" not found in self.chkpts_epoch_gfolders.keys()')
         # Get checkpoint files list and filter it if only_keys attribute is set
-        chkpt_files_list = self.chkpts_epoch_gfolders[epoch].files
+        chkpt_files_list = [_f for _f in self.chkpts_epoch_gfolders[epoch].files if
+                            _f['title'].endswith('.pth') and not _f['title'].endswith('__stripped.pth')]
         return chkpt_files_list if not only_keys else \
             [dict((k, _f[k]) for k in only_keys) for _f in chkpt_files_list]
 
