@@ -107,6 +107,13 @@ class GDriveCapsule(FilesystemCapsule):
                          'access_token_expires_at' not in _client_dict.keys() or \
                          now >= token_expires_at or \
                          (token_expires_at - now).seconds < 300
+        self.logger.debug(json.dumps({
+            'now': str(now),
+            'access_token_expires_at': str(token_expires_at),
+            'cond1': now >= token_expires_at,
+            'cond2': ((token_expires_at - now).seconds, (token_expires_at - now).seconds < 300),
+            'should_refresh': should_refresh,
+        }, indent=4))
         if not should_refresh:
             return _client_dict
 
@@ -116,7 +123,7 @@ class GDriveCapsule(FilesystemCapsule):
             'client_secret': _client_dict['client_secret'],
             'refresh_token': _client_dict['refresh_token']
         }).json()
-        print(response)
+        self.logger.debug('[get_client_dict] Response: ' + json.dumps(response, indent=4))
         _client_dict['access_token'] = response['access_token']
         expires_in = int(response['expires_in'])
         _client_dict['access_token_expires_at'] = (dt.utcnow() + timedelta(seconds=expires_in)).isoformat()
