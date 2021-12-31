@@ -1,3 +1,4 @@
+import abc
 import math
 import os
 from typing import Any, Optional, Tuple
@@ -178,14 +179,14 @@ def get_total_params(model: Module, print_table: bool = False, sort_desc: bool =
     assert total_count_orig == total_count, "Should be equal..."
 
     if print_table is True:
-        from json import dumps
-        from prettytable import from_json
+        from prettytable import PrettyTable
 
         if sort_desc:
             count_dict = sorted(count_dict, key=lambda k: k['count'], reverse=True)
 
-        table = from_json(dumps(count_dict, indent=4))
+        table = PrettyTable()
         table.field_names = ["Module", "Count", "Count Human", "Percentage"]
+        [table.add_row(count_dict[i].values()) for i in range(len(count_dict))]
 
         print(table.get_string(fields=["Module", "Count Human", "Percentage"]))
         print(f"Total Trainable Params: {to_human_readable(total_count)}")
@@ -222,7 +223,7 @@ def matrix_sqrt(mat: torch.Tensor) -> torch.Tensor:
     return MatrixSquareRoot.apply(mat)
 
 
-class MatrixSquareRoot(Function):
+class MatrixSquareRoot(Function, abc.ABC):
     """
     MatrixSquareRoot Class:
     This class is used to compute square root of a positive definite matrix given as torch.Tensor object.

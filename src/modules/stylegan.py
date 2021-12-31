@@ -31,6 +31,10 @@ class StyleGan(nn.Module, IGanGModule):
     This is the entire StyleGan model consisting of one noise-to-image Generator and one PatchGAN Discriminator.
     """
 
+    @classmethod
+    def version(cls) -> str:
+        return 'karras'
+
     DefaultConfiguration = {
         'shapes': {
             'c_in': 3,
@@ -80,7 +84,7 @@ class StyleGan(nn.Module, IGanGModule):
             },
         },
         'resolutions': {
-            'min': 4,
+            'min': 8,
             'max': 128,
         },
         'grow_scheduler': {
@@ -514,6 +518,8 @@ class StyleGan(nn.Module, IGanGModule):
             gen_truncation = self.gen.locals.get('truncation', None)
             if not gen_truncation:
                 gen_truncation = 3
+            if type(indices) is int:
+                indices = [indices, ]
             for index in indices:
                 # fake image
                 noise_multiplier = sorted((-1 * gen_truncation, index, gen_truncation))[1]
@@ -599,7 +605,7 @@ if __name__ == '__main__':
 
     # Initialize model
     # noinspection PyTypeChecker
-    _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='default', chkpt_step=None, chkpt_epoch=None,
+    _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='karrasB_z512', chkpt_step=None, chkpt_epoch=None,
                       dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
     _stgan.disc_iters = 2
     _stgan._init_gen_disc_opt_scheduler(resolution=8, device='cpu')

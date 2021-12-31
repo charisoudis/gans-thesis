@@ -465,6 +465,8 @@ class IGModule(GDriveModel, IModule, metaclass=ABCMeta):
 
         # Instantiate GDriveModel
         model_name_from_class = self.__class__.__name__.lower()
+        if self.__class__.version() != '1.0':
+            model_name_from_class = model_name_from_class + f'_{self.__class__.version()}'
         model_name = os.environ.get(f'NEW_MODEL_NAME__{model_name_from_class}', model_name_from_class)
         if model_name != model_name_from_class:
             self.logger.info(f'Using "{model_name}" instead of "{model_name_from_class}" as model\'s name')

@@ -1,5 +1,6 @@
 import gc
 import math
+import sys
 import time
 from typing import Optional, Tuple, List
 
@@ -57,24 +58,34 @@ class StyleGanGeneratorBlock(nn.Module):
     This class implements a single block of the StyleGAN v1 generator.
     """
 
-    def __init__(self, c_in: int, c_out: int, w_dim: int = 512, kernel_size: int = 3):
+    def __init__(self, c_in: int, c_out: int, w_dim: int = 512, kernel_size: int = 3,
+                 kernel_size_2: Optional[int] = None, padding=1, padding_2: Optional = None):
         """
         StyleGanGeneratorBlock class constructor.
         :param (int) c_in: number of channels in the input
         :param (int) c_out: number of channels expected in the output
         :param (int) w_dim: size of the intermediate noise vector (defaults to 512)
         :param (int) kernel_size: nn.Conv2d()'s kernel_size argument (defaults to 3)
+        :param (int) kernel_size_2: 2nd nn.Conv2d()'s kernel_size argument or None to use the same as the 1st Conv2d's
         """
         super().__init__()
         self.c_in = c_in
         self.c_out = c_out
         # noinspection PyTypeChecker
-        self.conv_block = nn.Sequential(
-            nn.Conv2d(c_in, c_out, kernel_size, padding=1),
+        self.conv_block1 = nn.Sequential(
+            nn.Conv2d(c_in, c_out, kernel_size, padding=padding),
+            nn.LeakyReLU(0.2),
             InjectNoise(c_out),
-            nn.LeakyReLU(0.2)
         )
-        self.adaptive_norm = AdaptiveInstanceNorm2d(c_out, w_dim)
+        self.adaptive_norm1 = AdaptiveInstanceNorm2d(c_out, w_dim)
+        self.conv_block2 = nn.Sequential(
+            nn.Conv2d(c_out, c_out, kernel_size_2 if kernel_size_2 is not None else kernel_size,
+                      padding=padding_2 if padding_2 is not None else padding),
+            nn.LeakyReLU(0.2),
+            InjectNoise(c_out),
+        )
+        self.adaptive_norm2 = AdaptiveInstanceNorm2d(c_out, w_dim)
+        # self.pixel_norm = PixelNorm2d()
 
     def forward(self, x: torch.Tensor, w: torch.Tensor):
         """
@@ -84,8 +95,12 @@ class StyleGanGeneratorBlock(nn.Module):
         :param (torch.Tensor) w: the intermediate noise vector, of shape (N, W_dim)
         :return a torch.Tensor object of shape (N, C_out, H, W)
         """
-        x = self.conv_block(x)
-        return self.adaptive_norm(x, w)
+        x = self.conv_block1(x)
+        x = self.adaptive_norm1(x, w)
+        # x = self.pixel_norm(x)
+        x = self.conv_block2(x)
+        return self.adaptive_norm2(x, w)
+        # return self.pixel_norm(x)
 
 
 class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
@@ -102,7 +117,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
     """
 
     def __init__(self, z_dim: int = 512, map_hidden_dim: int = 512, map_n_blocks: int = 4, w_dim: int = 512,
-                 c_const: int = 512, c_hidden: int = 1024, c_out: int = 3, resolution: int = 128,
+                 c_const: int = 512, c_hidden: int = 512, c_out: int = 3, resolution: int = 128,
                  kernel_size: int = 3, alpha_multiplier: float = 10.0, num_iters: int = 1,
                  logger: Optional[CommandLineLogger] = None, truncation: Optional[float] = None):
         """
@@ -137,19 +152,34 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         # Starting Constant: typically this constant is initiated to all ones
         self.constant = nn.Parameter(torch.ones(1, c_const, 4, 4))
         # Generator convolutional blocks
-        self.block0 = StyleGanGeneratorBlock(c_in=c_const, c_out=c_hidden, w_dim=w_dim, kernel_size=kernel_size)
+        self.block0 = StyleGanGeneratorBlock(c_in=c_const, c_out=c_hidden, w_dim=w_dim, kernel_size=4,
+                                             kernel_size_2=kernel_size, padding='same', padding_2=1)
         # noinspection PyTypeChecker
         self.block0_toRGB = nn.Conv2d(c_hidden, c_out, kernel_size=1)
         for bi in range(3, int(math.log2(resolution)) + 1):
             block_index = bi - 2
+            _c_hidden_dict = {
+                4: c_hidden,
+                8: c_hidden,
+                16: c_hidden,
+                32: c_hidden,
+                64: c_hidden // 2,
+                128: c_hidden // 4,
+                256: c_hidden // 8,
+                512: c_hidden // 16,
+            }
+            _c_hidden_prev = _c_hidden_dict[2 ** (bi - 1)]
+            _c_hidden = _c_hidden_dict[2 ** bi]
+
+            # print('bi', bi, '_c_hidden', _c_hidden)
             setattr(self, f'upsample{block_index}', nn.Upsample(size=2 ** bi, mode='bilinear', align_corners=False))
             setattr(self, f'block{block_index}',
-                    StyleGanGeneratorBlock(c_in=c_hidden, c_out=c_hidden, w_dim=w_dim, kernel_size=kernel_size))
+                    StyleGanGeneratorBlock(c_in=_c_hidden_prev, c_out=_c_hidden, w_dim=w_dim, kernel_size=kernel_size))
             if bi == int(math.log2(resolution)):
                 # noinspection PyTypeChecker
-                setattr(self, f'upsample{block_index}_toRGB', nn.Conv2d(c_hidden, c_out, kernel_size=1))
+                setattr(self, f'upsample{block_index}_toRGB', nn.Conv2d(_c_hidden_prev, c_out, kernel_size=1))
                 # noinspection PyTypeChecker
-                setattr(self, f'block{block_index}_toRGB', nn.Conv2d(c_hidden, c_out, kernel_size=1))
+                setattr(self, f'block{block_index}_toRGB', nn.Conv2d(_c_hidden, c_out, kernel_size=1))
         # Save args
         self.resolution = self.locals['resolution']
 
@@ -176,6 +206,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         """
         # Get current alpha value
         alpha = self.alpha
+        epsilon = sys.float_info.epsilon
         ################################################################################################################
         ################################################# DEV LOGGING ##################################################
         ################################################################################################################
@@ -193,7 +224,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         w = self.noise_mapping(z)  # (N, w_dim)
         # Pass through generator blocks
         #   - constant + first block
-        x = self.constant
+        x = self.constant.repeat((w.shape[0], 1, 1, 1))
         x = self.block0(x, w)
         ################################################################################################################
         ################################################# DEV LOGGING ##################################################
@@ -225,7 +256,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                 #                   f'c_o={block_toRGB.out_channels}) <-- block{block_index}(c_in={block.c_in},'
                 #                   f'c_o={block.c_out}, w) <-- x: {x.shape}')
                 ########################################################################################################
-                x_upsampled = upsample_toRGB(x)
+
                 ########################################################################################################
                 ############################################# DEV LOGGING ##############################################
                 ########################################################################################################
@@ -233,9 +264,13 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                 #                   f'c_in={upsample_toRGB.in_channels},c_o={upsample_toRGB.out_channels}) <-- '
                 #                   f'x: {x.shape}')
                 ########################################################################################################
+                if alpha + epsilon < 1.0:
+                    x_upsampled = upsample_toRGB(x.clone())
+                    x = block(x, w)
+                    x = block_toRGB(x)
+                    return (1.0 - alpha) * x_upsampled + alpha * x
                 x = block(x, w)
-                x = block_toRGB(x)
-                return (1.0 - alpha) * x_upsampled + alpha * x
+                return block_toRGB(x)
             # xs = x.shape
             x = block(x, w)
             ############################################################################################################
