@@ -31,3 +31,11 @@ Alternatively, you may run the <code>.py</code> files inside <code>src</code> di
 | :---------------: | :-------------------: | :-------------: | :-------------: | :---------------------: |
 | 15612 | 8403 (54%) | 5529 (35%) | 1680 (11%) | 6945 |
 
+
+## Future Extensions - TODOs
+
+- [x] Add ability to attach personal Google Drive for experiments continuation
+- [ ] Add Perceptual Path Length (PPL) as a regularizer in StyleGAN's Generator
+- [ ] Re-implement StyleGAN to mimic the exact architectures presented in Karras et al. (both configurations, "A" and "B")
+- [ ] Re-train StyleGAN for at least 320 epochs on DeepFashion's Image Synthesis Benchmark dataset
+- [ ] Train an Inception model on fashion image dataset(s) and re-evaluate generative metrics based on embeddings of that classifier (instead of the one used now which was trained on ImageNET)
