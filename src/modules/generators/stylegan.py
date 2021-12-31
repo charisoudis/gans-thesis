@@ -197,11 +197,12 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.logger = logger if logger is not None else \
             CommandLineLogger(log_level='debug', name=self.__class__.__name__)
 
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
+    def forward(self, z: Optional[torch.Tensor] = None, w: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Function for completing a forward pass of MicroStyleGANGenerator: Given noise,
         computes a StyleGAN iteration.
         :param (torch.tensor) z: input noise vector of shape (N, z_dim)
+        :param (optional) w: directly pass the W-vector
         :return: a torch.Tensor object containing the mixing of the output of the UpSampler and the last conv block
         """
         # Get current alpha value
@@ -221,7 +222,9 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         # Get total number of blocks
         resolution_log2 = int(math.log2(self.resolution))
         # Map noise
-        w = self.noise_mapping(z)  # (N, w_dim)
+        if w is None:
+            assert z is not None, 'z and w cannot be None simultaneously'
+            w = self.noise_mapping(z)  # (N, w_dim)
         # Pass through generator blocks
         #   - constant + first block
         x = self.constant.repeat((w.shape[0], 1, 1, 1))

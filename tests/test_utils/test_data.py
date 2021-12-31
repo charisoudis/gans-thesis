@@ -2,7 +2,8 @@ import os
 import shutil
 import unittest
 
-from utils.data import count_dirs, count_files, ResumableRandomSampler
+from datasets.samplers import ResumableRandomSampler
+from utils.data import count_dirs, count_files
 
 
 class TestDataUtils(unittest.TestCase):

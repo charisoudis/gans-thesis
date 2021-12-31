@@ -2,17 +2,17 @@ import json
 import os
 import os.path
 import random
-from typing import Optional, List, Sized, Union
+from typing import Optional, List
 
 import numpy as np
 import prettytable
 import torch
-# noinspection PyProtectedMember
-from torch.utils.data import Sampler
 
-from utils.command_line_logger import CommandLineLogger
 from utils.ifaces import Reproducible
 from utils.string import to_human_readable
+
+
+# noinspection PyProtectedMember
 
 
 def count_dirs(path: str, recursive: bool = False) -> int:
@@ -86,73 +86,6 @@ class ManualSeedReproducible(Reproducible):
         random.seed(seed)
         Reproducible._seed = seed
         return seed
-
-
-class ResumableRandomSampler(Sampler):
-    """
-    ResumableRandomSampler Class:
-    Samples elements randomly. If without replacement, then sample from a shuffled dataset.
-    Original source: https://gist.github.com/usamec/1b3b4dcbafad2d58faa71a9633eea6a5
-    """
-
-    def __init__(self, data_source: Sized, shuffle: bool = True, seed: int = 42,
-                 logger: Union[CommandLineLogger, None] = None):
-        """
-        ResumableRandomSampler class constructor.
-        generator (Generator): Generator used in sampling.
-        :param (Sized) data_source: torch.utils.data.Dataset or generally typings.Sized object of the dataset to draw
-                                    samples from
-        :param (int) seed: generator manual seed parameter
-        :param (optional) logger: CommandLineLogger instance
-        """
-        super(ResumableRandomSampler, self).__init__(data_source=data_source)
-
-        self.n_samples = len(data_source)
-        self.generator = torch.Generator().manual_seed(seed)
-
-        self.shuffle = shuffle
-        self.perm_index = 0
-        if self.shuffle:
-            self.perm = None
-            self.reshuffle()
-        else:
-            self.perm = range(0, self.n_samples)
-
-        self.logger = logger
-        assert self.logger is not None, 'Please provide a logger instance for ResumableRandomSampler'
-
-    def reshuffle(self) -> None:
-        self.perm_index = 0
-        if self.shuffle:
-            self.perm = list(torch.randperm(self.n_samples, generator=self.generator).numpy())
-
-    def __iter__(self):
-        # If reached the end of dataset, reshuffle
-        if self.perm_index >= len(self.perm):
-            if self.logger:
-                self.logger.debug(f'[SAMPLER] Reached end of epoch. Resetting state... (shuffle = {self.shuffle})')
-            self.reshuffle()
-
-        while self.perm_index < len(self.perm):
-            self.perm_index += 1
-            yield self.perm[self.perm_index - 1]
-
-    def __len__(self):
-        return self.n_samples
-
-    def get_state(self) -> dict:
-        return {
-            "shuffle": self.shuffle,
-            "perm": self.perm,
-            "perm_index": self.perm_index,
-            "generator_state": self.generator.get_state()
-        }
-
-    def set_state(self, state: dict) -> None:
-        self.shuffle = bool(state.get("shuffle", True))
-        self.perm = state["perm"]
-        self.perm_index = state["perm_index"]
-        self.generator.set_state(state["generator_state"])
 
 
 def unzip_file(zip_filepath: str) -> bool:

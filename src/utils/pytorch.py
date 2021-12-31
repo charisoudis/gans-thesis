@@ -1,4 +1,3 @@
-import abc
 import math
 import os
 from typing import Any, Optional, Tuple
@@ -223,13 +222,17 @@ def matrix_sqrt(mat: torch.Tensor) -> torch.Tensor:
     return MatrixSquareRoot.apply(mat)
 
 
-class MatrixSquareRoot(Function, abc.ABC):
+class MatrixSquareRoot(Function):
     """
     MatrixSquareRoot Class:
     This class is used to compute square root of a positive definite matrix given as torch.Tensor object.
     NOTE: matrix square root is NOT differentiable for matrices with zero eigenvalues.
     Source: https://github.com/steveli/pytorch-sqrtm
     """
+
+    @staticmethod
+    def jvp(ctx: Any, *grad_inputs: Any) -> Any:
+        return MatrixSquareRoot.backward(ctx, grad_inputs[0])
 
     # noinspection PyMethodOverriding
     @staticmethod

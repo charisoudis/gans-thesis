@@ -14,8 +14,9 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms, Compose
 
 from datasets.deep_fashion import ICRBDataset
+from datasets.samplers import ResumableRandomSampler
 from utils.command_line_logger import CommandLineLogger
-from utils.data import ResumableRandomSampler, ManualSeedReproducible
+from utils.data import ManualSeedReproducible
 from utils.dep_free import get_tqdm
 from utils.filesystems.gdrive import GDriveDataset
 from utils.filesystems.local import LocalCapsule, LocalFilesystem, LocalFolder

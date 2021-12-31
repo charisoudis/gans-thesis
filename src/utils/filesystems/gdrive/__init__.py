@@ -11,8 +11,8 @@ import yaml
 from PIL.Image import Image
 from torch.utils.data import Sampler
 
+from datasets.samplers import ResumableRandomSampler
 from utils.command_line_logger import CommandLineLogger
-from utils.data import ResumableRandomSampler
 from utils.filesystems.gdrive.colab import ColabFolder, ColabCapsule, ColabFilesystem, ColabFile
 from utils.filesystems.gdrive.remote import GDriveFolder, GDriveCapsule, GDriveFilesystem, GDriveFile
 from utils.ifaces import FilesystemDataset, FilesystemModel, FilesystemFolder, Filesystem, FilesystemCapsule, \

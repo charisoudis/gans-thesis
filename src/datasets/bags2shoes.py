@@ -14,8 +14,9 @@ from torchvision import transforms
 from torchvision.transforms import Compose
 
 from datasets.deep_fashion import ICRBDataset
+from datasets.samplers import ResumableRandomSampler
 from utils.command_line_logger import CommandLineLogger
-from utils.data import ResumableRandomSampler, ManualSeedReproducible
+from utils.data import ManualSeedReproducible
 from utils.filesystems.gdrive import GDriveDataset
 from utils.filesystems.local import LocalFolder, LocalCapsule
 from utils.ifaces import ResumableDataLoader, FilesystemFolder
