@@ -22,7 +22,8 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
 
-from modules.classifiers.vgg16 import VGG16Sliced
+from modules.classifiers.vgg16 import VGG16Perceptual
+from modules.generators.stylegan import StyleGanGenerator
 from utils.dep_free import get_tqdm
 from utils.ifaces import FilesystemFolder
 from utils.pytorch import ToTensorOrPass
@@ -64,10 +65,10 @@ class PPLSampler(nn.Module):
     ])
 
     # Keep the Inception network in a static variable to avoid re-initializing it on sub-classes
-    VGG16Sliced = None
+    VGG16Perceptual = None
 
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, device: str, n_samples: int, batch_size: int = 8,
-                 epsilon: float = 1e-4, space: str = 'w', sampling: str = False, crop: bool = False):
+                 epsilon: float = 1e-4, space: str = 'w', sampling: str = False):
         """
         :param (FilesystemFolder) model_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` instance for cloud or
                                                            locally saved models using the same API
@@ -77,7 +78,6 @@ class PPLSampler(nn.Module):
         :param (float) epsilon: step dt
         :param (str) space: one of 'z', 'w'
         :param (str) sampling: one of 'full', 'end'
-        :param (bool) crop:
         """
         assert space in ['z', 'w']
         assert sampling in ['full', 'end']
@@ -85,12 +85,11 @@ class PPLSampler(nn.Module):
         self.epsilon = epsilon
         self.space = space
         self.sampling = sampling
-        self.crop = crop
 
         # Instantiate Inception v3 model(s)
-        if PPLSampler.VGG16Sliced is None:
-            _vgg16_instance = VGG16Sliced(model_fs_folder_or_root, chkpt_step='397923af')
-            PPLSampler.VGG16Sliced = _vgg16_instance.to(device).eval()
+        if PPLSampler.VGG16Perceptual is None:
+            _vgg16_instance = VGG16Perceptual(model_fs_folder_or_root, chkpt_step='397923af')
+            PPLSampler.VGG16Perceptual = _vgg16_instance.to(device).eval()
 
         # Save params in instance
         self.device = device
@@ -101,51 +100,33 @@ class PPLSampler(nn.Module):
         # Disable grad graphs in PPL Sampler
         self.eval().requires_grad_(False).to(device)
 
-    def sampler(self, c: torch.Tensor):
+    def sampler(self, c: torch.Tensor, gen: StyleGanGenerator):
         # Generate random latents and interpolation t-values.
         t = torch.rand([c.shape[0]], device=c.device) * (1 if self.sampling == 'full' else 0)
-        z0, z1 = torch.randn([c.shape[0] * 2, self.G.z_dim], device=c.device).chunk(2)
+        z0, z1 = torch.randn([c.shape[0] * 2, gen.z_dim], device=c.device).chunk(2)
 
         # Interpolate in W or Z.
         # TODO: This version only works on unlabelled data. If labels exist, they are ignored, whereas in StyleGAN2 they
         # TODO: are also to disentangle the noise space.
         if self.space == 'w':
-            w0, w1 = self.G.noise_mapping(torch.cat([z0, z1])).chunk(2)
+            w0, w1 = gen.noise_mapping(torch.cat([z0, z1])).chunk(2)
             wt0 = w0.lerp(w1, t.unsqueeze(1).unsqueeze(2))
             wt1 = w0.lerp(w1, t.unsqueeze(1).unsqueeze(2) + self.epsilon)
         else:  # space == 'z'
             zt0 = slerp(z0, z1, t.unsqueeze(1))
             zt1 = slerp(z0, z1, t.unsqueeze(1) + self.epsilon)
-            wt0, wt1 = self.G.noise_mapping(torch.cat([zt0, zt1])).chunk(2)
+            wt0, wt1 = gen.noise_mapping(torch.cat([zt0, zt1])).chunk(2)
 
         # Generate images.
-        img_t0 = self.G(w=wt0)
-        img_t1 = self.G(w=wt1)
-
-        # TODO: port this code into vanilla PyTorch
-        # Center crop.
-        # if self.crop:
-        #     assert img.shape[2] == img.shape[3]
-        #     c = img.shape[2] // 8
-        #     img = img[:, :, c * 3: c * 7, c * 2: c * 6]
-        #
-        # # Downsample to 256x256.
-        # factor = self.G.img_resolution // 256
-        # if factor != 1:
-        #     img = img.reshape([-1, img.shape[1], img.shape[2] // factor, factor, img.shape[3] // factor, factor]) \
-        #         .mean([3, 5])
-        #
-        # # Scale dynamic range from [-1,1] to [0,255].
-        # img = (img + 1) * (255 / 2)
-        # if self.G.img_channels == 1:
-        #     img = img.repeat([1, 3, 1, 1])
+        img_t0 = gen(w=wt0)
+        img_t1 = gen(w=wt1)
         img_t0 = PPLSampler.VGG16Transforms(img_t0)
         img_t1 = PPLSampler.VGG16Transforms(img_t1)
 
         # Evaluate differential LPIPS
-        lpips_t0 = PPLSampler.VGG16Sliced(img_t0)
-        lpips_t1 = PPLSampler.VGG16Sliced(img_t1)
-        return (lpips_t0 - lpips_t1).square().sum(1) / self.epsilon ** 2
+        lpips_t0 = PPLSampler.VGG16Perceptual(img_t0)
+        lpips_t1 = PPLSampler.VGG16Perceptual(img_t1)
+        return (lpips_t0 - lpips_t1).square().sum(dim=-1) / self.epsilon ** 2
 
     # noinspection PyUnusedLocal
     def forward(self, dataset: Dataset, gen: nn.Module, target_index: Optional[int] = None,
@@ -185,7 +166,7 @@ class PPLSampler(nn.Module):
                 # Pass labels to sampler
                 labels = real_samples[condition_indices[-1]].pin_memory().to(self.device)
 
-            x = self.sampler(labels)
+            x = self.sampler(labels, gen=gen)
             dist.append(x)
 
         # Compute PPL

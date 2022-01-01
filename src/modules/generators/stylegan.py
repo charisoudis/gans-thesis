@@ -140,6 +140,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         # Save arguments
         self.locals = locals()
         del self.locals['self']
+        self.z_dim = z_dim
 
         # Initialize utils.ifaces.BalancedFreezable
         BalancedFreezable.__init__(self)

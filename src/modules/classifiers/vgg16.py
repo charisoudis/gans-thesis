@@ -1,5 +1,6 @@
 import os
-from collections import namedtuple
+import re
+from collections import namedtuple, OrderedDict
 from typing import Dict, Optional, Sequence, Tuple
 
 import torch
@@ -117,7 +118,6 @@ class VGG16Sliced(VGG16):
         # Initialize module
         super(VGG16Sliced, self).__init__(model_gfolder_or_groot=model_gfolder_or_groot, chkpt_step=chkpt_step,
                                           crop_fc=True)
-
         # Slice module
         # Source: https://github.com/richzhang/PerceptualSimilarity/blob/master/lpips/pretrained_networks.py
         vgg_pretrained_features = self.vgg16.features
@@ -140,6 +140,8 @@ class VGG16Sliced(VGG16):
         if not requires_grad:
             for param in self.vgg16.parameters():
                 param.requires_grad = False
+            self.requires_grad_(False)
+        self.n_channels_list = [64, 128, 256, 512, 512]
 
     def forward(self, x: Tensor) -> Tuple[Tensor]:
         """
@@ -167,6 +169,67 @@ class VGG16Sliced(VGG16):
         super().visualize_indices(indices=indices)
 
 
+class VGG16Perceptual(VGG16Sliced):
+    """
+    VGG16Perceptual Class:
+    This module based on VGG16 will be used for extracting LPIPS metric using VGG-16 and Zhang weighting.
+    Takes reference images and corrupted images (STACKED TOGETHER) as an input and outputs the perceptual distance
+    between the image pairs.
+    Source for LPIPS Metric: https://arxiv.org/abs/1801.03924
+    Source: https://gist.github.com/shawwn/971d9813a5e45255f507cdfe6981c469
+    """
+
+    def __init__(self, model_gfolder_or_groot: FilesystemFolder, chkpt_step: Optional[int or str] = None,
+                 use_dropout: bool = False):
+        """
+        VGG16Perceptual class constructor.
+        :param (FilesystemFolder) model_gfolder_or_groot: a `utils.gdrive.GDriveFolder` object to download/upload model
+                                                     checkpoints and metrics from/to Google Drive
+        :param (str or None) chkpt_step: if not `None` then the model checkpoint at the given :attr:`step` will be
+                                         loaded via `nn.Module().load_state_dict()`
+        :param (bool) use_dropout: set to True to use Dropout in Linear layers
+        """
+        # Initialize module
+        super(VGG16Perceptual, self).__init__(model_gfolder_or_groot=model_gfolder_or_groot, chkpt_step=chkpt_step)
+
+        # Linear comparators
+        # Source: https://github.com/francois-rozet/piqa/blob/master/piqa/lpips.py
+        self.linear_layers = nn.ModuleList([
+            nn.Sequential(
+                nn.Dropout(inplace=True) if use_dropout else nn.Identity(),
+                nn.Conv2d(c, 1, kernel_size=1, bias=False),
+            ) for c in self.n_channels_list
+        ])
+        # Load checkpoint from Google Drive
+        if chkpt_step:
+            chkpt_filepath = self.fetch_checkpoint(epoch_or_id=f'{chkpt_step}_linear', step=None)
+            self.logger.info(f'[VGG16] Loading {chkpt_filepath} in linear layers')
+            lin_state_dict = torch.load(chkpt_filepath, map_location='cpu')
+            self.linear_layers.load_state_dict(
+                OrderedDict((re.sub(r'lin([0-9]).model.([0-9])', r'\1.\2', k), v)
+                            for k, v in lin_state_dict.items())
+            )
+
+    def forward(self, x: Tensor, reduction: str = 'mean') -> Tensor:
+        """
+        Compute LPIPS given a single batch of inputs
+        :param (Tensor) x: input
+        :param (str) reduction: one of 'none', 'mean', 'sum'
+        :return:
+        """
+        # Extract features
+        vgg_features = super().forward(x)
+        # Normalize each feature vector to unit length over channel dimension.
+        normalized_features = [xf / (xf.square().sum(dim=1, keepdims=True) ** 0.5 + 1e-10)
+                               for xf in vgg_features]
+        # Split and compute MSE
+        feature_diff_mse = [torch.subtract(*nf.chunk(2, dim=0)).square().mean(dim=(-1, -2), keepdim=True)
+                            for nf in normalized_features]
+        feature_diff_flat = [self.linear_layers[i](fd_mse).flatten()
+                             for i, fd_mse in enumerate(feature_diff_mse)]
+        return torch.stack(feature_diff_flat, dim=-1).sum(dim=-1)
+
+
 if __name__ == '__main__':
     # Get GoogleDrive root folder
     _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
@@ -181,5 +244,17 @@ if __name__ == '__main__':
     _datasets_groot = _groot.subfolder_by_name('Datasets')
 
     # Initialize model
-    _inception = VGG16(model_gfolder_or_groot=_models_groot, chkpt_step='397923af', crop_fc=False)
-    print(_inception)
+    # _vgg16 = VGG16(model_gfolder_or_groot=_models_groot, chkpt_step='397923af', crop_fc=False)
+    # print(_vgg16)
+    _vgg16p = VGG16Perceptual(model_gfolder_or_groot=_models_groot, chkpt_step='397923af')
+    _x1 = torch.randn(32, 3, 224, 224)
+    _lpips1 = _vgg16p(_x1)
+    print(_lpips1)
+    print(_lpips1.shape)
+    _x2 = torch.randn(32, 3, 224, 224)
+    _lpips2 = _vgg16p(_x2)
+    print(_lpips2)
+    print(_lpips2.shape)
+
+    print((_lpips1 - _lpips2).square().sum(dim=-1) / 1e-4 ** 2)
+    print(((_lpips1 - _lpips2).square().sum(dim=-1) / 1e-4 ** 2).shape)
