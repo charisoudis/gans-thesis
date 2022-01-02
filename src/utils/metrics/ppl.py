@@ -20,13 +20,13 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import transforms
 
-from modules.classifiers.vgg16 import VGG16Perceptual
+from datasets.deep_fashion import FISBDataset
+from modules.classifiers.vgg16 import LPIPSLoss
 from modules.generators.stylegan import StyleGanGenerator
 from utils.dep_free import get_tqdm
+from utils.filesystems.local import LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
-from utils.pytorch import ToTensorOrPass
 
 
 def slerp(a: torch.Tensor, b: torch.Tensor, t) -> torch.Tensor:
@@ -48,27 +48,16 @@ def slerp(a: torch.Tensor, b: torch.Tensor, t) -> torch.Tensor:
     return d
 
 
-# ----------------------------------------------------------------------------
-
-class PPLSampler(nn.Module):
+class PPL(nn.Module):
     """
-    PPLSampler Class:
+    PPL Class:
     Source: https://github.com/NVlabs/stylegan2-ada-pytorch/blob/main/metrics/perceptual_path_length.py
     """
 
-    # These are the VGG16 image transforms
-    VGG16Transforms = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        ToTensorOrPass(renormalize=True),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
-
-    # Keep the Inception network in a static variable to avoid re-initializing it on sub-classes
-    VGG16Perceptual = None
+    LPIPSLoss: LPIPSLoss = None
 
     def __init__(self, model_fs_folder_or_root: FilesystemFolder, device: str, n_samples: int, batch_size: int = 8,
-                 epsilon: float = 1e-4, space: str = 'w', sampling: str = False):
+                 epsilon: float = 1e-4, space: str = 'w', sampling: str = 'full'):
         """
         :param (FilesystemFolder) model_fs_folder_or_root: a `utils.ifaces.FilesystemFolder` instance for cloud or
                                                            locally saved models using the same API
@@ -79,28 +68,30 @@ class PPLSampler(nn.Module):
         :param (str) space: one of 'z', 'w'
         :param (str) sampling: one of 'full', 'end'
         """
+        # Check arguments
         assert space in ['z', 'w']
         assert sampling in ['full', 'end']
-        super(PPLSampler, self).__init__()
+        # Init nn.Module
+        super().__init__()
+        # Init LPIPS loss calculator
+        if self.__class__.LPIPSLoss is None:
+            self.__class__.LPIPSLoss = LPIPSLoss(model_gfolder_or_groot=model_fs_folder_or_root, chkpt_step='397923af',
+                                                 use_dropout=False, requires_grad=False).to(device)
+        # Save model attributes
         self.epsilon = epsilon
         self.space = space
         self.sampling = sampling
-
-        # Instantiate Inception v3 model(s)
-        if PPLSampler.VGG16Perceptual is None:
-            _vgg16_instance = VGG16Perceptual(model_fs_folder_or_root, chkpt_step='397923af')
-            PPLSampler.VGG16Perceptual = _vgg16_instance.to(device).eval()
-
-        # Save params in instance
         self.device = device
         self.n_samples = n_samples
         self.batch_size = batch_size
         self.tqdm = get_tqdm()
 
-        # Disable grad graphs in PPL Sampler
-        self.eval().requires_grad_(False).to(device)
-
-    def sampler(self, c: torch.Tensor, gen: StyleGanGenerator):
+    def sampler(self, c: torch.Tensor, gen: StyleGanGenerator) -> torch.Tensor:
+        """
+        :param (Tensor) c: dataset one-hot labels as torch.Tensor object
+        :param (StyleGanGenerator) gen: the generator module
+        :return: a torch.Tensor of shape (B, 1)
+        """
         # Generate random latents and interpolation t-values.
         t = torch.rand([c.shape[0]], device=c.device) * (1 if self.sampling == 'full' else 0)
         z0, z1 = torch.randn([c.shape[0] * 2, gen.z_dim], device=c.device).chunk(2)
@@ -110,8 +101,8 @@ class PPLSampler(nn.Module):
         # TODO: are also to disentangle the noise space.
         if self.space == 'w':
             w0, w1 = gen.noise_mapping(torch.cat([z0, z1])).chunk(2)
-            wt0 = w0.lerp(w1, t.unsqueeze(1).unsqueeze(2))
-            wt1 = w0.lerp(w1, t.unsqueeze(1).unsqueeze(2) + self.epsilon)
+            wt0 = w0.lerp(w1, t.unsqueeze(1))
+            wt1 = w0.lerp(w1, t.unsqueeze(1) + self.epsilon)
         else:  # space == 'z'
             zt0 = slerp(z0, z1, t.unsqueeze(1))
             zt1 = slerp(z0, z1, t.unsqueeze(1) + self.epsilon)
@@ -120,13 +111,11 @@ class PPLSampler(nn.Module):
         # Generate images.
         img_t0 = gen(w=wt0)
         img_t1 = gen(w=wt1)
-        img_t0 = PPLSampler.VGG16Transforms(img_t0)
-        img_t1 = PPLSampler.VGG16Transforms(img_t1)
 
-        # Evaluate differential LPIPS
-        lpips_t0 = PPLSampler.VGG16Perceptual(img_t0)
-        lpips_t1 = PPLSampler.VGG16Perceptual(img_t1)
-        return (lpips_t0 - lpips_t1).square().sum(dim=-1) / self.epsilon ** 2
+        # Compute individual losses and then sum up
+        lpips_t0 = self.__class__.LPIPSLoss(img_t0)
+        lpips_t1 = self.__class__.LPIPSLoss(img_t1)
+        return (lpips_t0 - lpips_t1).square().sum(dim=0) / self.epsilon ** 2
 
     # noinspection PyUnusedLocal
     def forward(self, dataset: Dataset, gen: nn.Module, target_index: Optional[int] = None,
@@ -149,19 +138,20 @@ class PPLSampler(nn.Module):
         """
         # Create the dataloader instance
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
-        if self.device == 'cuda:0' and torch.cuda.is_available():
+        if self.device in ['cuda:0', 'cuda'] and torch.cuda.is_available():
             torch.cuda.empty_cache()
         # Sampling loop.
         dist = []
-        cur_samples = 0
+        cur_samples, break_after = 0, False
         for real_samples in self.tqdm(dataloader, total=int(math.ceil(self.n_samples / self.batch_size)),
                                       disable=not show_progress, desc='PPL'):
             if cur_samples >= self.n_samples:
                 break_after = True
+            cur_batch_size = real_samples.shape[0]
 
             if condition_indices is None:
                 # No labels --> Replace with zeros
-                labels = torch.zeros((real_samples.shape[0], 0), dtype=np.float32)
+                labels = torch.zeros(cur_batch_size, 0).to(self.device)
             else:
                 # Pass labels to sampler
                 labels = real_samples[condition_indices[-1]].pin_memory().to(self.device)
@@ -169,9 +159,38 @@ class PPLSampler(nn.Module):
             x = self.sampler(labels, gen=gen)
             dist.append(x)
 
+            cur_samples += cur_batch_size
+            if break_after:
+                break
+
         # Compute PPL
-        dist = torch.cat(dist)[:cur_samples].cpu().numpy()
+        dist = torch.cat(dist)[:cur_samples].detach().cpu().numpy()
+        print(dist)
         lo = np.percentile(dist, 1, interpolation='lower')
         hi = np.percentile(dist, 99, interpolation='higher')
         ppl = np.extract(np.logical_and(dist >= lo, dist <= hi), dist).mean()
         return torch.tensor(ppl)
+
+
+# noinspection DuplicatedCode
+if __name__ == '__main__':
+    # Init Google Drive stuff
+    _local_gdrive_root = '/home/achariso/PycharmProjects/gans-thesis/.gdrive'
+    _groot = LocalFolder.root(LocalCapsule(_local_gdrive_root))
+    _models_groot = _groot.subfolder_by_name('Models')
+    _datasets_groot = _groot.subfolder_by_name('Datasets')
+
+    # Setup evaluation dataset
+    _target_shape = 128
+    _target_channels = 3
+    _dataset = FISBDataset(dataset_fs_folder_or_root=_datasets_groot,
+                           image_transforms=FISBDataset.get_image_transforms(_target_shape, _target_channels))
+
+    # Initialize Generator
+    _device = 'cpu'
+    _gen = StyleGanGenerator(resolution=128, num_iters=1).to(_device)
+
+    # Evaluate Generator using FID
+    _ppl_calculator = PPL(model_fs_folder_or_root=_models_groot, n_samples=10, batch_size=2, device=_device)
+    _ppl = _ppl_calculator(_dataset, _gen, target_index=0, condition_indices=None, show_progress=True)
+    print(_ppl)

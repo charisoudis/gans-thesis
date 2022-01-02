@@ -8,10 +8,12 @@ import torch.nn as nn
 from PIL.Image import Image
 from torch import Tensor
 from torchvision.models import vgg16
+from torchvision.transforms import transforms
 
 from modules.ifaces import IGModule
 from utils.filesystems.local import LocalFilesystem, LocalFolder, LocalCapsule
 from utils.ifaces import FilesystemFolder
+from utils.pytorch import ToTensorOrPass
 
 
 class VGG16(nn.Module, IGModule):
@@ -23,6 +25,14 @@ class VGG16(nn.Module, IGModule):
     """
 
     DefaultConfiguration = {'crop_fc': False}
+
+    # These are the VGG16 image transforms
+    VGG16Transforms = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        ToTensorOrPass(renormalize=True),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
 
     def __init__(self, model_gfolder_or_groot: FilesystemFolder, chkpt_step: Optional[int or str] = None,
                  crop_fc: bool = False):
@@ -149,6 +159,9 @@ class VGG16Sliced(VGG16):
         :param x: the input batch of images as a `torch.Tensor` object
         :return: a tuple containing the intermediate feature activations as `torch.Tensor` objects
         """
+        # Transform image first
+        x = VGG16.VGG16Transforms(x)
+        # Perform the forward pass
         h = self.slice1(x)
         h_relu1_2 = h
         h = self.slice2(h)
@@ -169,20 +182,21 @@ class VGG16Sliced(VGG16):
         super().visualize_indices(indices=indices)
 
 
-class VGG16Perceptual(VGG16Sliced):
+class LPIPSLoss(nn.Module):
     """
-    VGG16Perceptual Class:
+    LPIPSLoss Class:
     This module based on VGG16 will be used for extracting LPIPS metric using VGG-16 and Zhang weighting.
     Takes reference images and corrupted images (STACKED TOGETHER) as an input and outputs the perceptual distance
     between the image pairs.
     Source for LPIPS Metric: https://arxiv.org/abs/1801.03924
-    Source: https://gist.github.com/shawwn/971d9813a5e45255f507cdfe6981c469
+    Source 1: https://gist.github.com/shawwn/971d9813a5e45255f507cdfe6981c469
+    Source 2: https://github.com/S-aiueo32/lpips-pytorch
     """
 
     def __init__(self, model_gfolder_or_groot: FilesystemFolder, chkpt_step: Optional[int or str] = None,
-                 use_dropout: bool = False):
+                 use_dropout: bool = False, requires_grad: bool = False):
         """
-        VGG16Perceptual class constructor.
+        LPIPSLoss class constructor.
         :param (FilesystemFolder) model_gfolder_or_groot: a `utils.gdrive.GDriveFolder` object to download/upload model
                                                      checkpoints and metrics from/to Google Drive
         :param (str or None) chkpt_step: if not `None` then the model checkpoint at the given :attr:`step` will be
@@ -190,7 +204,8 @@ class VGG16Perceptual(VGG16Sliced):
         :param (bool) use_dropout: set to True to use Dropout in Linear layers
         """
         # Initialize module
-        super(VGG16Perceptual, self).__init__(model_gfolder_or_groot=model_gfolder_or_groot, chkpt_step=chkpt_step)
+        super(LPIPSLoss, self).__init__()
+        self.vgg16_sliced = VGG16Sliced(model_gfolder_or_groot=model_gfolder_or_groot, chkpt_step=chkpt_step)
 
         # Linear comparators
         # Source: https://github.com/francois-rozet/piqa/blob/master/piqa/lpips.py
@@ -198,36 +213,66 @@ class VGG16Perceptual(VGG16Sliced):
             nn.Sequential(
                 nn.Dropout(inplace=True) if use_dropout else nn.Identity(),
                 nn.Conv2d(c, 1, kernel_size=1, bias=False),
-            ) for c in self.n_channels_list
+            ) for c in self.vgg16_sliced.n_channels_list
         ])
         # Load checkpoint from Google Drive
         if chkpt_step:
-            chkpt_filepath = self.fetch_checkpoint(epoch_or_id=f'{chkpt_step}_linear', step=None)
-            self.logger.info(f'[VGG16] Loading {chkpt_filepath} in linear layers')
+            chkpt_filepath = self.vgg16_sliced.fetch_checkpoint(epoch_or_id=f'{chkpt_step}_linear', step=None)
+            self.vgg16_sliced.logger.info(f'[VGG16] Loading {chkpt_filepath} in linear layers')
             lin_state_dict = torch.load(chkpt_filepath, map_location='cpu')
             self.linear_layers.load_state_dict(
                 OrderedDict((re.sub(r'lin([0-9]).model.([0-9])', r'\1.\2', k), v)
                             for k, v in lin_state_dict.items())
             )
+        # Freeze networks
+        if not requires_grad:
+            self.vgg16_sliced = self.vgg16_sliced.eval().requires_grad_(False)
+            self.linear_layers = self.linear_layers.eval().requires_grad_(False)
 
-    def forward(self, x: Tensor, reduction: str = 'mean') -> Tensor:
+    def forward_single(self, x: Tensor, reduction: str = 'mean') -> Tensor:
         """
         Compute LPIPS given a single batch of inputs
         :param (Tensor) x: input
-        :param (str) reduction: one of 'none', 'mean', 'sum'
+        :param (str) reduction: one of 'mean', 'sum'
         :return:
         """
         # Extract features
-        vgg_features = super().forward(x)
+        vgg_features = self.vgg16_sliced(x)
         # Normalize each feature vector to unit length over channel dimension.
         normalized_features = [xf / (xf.square().sum(dim=1, keepdims=True) ** 0.5 + 1e-10)
                                for xf in vgg_features]
         # Split and compute MSE
-        feature_diff_mse = [torch.subtract(*nf.chunk(2, dim=0)).square().mean(dim=(-1, -2), keepdim=True)
+        feature_diff_mse = [torch.subtract(*nf.chunk(2, dim=0)).square()
                             for nf in normalized_features]
-        feature_diff_flat = [self.linear_layers[i](fd_mse).flatten()
+        feature_diff_flat = [self.linear_layers[i](fd_mse).mean(dim=(-1, -2), keepdim=True)
                              for i, fd_mse in enumerate(feature_diff_mse)]
-        return torch.stack(feature_diff_flat, dim=-1).sum(dim=-1)
+        return torch.stack(feature_diff_flat, dim=0).sum(dim=0)
+
+    def forward(self, x: Tensor, y: Optional[Tensor] = None, reduction: str = 'mean') -> Tensor:
+        """
+        Compute LPIPS given a single batch of inputs
+        :param (Tensor) x: input
+        :param (Tensor) y: target
+        :param (str) reduction: one of 'mean', 'sum'
+        :return:
+        """
+        if y is None:
+            return self.forward_single(x=x, reduction=reduction)
+
+        # Extract features
+        feat_x = self.vgg16_sliced(x)
+        feat_y = self.vgg16_sliced(y)
+        # Normalize each feature vector to unit length over channel dimension.
+        norm_feat_x = [xf / (xf.square().sum(dim=1, keepdims=True) ** 0.5 + 1e-10)
+                       for xf in feat_x]
+        norm_feat_y = [yf / (yf.square().sum(dim=1, keepdims=True) ** 0.5 + 1e-10)
+                       for yf in feat_y]
+        # Split and compute MSE
+        feat_diff = [torch.subtract(nfx, nfy).square()
+                     for nfx, nfy in zip(norm_feat_x, norm_feat_y)]
+        feat_diff_mse = [self.linear_layers[i](fd_mse).mean(dim=(-1, -2), keepdim=True)
+                         for i, fd_mse in enumerate(feat_diff)]
+        return torch.stack(feat_diff_mse, dim=0).sum(dim=0)
 
 
 if __name__ == '__main__':
@@ -246,15 +291,20 @@ if __name__ == '__main__':
     # Initialize model
     # _vgg16 = VGG16(model_gfolder_or_groot=_models_groot, chkpt_step='397923af', crop_fc=False)
     # print(_vgg16)
-    _vgg16p = VGG16Perceptual(model_gfolder_or_groot=_models_groot, chkpt_step='397923af')
-    _x1 = torch.randn(32, 3, 224, 224)
-    _lpips1 = _vgg16p(_x1)
-    print(_lpips1)
+    torch.cuda.empty_cache()
+    _lpips_vgg = LPIPSLoss(model_gfolder_or_groot=_models_groot, chkpt_step='397923af')
+    _lpips_vgg = _lpips_vgg.to('cuda')
+    _x1 = torch.randn(3, 3, 224, 224, device='cuda')
+    _lpips1 = _lpips_vgg(_x1)
     print(_lpips1.shape)
-    _x2 = torch.randn(32, 3, 224, 224)
-    _lpips2 = _vgg16p(_x2)
-    print(_lpips2)
-    print(_lpips2.shape)
 
-    print((_lpips1 - _lpips2).square().sum(dim=-1) / 1e-4 ** 2)
+    torch.cuda.empty_cache()
+    _x2 = torch.randn(3, 3, 224, 224, device='cuda')
+    _lpips2 = _lpips_vgg(_x2)
+    print(_lpips2.shape)
     print(((_lpips1 - _lpips2).square().sum(dim=-1) / 1e-4 ** 2).shape)
+
+    torch.cuda.empty_cache()
+    _lpips = _lpips_vgg(_x1, _x2)
+    print(_lpips.shape)
+    print(torch.mean(_lpips.squeeze()))
