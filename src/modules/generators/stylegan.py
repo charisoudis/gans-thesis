@@ -87,7 +87,7 @@ class StyleGanGeneratorBlock(nn.Module):
         self.adaptive_norm2 = AdaptiveInstanceNorm2d(c_out, w_dim)
         # self.pixel_norm = PixelNorm2d()
 
-    def forward(self, x: torch.Tensor, w: torch.Tensor):
+    def forward(self, x: torch.Tensor, w: Optional[torch.Tensor] = None):
         """
         Function for completing a forward pass of StyleGanGeneratorBlock:
         Given an input x and the style vector w, it computes a StyleGAN generator block.
@@ -96,11 +96,14 @@ class StyleGanGeneratorBlock(nn.Module):
         :return a torch.Tensor object of shape (N, C_out, H, W)
         """
         x = self.conv_block1(x)
-        x = self.adaptive_norm1(x, w)
-        # x = self.pixel_norm(x)
+        if w is not None:
+            x = self.adaptive_norm1(x, w)
+        else:
+            x = self.pixel_norm(x)
         x = self.conv_block2(x)
-        return self.adaptive_norm2(x, w)
-        # return self.pixel_norm(x)
+        if w is not None:
+            return self.adaptive_norm2(x, w)
+        return self.pixel_norm(x)
 
 
 class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):

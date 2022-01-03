@@ -522,7 +522,8 @@ class StyleGan(nn.Module, IGanGModule):
                 indices = [indices, ]
             for index in indices:
                 # fake image
-                noise_multiplier = sorted((-1 * gen_truncation, index, gen_truncation))[1]
+                noise_multiplier = sorted((-1 * gen_truncation, index, gen_truncation))[1] \
+                    if gen_truncation is not None else 1.0
                 noise = noise_multiplier * torch.randn(1, self.gen.locals['z_dim'], device=self.device)
                 fake_images.append(self.gen(noise).detach().squeeze(0).cpu())
                 # real image
@@ -605,8 +606,9 @@ if __name__ == '__main__':
 
     # Initialize model
     # noinspection PyTypeChecker
-    _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='karrasB_z512', chkpt_step=None, chkpt_epoch=None,
-                      dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator, device='cpu')
+    _stgan = StyleGan(model_fs_folder_or_root=_models_root, config_id='karrasB_z512_16gb', chkpt_step=None,
+                      chkpt_epoch=None, dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator,
+                      device='cpu')
     _stgan.disc_iters = 2
     _stgan._init_gen_disc_opt_scheduler(resolution=8, device='cpu')
     _stgan._init_gen_disc_opt_scheduler(resolution=16, device='cpu')
