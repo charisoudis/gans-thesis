@@ -13,6 +13,7 @@ from modules.partial.decoding import ChannelsProjectLayer
 from modules.partial.normalization import BatchStd
 from utils import pytorch
 from utils.command_line_logger import CommandLineLogger
+from utils.dep_free import closest_pow
 from utils.ifaces import BalancedFreezable, Verbosable
 from utils.pytorch import get_total_params, get_gradient_penalty
 from utils.string import to_human_readable
@@ -20,20 +21,20 @@ from utils.train import get_alpha_curve
 
 
 class StyleGanDiscriminatorBlock(nn.Module):
-    def __init__(self, c_in: int, c_out: int, is_initial_block: bool = False, initial_shape: int = 4):
+    def __init__(self, c_in: int, c_out: int, add_std_layer: bool = False, initial_shape: int = 4):
         self.locals = locals()
         del self.locals['self']
 
         nn.Module.__init__(self)
 
-        self.is_initial_block = is_initial_block
-        if self.is_initial_block:
+        self.add_std_layer = add_std_layer
+        if self.add_std_layer:
             # noinspection PyTypeChecker
             self.disc_block = nn.Sequential(
                 BatchStd(),
-                nn.Conv2d(c_in + 1, c_out, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(c_in + 1, c_in, kernel_size=3, stride=1, padding=1),
                 nn.LeakyReLU(0.2),
-                nn.Conv2d(c_out, c_out, kernel_size=4, stride=1, padding=1),
+                nn.Conv2d(c_in, c_out, kernel_size=4, stride=1, padding=1),
                 nn.LeakyReLU(0.2),
                 nn.Flatten(),
                 nn.Linear(c_out * (initial_shape - 1) ** 2, 1)
@@ -41,9 +42,9 @@ class StyleGanDiscriminatorBlock(nn.Module):
         else:
             # noinspection PyTypeChecker
             self.disc_block = nn.Sequential(
-                nn.Conv2d(c_in, c_out, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(c_in, c_in, kernel_size=3, stride=1, padding=1),
                 nn.LeakyReLU(0.2),
-                nn.Conv2d(c_out, c_out, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(c_in, c_out, kernel_size=3, stride=1, padding=1),
                 nn.LeakyReLU(0.2),
                 nn.AvgPool2d(kernel_size=2, stride=2)
             )
@@ -58,9 +59,10 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
     Discriminator of StyleGAN v1 (identical to ProGAN's one).
     """
 
-    def __init__(self, resolution: int, c_in: int = 3, c_base: int = 2048, c_max: int = 512, c_decay: float = 1.0,
+    def __init__(self, resolution: int, c_in: int = 3, c_base: int = 16384, c_max: int = 512, c_decay: float = 1.0,
                  adv_criterion: Optional[str] = None, lambda_gp: float = 10.0, alpha_multiplier: float = 10.0,
-                 num_iters: int = 2, use_gradient_penalty: bool = False, logger: Optional[CommandLineLogger] = None):
+                 num_iters: int = 2, use_gradient_penalty: bool = False, prev_fromRGB: Optional[nn.Module] = None,
+                 logger: Optional[CommandLineLogger] = None):
         """
         StyleGanDiscriminator class constructor.
         :param (int) resolution: network's input resolution
@@ -74,9 +76,10 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         :param (float) lambda_gp: weighting coefficient of gradient penalty when computing the loss
         :param (float) alpha_multiplier: multiplier that defines the smoothness of the alpha curve
                                          (1=linear, ..., 10=smooth, ..., 1000=delta)
-        :param (int) num_iters: number of iterations
+        :param (int) num_iters: [for alpha curve] total number of iterations (equals the number of points in curve) >= 2
         :param (bool) use_gradient_penalty: set to True to have the discriminator compute gradient penalty alongside its
                                             loss
+        :param (optional) prev_fromRGB: previous fromRGB (used when reusing parts fo the networks when growing stuff)
         :param (optional) logger: CommandLineLogger instance to be used when verbose is enabled
         """
         # Save arguments
@@ -93,10 +96,12 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         for bi in range(2, int(math.log2(resolution)) + 1):
             block_index = bi - 2
             block_c_in, block_c_out = self._get_c_hidden(bi), self._get_c_hidden(bi - 1)
-            setattr(self, f'fromRGB{block_index}',
-                    nn.Sequential(ChannelsProjectLayer(c_in=c_in, c_out=block_c_in), nn.LeakyReLU(0.2)))
             setattr(self, f'block{block_index}',
-                    StyleGanDiscriminatorBlock(block_c_in, block_c_out, is_initial_block=block_index == 0))
+                    StyleGanDiscriminatorBlock(block_c_in, block_c_out,
+                                               add_std_layer=block_index == 0))
+            if block_index in [int(math.log2(resolution)) - 3, int(math.log2(resolution)) - 2]:
+                setattr(self, f'fromRGB{block_index}',
+                        nn.Sequential(ChannelsProjectLayer(c_in=c_in, c_out=block_c_in), nn.LeakyReLU(0.2)))
         self.downsample = nn.AvgPool2d(kernel_size=2, stride=2)
         # Save args
         self.resolution = self.locals['resolution']
@@ -122,7 +127,10 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         """
         Get no. of filters based on below formulae
         """
-        return min(int(self.locals['c_base'] / (2.0 ** (i * self.locals['c_decay']))), self.locals['c_max'])
+        return closest_pow(
+            min(int(self.locals['c_base'] / (2.0 ** (i * self.locals['c_decay']))), self.locals['c_max']),
+            of=2
+        )
 
     @property
     def nparams_hr(self):
@@ -252,15 +260,18 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         # Transfer parameter values
         for bi in range(2, int(math.log2(self.resolution)) + 1):
             block_index = bi - 2
-            getattr(new_disc, f'fromRGB{block_index}') \
-                .load_state_dict(getattr(self, f'fromRGB{block_index}').state_dict())
             getattr(new_disc, f'block{block_index}').load_state_dict(getattr(self, f'block{block_index}').state_dict())
+            if block_index in [int(math.log2(new_resolution)) - 3, int(math.log2(new_resolution)) - 2]:
+                if hasattr(new_disc, f'fromRGB{block_index}'):
+                    getattr(new_disc, f'fromRGB{block_index}') \
+                        .load_state_dict(getattr(self, f'fromRGB{block_index}').state_dict())
         # Flush old network
         del self.downsample
         for bi in range(2, int(math.log2(self.resolution)) + 1):
             block_index = bi - 2
-            delattr(self, f'fromRGB{block_index}')
             delattr(self, f'block{block_index}')
+            if hasattr(self, f'fromRGB{block_index}'):
+                delattr(self, f'fromRGB{block_index}')
         gc.collect()
         if str(device).startswith('cuda') and torch.cuda.is_available():
             torch.cuda.empty_cache()
