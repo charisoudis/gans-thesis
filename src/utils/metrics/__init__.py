@@ -14,6 +14,7 @@ from utils.ifaces import FilesystemFolder
 from utils.metrics.f1 import F1
 from utils.metrics.fid import FID
 from utils.metrics.is_ import IS
+from utils.metrics.ppl import PPL
 from utils.metrics.ssim import SSIM
 
 
@@ -64,6 +65,8 @@ class GanEvaluator(object):
             'f1': F1(model_fs_folder_or_root=model_fs_folder_or_root, n_samples=n_samples,
                      batch_size=batch_size, device=device),
             'ssim': SSIM(n_samples=n_samples, batch_size=batch_size, c_img=ssim_c_img, device=device),
+            'ppl': PPL(model_fs_folder_or_root=model_fs_folder_or_root, n_samples=n_samples,
+                       batch_size=batch_size, device=device),
         }
         # Save args
         self.target_index = target_index

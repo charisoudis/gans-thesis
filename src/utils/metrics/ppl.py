@@ -165,7 +165,6 @@ class PPL(nn.Module):
 
         # Compute PPL
         dist = torch.cat(dist)[:cur_samples].detach().cpu().numpy()
-        print(dist)
         lo = np.percentile(dist, 1, interpolation='lower')
         hi = np.percentile(dist, 99, interpolation='higher')
         ppl = np.extract(np.logical_and(dist >= lo, dist <= hi), dist).mean()

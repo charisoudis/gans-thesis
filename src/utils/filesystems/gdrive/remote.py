@@ -833,4 +833,7 @@ if __name__ == '__main__':
                         use_refresh_token=True, update_credentials=True)
     _gfs = GDriveFilesystem(gcapsule=_gc)
     _gf = GDriveFolder.root(_gfs, update_cache=True, cloud_root='12IiDRSnj6r7Jd66Yxz3ZZTn9EFW-Qnqu')
-    _gf.upload_file(local_filename='client_secrets.json', show_progress=True)
+    _gfm = _gf.subfolder_by_name('Models', recursive=False) \
+        .subfolder_by_name_or_create('model_name=stylegan_karras', recursive=False) \
+        .subfolder_by_name_or_create('Configurations', recursive=False)
+    _gfm.upload_file(local_filename='karrasB_z512.yaml', show_progress=True)
