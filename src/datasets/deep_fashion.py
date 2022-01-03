@@ -66,7 +66,7 @@ class ICRBDataset(Dataset, GDriveDataset):
         Dataset.__init__(self)
         # Instantiate `utils.filesystems.gdrive.GDriveDataset` class
         dataset_fs_folder = dataset_fs_folder_or_root if dataset_fs_folder_or_root.name == self.DatasetName else \
-            dataset_fs_folder_or_root.subfolder_by_name(folder_name=self.DatasetName, recursive=True)
+            dataset_fs_folder_or_root.subfolder_by_name(folder_name=self.DatasetName, recursive=False)
         GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.zip')
         self.root = dataset_fs_folder.local_root
         # Initialize instance properties
@@ -270,7 +270,7 @@ class ICRBCrossPoseDataset(Dataset, GDriveDataset):
         Dataset.__init__(self)
         # Instantiate `utils.filesystems.gdrive.GDriveDataset` class
         dataset_fs_folder = dataset_fs_folder_or_root if dataset_fs_folder_or_root.name == ICRBDataset.DatasetName \
-            else dataset_fs_folder_or_root.subfolder_by_name(folder_name=ICRBDataset.DatasetName, recursive=True)
+            else dataset_fs_folder_or_root.subfolder_by_name(folder_name=ICRBDataset.DatasetName, recursive=False)
         GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.zip')
         self.root = dataset_fs_folder.local_root
         # Initialize instance properties
@@ -500,7 +500,7 @@ class FISBDataset(Dataset, GDriveDataset):
         Dataset.__init__(self)
         # Instantiate `utils.filesystems.gdrive.GDriveDataset` class
         dataset_fs_folder = dataset_fs_folder_or_root if dataset_fs_folder_or_root.name == self.DatasetName else \
-            dataset_fs_folder_or_root.subfolder_by_name(folder_name=self.DatasetName, recursive=True)
+            dataset_fs_folder_or_root.subfolder_by_name(folder_name=self.DatasetName, recursive=False)
         GDriveDataset.__init__(self, dataset_fs_folder=dataset_fs_folder, zip_filename='Img.h5')
         self.root = dataset_fs_folder.local_root
         # Initialize instance properties

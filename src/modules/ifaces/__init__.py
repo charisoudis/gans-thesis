@@ -471,7 +471,7 @@ class IGModule(GDriveModel, IModule, metaclass=ABCMeta):
         if model_name != model_name_from_class:
             self.logger.info(f'Using "{model_name}" instead of "{model_name_from_class}" as model\'s name')
         model_fs_folder = model_fs_folder_or_root if model_fs_folder_or_root.name.endswith(model_name) else \
-            model_fs_folder_or_root.subfolder_by_name(folder_name=f'model_name={model_name}', recursive=True)
+            model_fs_folder_or_root.subfolder_by_name(folder_name=f'model_name={model_name}', recursive=False)
         if model_fs_folder is None:
             self.logger.warning('Filesystem folder for model not found. Creating one now.')
             model_fs_folder = model_fs_folder_or_root.create_subfolder(f'model_name={model_name}',

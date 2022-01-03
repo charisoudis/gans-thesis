@@ -84,7 +84,7 @@ class GDriveDataset(FilesystemDataset):
         else:
             raise TypeError('Check groot_or_capsule_or_fs')
         # Find the Google Drive folder instance that corresponds to the dataset with the given folder name
-        dataset_gfolder = groot.subfolder_by_name(folder_name=dataset_folder_name, recursive=True)
+        dataset_gfolder = groot.subfolder_by_name(folder_name=dataset_folder_name, recursive=False)
         if not dataset_gfolder:
             return None
         # Instantiate a GDriveDataset object with the found Google Drive folder instance
