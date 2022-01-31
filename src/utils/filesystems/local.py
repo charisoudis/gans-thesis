@@ -1,5 +1,6 @@
 import atexit
 import os
+import zipfile
 from multiprocessing.pool import ApplyResult, ThreadPool
 from typing import Optional, List, Union, Type
 
@@ -270,11 +271,25 @@ class LocalFilesystem(Filesystem):
         # If file exists this means the cloud file has already been downloaded and, as so, we can safely return True
         if os.path.exists(local_filepath):
             # Check if user requested unzipping of the pre-downloaded file
-            if unzip_after and not os.path.exists(local_filepath.replace('.zip', '')):
-                assert local_filepath.endswith('.zip'), f'unzip_after=True, but no zip file found at {local_filepath}'
-                unzip_result = unzip_file(zip_filepath=local_filepath)
-                if not unzip_result:
-                    self.logger.critical(f'[LocalCapsule::download_file] Unzipping of {local_filepath} FAILed')
+            if unzip_after:
+                # Get list of all top-level folders in zip and check if all of them exist locally
+                zip_file = zipfile.ZipFile(local_filepath, 'r')
+                top_dirs = [d for d in zip_file.namelist() if d.endswith('/') and d.count('/') == 1]
+                zip_file.close()
+                should_unzip = False
+                zip_parent_dir = os.path.dirname(local_filepath)
+                for top_dir in top_dirs:
+                    top_dir_abs = os.path.join(zip_parent_dir, top_dir.rstrip('/'))
+                    if not os.path.exists(top_dir_abs) or not os.path.isdir(top_dir_abs):
+                        should_unzip = True
+                        break
+                    self.logger.debug(f'[LocalCapsule::download_file] Found {top_dir_abs}')
+                # Unzip
+                if should_unzip:
+                    assert local_filepath.endswith('.zip'), f'unzip_after=True but zip file not found: {local_filepath}'
+                    unzip_result = unzip_file(zip_filepath=local_filepath)
+                    if not unzip_result:
+                        self.logger.critical(f'[LocalCapsule::download_file] Unzipping of {local_filepath} FAILed')
             # Regardless of the unzipping result, the download must return True, to indicate that file exists in the
             # given local filepath
             return True
