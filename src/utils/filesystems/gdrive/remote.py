@@ -132,7 +132,10 @@ class GDriveCapsule(FilesystemCapsule):
         except KeyError as e:
             self.logger.error(f'[GDriveCapsule::get_client_dict] KeyError: {str(e)}')
             if retry:
-                @click.command()
+                @click.command(context_settings=dict(
+                    ignore_unknown_options=True,
+                    allow_extra_args=True,
+                ))
                 @click.option('--refresh_token', prompt='New Refresh Token')
                 @click.option('--access_token', prompt='New Access Token')
                 def ask_gdrive_credentials(refresh_token: str, access_token: str) -> None:

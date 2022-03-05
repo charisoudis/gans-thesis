@@ -3,7 +3,7 @@ click
 torch>=1.7.0
 torchvision
 humanize
-matplotlib==3.3.1
+matplotlib
 colorlog
 prettytable
 requests
