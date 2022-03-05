@@ -130,7 +130,6 @@ class GDriveCapsule(FilesystemCapsule):
         try:
             _client_dict['access_token'] = response['access_token']
         except KeyError as e:
-            # self.logger.warning('[GDriveCapsule::get_client_dict] Response: ' + json.dumps(response, indent=4))
             self.logger.error(f'[GDriveCapsule::get_client_dict] KeyError: {str(e)}')
             if retry:
                 @click.command()
