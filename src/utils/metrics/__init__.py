@@ -1,4 +1,4 @@
-__all__ = ['fid', 'f1', 'ssim', 'is_', 'GanEvaluator']
+__all__ = ['fid', 'f1', 'ssim', 'is_', 'ppl', 'GanEvaluator']
 
 from typing import Optional, Union, Dict
 
