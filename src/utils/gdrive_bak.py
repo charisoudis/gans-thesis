@@ -18,7 +18,7 @@ class GDriveModelCheckpoints(object):
                                                in Google Drive
         :param model_name_sep: separator of checkpoint file names (to retrieve model name and group accordingly)
         """
-        self.logger = CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'))
+        self.logger = CommandLineLogger(log_level=os.getenv('LOG_LEVEL', 'info'))
         # Save args
         self.gfolder = chkpts_gfolder
         self.local_chkpts_root = chkpts_gfolder.local_root

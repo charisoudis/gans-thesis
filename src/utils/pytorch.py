@@ -52,7 +52,7 @@ def enable_verbose(model: nn.Module, logger: Optional[CommandLineLogger] = None)
     """
     if logger is None:
         logger = model.logger if hasattr(model, 'logger') else \
-            CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'debug'), name='ModelVerbose')
+            CommandLineLogger(log_level=os.getenv('LOG_LEVEL', 'debug'), name='ModelVerbose')
     # Recursively set for submodules
     if isinstance(model, Verbosable):
         for attr_name in model.get_layer_attr_names():

@@ -21,7 +21,7 @@ class LocalCapsule(FilesystemCapsule):
         :param (str) local_root: absolute path to the local directory where local files will be placed in
         """
         self.local_root = local_root
-        self.logger = CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'), name=self.__class__.__name__)
+        self.logger = CommandLineLogger(log_level=os.getenv('LOG_LEVEL', 'info'), name=self.__class__.__name__)
 
 
 class LocalFile(FilesystemFile):

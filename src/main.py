@@ -37,7 +37,7 @@ def main():
     g = CycleGANGenerator(c_in=3, c_out=3)
     print(g)
 
-    logger = CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'))
+    logger = CommandLineLogger(log_level=os.getenv('LOG_LEVEL', 'info'))
     # logger.log_format = "> %(log_color)s%(message)s%(reset)s"
     logger.info('execution started')
 

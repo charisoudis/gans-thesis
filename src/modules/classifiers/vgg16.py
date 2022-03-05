@@ -47,7 +47,7 @@ class VGG16(nn.Module, IGModule):
         # Initialize interface
         self.DefaultConfiguration['crop_fc'] = crop_fc
         IGModule.__init__(self, model_fs_folder_or_root=model_gfolder_or_groot,
-                          log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'))
+                          log_level=os.getenv('LOG_LEVEL', 'info'))
 
         # Instantiate InceptionV3 model
         nn.Module.__init__(self)

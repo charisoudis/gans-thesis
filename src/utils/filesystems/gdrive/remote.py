@@ -3,11 +3,13 @@ import json
 import os
 import sys
 import time
+import webbrowser
 from datetime import datetime as dt, timedelta
 from io import BufferedWriter, BufferedRandom
 from multiprocessing.pool import ApplyResult, ThreadPool
 from typing import Optional, List, Tuple, Union, Type, TextIO
 
+import click
 import httplib2
 from apiclient import errors as pydrive_errors
 # noinspection PyProtectedMember
@@ -47,7 +49,7 @@ class GDriveCapsule(FilesystemCapsule):
                                           if a new token was generated
         :param (str) project_root: relative path to folder considered as root for the project
         """
-        self.logger = CommandLineLogger(log_level=os.getenv('TRAIN_LOG_LEVEL', 'info'), name=self.__class__.__name__)
+        self.logger = CommandLineLogger(log_level=os.getenv('LOG_LEVEL', 'info'), name=self.__class__.__name__)
         self.local_root = f'{local_gdrive_root}{project_root}'.rstrip('/')
         self.client_secrets_filepath = f'{self.local_root}/client_secrets.json'
         self.update_credentials = update_credentials
@@ -83,13 +85,14 @@ class GDriveCapsule(FilesystemCapsule):
         if self.client_secrets_filepath.startswith('/home/achariso'):
             os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-    def get_client_dict(self, update_credentials: bool = False) -> dict:
+    def get_client_dict(self, update_credentials: bool = False, retry: bool = True) -> dict:
         """
         Get updated client OAuth data, ready for instantiating google.oauth2.credentials.Credentials.
         Info on generating OAuth credentials can be found here:
         https://www.ibm.com/support/knowledgecenter/SS6KM6/com.ibm.appconnect.dev.doc/how-to-guides-for-apps/getting-oauth-credentials-for-google-applications.html
-        :param update_credentials: set to True to have json file updated with new access_token/token expiry if a new
-                                  token was generated
+        :param bool update_credentials: set to True to have json file updated with new access_token/token expiry if a
+                                        new token was generated
+        :param bool retry: set to True to retry once after failure, by asking the user to re-provide some details
         :return: a dict object with the initial data plus the access_token, the expires_at ISO string and possibly a
                  renewed refresh_token
         """
@@ -124,7 +127,58 @@ class GDriveCapsule(FilesystemCapsule):
             'refresh_token': _client_dict['refresh_token']
         }).json()
         self.logger.debug('[get_client_dict] Response: ' + json.dumps(response, indent=4))
-        _client_dict['access_token'] = response['access_token']
+        try:
+            _client_dict['access_token'] = response['access_token']
+        except KeyError as e:
+            # self.logger.warning('[GDriveCapsule::get_client_dict] Response: ' + json.dumps(response, indent=4))
+            self.logger.error(f'[GDriveCapsule::get_client_dict] KeyError: {str(e)}')
+            if retry:
+                @click.command()
+                @click.option('--refresh_token', prompt='New Refresh Token')
+                @click.option('--access_token', prompt='New Access Token')
+                def ask_gdrive_credentials(refresh_token: str, access_token: str) -> None:
+                    """
+                    Ask user to re-provide Google Drive OAuth credentials via click library.
+                    """
+                    _client_dict['refresh_token'] = refresh_token
+                    _client_dict['access_token'] = access_token
+                    _client_dict['access_token_expires_at'] = (dt.utcnow() + timedelta(seconds=3500)).isoformat()
+
+                # open browser
+                # noinspection SpellCheckingInspection
+                oauth_link = 'https://developers.google.com/oauthplayground/#step1' + \
+                             '&apisSelect=https%3A%2F%2Fwww.googleapis.com%2Fauth' + \
+                             '%2Fdrive&auth_code=4%2F0AX4XfWgB8AoZfKq9wB3V' + \
+                             '-l7mfyr8K9tfv2tmSWuaJw6iGhc2uk1U_UWTLpcoRbq6XAiwmQ&url' + \
+                             '=https%3A%2F%2F&content_type=application%2Fjson' + \
+                             '&http_method=GET&useDefaultOauthCred=checked' + \
+                             '&oauthEndpointSelect=Google&oauthAuthEndpointValue' + \
+                             '=https%3A%2F%2Faccounts.google.com%2Fo%2Foauth2%2Fv2' + \
+                             '%2Fauth&oauthTokenEndpointValue=https%3A%2F%2Foauth2' + \
+                             '.googleapis.com%2Ftoken&oauthClientId=844811490537' + \
+                             '-6tqo704d4ugckoot9nm96h431u4mmm19.apps' + \
+                             '.googleusercontent.com&oauthClientSecret=GOCSPX' + \
+                             '-CfvcyQpiYA_N7BrLJQERgCKv-i48&includeCredentials' + \
+                             '=checked&accessTokenType=bearer&autoRefreshToken' + \
+                             '=unchecked&accessType=offline&prompt=consent' + \
+                             '&response_type=code&wrapLines=on'
+                try:
+                    webbrowser.get('/usr/bin/google-chrome').open(oauth_link)
+                except webbrowser.Error:
+                    from IPython.core.display import display, HTML
+                    display(HTML(f"""<center><a href="{oauth_link}" target="_blank">Go to """ +
+                                 """https://developers.google.com/oauthplayground</a></center>"""))
+                # renew credentials
+                ask_gdrive_credentials.main(standalone_mode=False)
+                # write back to json file
+                if update_credentials:
+                    with open(self.client_secrets_filepath, 'w') as fp:
+                        json.dump({'web': _client_dict} if 'web' not in _client_dict.keys() else _client_dict,
+                                  fp, indent=4)
+                self.logger.debug('[GDriveCapsule::get_client_dict] Credentials saved!')
+                # test once more
+                return self.get_client_dict(update_credentials=update_credentials, retry=False)
+
         expires_in = int(response['expires_in'])
         _client_dict['access_token_expires_at'] = (dt.utcnow() + timedelta(seconds=expires_in)).isoformat()
         _client_dict['refresh_token'] = response['refresh_token'] if 'refresh_token' in response.keys() \

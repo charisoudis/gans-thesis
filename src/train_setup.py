@@ -73,7 +73,7 @@ os.environ['TRAIN_EXEC_DEV'] = str(exec_device)
 
 # Get log level
 log_level = args.log_level
-os.environ['TRAIN_LOG_LEVEL'] = log_level
+os.environ['LOG_LEVEL'] = log_level
 
 # Reproducibility
 seed = ManualSeedReproducible.manual_seed(args.seed)
