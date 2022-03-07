@@ -1,4 +1,3 @@
-import gc
 import math
 import sys
 import time
@@ -159,19 +158,20 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.block0 = StyleGanGeneratorBlock(c_in=c_const, c_out=c_hidden, w_dim=w_dim, kernel_size=4,
                                              kernel_size_2=kernel_size, padding='same', padding_2=1)
         # noinspection PyTypeChecker
+        _c_hidden_dict = {
+            4: c_hidden,
+            8: c_hidden,
+            16: c_hidden,
+            32: c_hidden,
+            64: c_hidden // 2,
+            128: c_hidden // 4,
+            256: c_hidden // 8,
+            512: c_hidden // 16,
+        }
+        self.locals['_c_hidden_dict'] = _c_hidden_dict
         self.block0_toRGB = nn.Conv2d(c_hidden, c_out, kernel_size=1)
         for bi in range(3, int(math.log2(resolution)) + 1):
             block_index = bi - 2
-            _c_hidden_dict = {
-                4: c_hidden,
-                8: c_hidden,
-                16: c_hidden,
-                32: c_hidden,
-                64: c_hidden // 2,
-                128: c_hidden // 4,
-                256: c_hidden // 8,
-                512: c_hidden // 16,
-            }
             _c_hidden_prev = _c_hidden_dict[2 ** (bi - 1)]
             _c_hidden = _c_hidden_dict[2 ** bi]
 
@@ -343,43 +343,24 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         :param (str or torch.device or None) device: new network's device
         :return: a new StyleGanGenerator instance with doubled the resolution
         """
-        self.freeze(force=True)
-        # Init new Generator network
-        new_resolution = 2 * self.resolution
-        new_locals = self.locals.copy()
-        new_locals['resolution'] = new_resolution
-        new_locals['num_iters'] = num_iters
-        new_locals['logger'] = self.logger
-        new_gen = StyleGanGenerator(**new_locals)
-        # Transfer parameter values
-        new_gen.block0.load_state_dict(self.block0.state_dict())
-        for bi in range(3, int(math.log2(self.resolution)) + 1):
-            block_index = bi - 2
-            getattr(new_gen, f'upsample{block_index}') \
-                .load_state_dict(getattr(self, f'upsample{block_index}').state_dict())
-            getattr(new_gen, f'block{block_index}').load_state_dict(getattr(self, f'block{block_index}').state_dict())
-            if bi == int(math.log2(self.resolution)):
-                getattr(self, f'upsample{block_index}_toRGB') \
-                    .load_state_dict(getattr(self, f'upsample{block_index}_toRGB').state_dict())
-                getattr(self, f'block{block_index}_toRGB') \
-                    .load_state_dict(getattr(self, f'block{block_index}_toRGB').state_dict())
-        # Flush old network
-        del self.constant
-        del self.block0
-        del self.block0_toRGB
-        for bi in range(3, int(math.log2(self.resolution)) + 1):
-            block_index = bi - 2
-            delattr(self, f'upsample{block_index}')
-            delattr(self, f'block{block_index}')
-            if bi == int(math.log2(self.resolution)):
-                delattr(self, f'upsample{block_index}_toRGB')
-                delattr(self, f'block{block_index}_toRGB')
-        gc.collect()
-        if str(device).startswith('cuda') and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        time.sleep(1.0)
-        # Return the initialized network
-        return new_gen.to(device=device)
+        # FIX: DO NOT RE-INITIALIZE ENTIRE NETWORK, JUST ADD NEW LAYERS
+        self.resolution *= 2
+        bi = int(math.log2(self.resolution))
+        block_index = bi - 2
+        _c_hidden_dict = self.locals['_c_hidden_dict']
+        _c_hidden_prev = _c_hidden_dict[2 ** (bi - 1)]
+        _c_hidden = _c_hidden_dict[2 ** bi]
+        setattr(self, f'upsample{block_index}', nn.Upsample(size=2 ** bi, mode='bilinear', align_corners=False))
+        setattr(self, f'block{block_index}',
+                StyleGanGeneratorBlock(c_in=_c_hidden_prev, c_out=_c_hidden, w_dim=self.locals['w_dim'],
+                                       kernel_size=self.locals['kernel_size']))
+        setattr(self, f'upsample{block_index}_toRGB', nn.Conv2d(_c_hidden_prev, self.locals['c_out'], kernel_size=1))
+        setattr(self, f'block{block_index}_toRGB', nn.Conv2d(_c_hidden, self.locals['c_out'], kernel_size=1))
+        # Update fade coefficient
+        self.alpha_curve = get_alpha_curve(num_iters=num_iters, alpha_multiplier=self.locals['alpha_multiplier'])
+        self.alpha_index = 0
+        self.alpha = self.alpha_curve[self.alpha_index]
+        return self.to(device=device)
 
 
 # noinspection DuplicatedCode
