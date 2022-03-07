@@ -254,7 +254,11 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
             ############################################################################################################
             block = getattr(self, f'block{block_index}')
             if bi == int(math.log2(self.resolution)):
-                upsample_toRGB = getattr(self, f'upsample{block_index}_toRGB')
+                # FIX: use the previous block_toRGB as the current upsample_toRGB
+                upsample_toRGB = nn.Sequential(
+                    getattr(self, f'block{block_index - 1}_toRGB'),
+                    upsample
+                )
                 block_toRGB = getattr(self, f'block{block_index}_toRGB')
                 ########################################################################################################
                 ############################################# DEV LOGGING ##############################################
@@ -360,7 +364,8 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.alpha_curve = get_alpha_curve(num_iters=num_iters, alpha_multiplier=self.locals['alpha_multiplier'])
         self.alpha_index = 0
         self.alpha = self.alpha_curve[self.alpha_index]
-        return self.to(device=device)
+        self.to(device=device)
+        return self
 
 
 # noinspection DuplicatedCode
