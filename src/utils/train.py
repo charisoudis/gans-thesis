@@ -53,7 +53,7 @@ def get_optimizer(*models, optim_type: str = 'Adam',
     # Initialize optimizer
     joint_params = []
     for model in models:
-        joint_params += list(model.parameters())
+        joint_params += list(filter(lambda p: p.requires_grad, model.parameters()))
     optim_class = getattr(torch.optim, optim_type)
     optim = optim_class(joint_params, **optim_args)
     # If no LR scheduler requested, return None as the 2nd parameter

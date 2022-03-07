@@ -1,6 +1,4 @@
-import gc
 import math
-import time
 from typing import Tuple, Optional, Sequence
 
 import numpy as np
@@ -225,20 +223,12 @@ class StyleGan(nn.Module, IGanGModule):
                 batch_size = None
                 num_iters = 2
         self.logger.debug(f'[_init_gen_disc_opt_scheduler] num_iters:{num_iters} | batch_size={batch_size}')
-        #   - Free current networks and save the grown ones
+        #   - FIX: Just grow the networks and zero out optimizers' gradients
         if self.gen is not None:
-            new_gen = self.gen.grow(num_iters=num_iters, device=device)
-            new_disc = self.disc.grow(num_iters=num_iters, device=device)
-            del self.gen
-            del self.gen_opt
-            del self.disc
-            del self.disc_opt
-            gc.collect()
+            self.gen.grow(num_iters=num_iters, device=device)
+            self.disc.grow(num_iters=num_iters, device=device)
             if str(self.device).startswith('cuda') and torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            time.sleep(1.0)
-            self.gen = new_gen.to(device)
-            self.disc = new_disc.to(device)
             assert self.gen.resolution == self.disc.resolution == resolution, 'Requested resolution could not be' \
                                                                               ' satisfied in a single grow() call'
         else:
