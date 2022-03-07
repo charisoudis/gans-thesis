@@ -1,4 +1,3 @@
-import gc
 import math
 import time
 from typing import Optional, List
@@ -249,35 +248,21 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         :param (str or torch.device or None) device: new network's device
         :return: a new StyleGanDiscriminator instance
         """
-        self.freeze(force=True)
-        # Init new Discriminator network
-        new_resolution = 2 * self.resolution
-        new_locals = self.locals.copy()
-        new_locals['resolution'] = new_resolution
-        new_locals['num_iters'] = num_iters
-        new_locals['logger'] = self.logger
-        new_disc = StyleGanDiscriminator(**new_locals)
-        # Transfer parameter values
-        for bi in range(2, int(math.log2(self.resolution)) + 1):
-            block_index = bi - 2
-            getattr(new_disc, f'block{block_index}').load_state_dict(getattr(self, f'block{block_index}').state_dict())
-            if block_index in [int(math.log2(new_resolution)) - 3, int(math.log2(new_resolution)) - 2]:
-                if hasattr(new_disc, f'fromRGB{block_index}'):
-                    getattr(new_disc, f'fromRGB{block_index}') \
-                        .load_state_dict(getattr(self, f'fromRGB{block_index}').state_dict())
-        # Flush old network
-        del self.downsample
-        for bi in range(2, int(math.log2(self.resolution)) + 1):
-            block_index = bi - 2
-            delattr(self, f'block{block_index}')
-            if hasattr(self, f'fromRGB{block_index}'):
-                delattr(self, f'fromRGB{block_index}')
-        gc.collect()
-        if str(device).startswith('cuda') and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        time.sleep(1.0)
-        # Return the initialized network
-        return new_disc.to(device=device)
+        # FIX: DO NOT RE-INITIALIZE ENTIRE NETWORK, JUST ADD NEW LAYERS
+        self.resolution *= 2
+        bi = int(math.log2(self.resolution))
+        block_index = bi - 2
+        block_c_in, block_c_out = self._get_c_hidden(bi), self._get_c_hidden(bi - 1)
+        setattr(self, f'block{block_index}',
+                StyleGanDiscriminatorBlock(block_c_in, block_c_out, add_std_layer=block_index == 0))
+        setattr(self, f'fromRGB{block_index}',
+                nn.Sequential(ChannelsProjectLayer(c_in=self.locals['c_in'], c_out=block_c_in), nn.LeakyReLU(0.2)))
+        # Update fade coefficient
+        self.alpha_curve = get_alpha_curve(num_iters=num_iters, alpha_multiplier=self.locals['alpha_multiplier'])
+        self.alpha_index = 0
+        self.alpha = self.alpha_curve[self.alpha_index]
+        self.to(device=device)
+        return self
 
 
 if __name__ == '__main__':
@@ -288,9 +273,9 @@ if __name__ == '__main__':
     print(f'4x4 Params: {to_human_readable(get_total_params(_disc4))}')
     # enable_verbose(_disc4)
     # print(_disc4)
-    time.sleep(0.5)
+    # time.sleep(0.5)
     _y = _disc4(torch.randn(4, 3, _disc4.resolution, _disc4.resolution))
-    time.sleep(0.5)
+    # time.sleep(0.5)
     _disc4.logger.info(f'_y.shape={_y.shape}')
 
     # print(f'loss={_disc4.get_loss(real=torch.ones(4, 3, 4, 4), fake=torch.ones(4, 3, 4, 4))}')
