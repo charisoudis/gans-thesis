@@ -181,7 +181,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                     StyleGanGeneratorBlock(c_in=_c_hidden_prev, c_out=_c_hidden, w_dim=w_dim, kernel_size=kernel_size))
             if bi == int(math.log2(resolution)):
                 # noinspection PyTypeChecker
-                setattr(self, f'upsample{block_index}_toRGB', nn.Conv2d(_c_hidden_prev, c_out, kernel_size=1))
+                # setattr(self, f'upsample{block_index}_toRGB', nn.Conv2d(_c_hidden_prev, c_out, kernel_size=1))
                 # noinspection PyTypeChecker
                 setattr(self, f'block{block_index}_toRGB', nn.Conv2d(_c_hidden, c_out, kernel_size=1))
         # Save args
@@ -329,7 +329,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
             layer_names.append(f'upsample{block_index}')
             layer_names.append(f'block{block_index}')
             if bi == int(math.log2(self.resolution)):
-                layer_names.append(f'upsample{block_index}_toRGB')
+                # layer_names.append(f'upsample{block_index}_toRGB')
                 layer_names.append(f'block{block_index}_toRGB')
         return layer_names
 
