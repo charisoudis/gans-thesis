@@ -270,7 +270,7 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         for i in range(int(math.log2(self.resolution)) - 3):
             if f'fromRGB{i}' in state_dict.keys():
                 del state_dict[f'fromRGB{i}']
-        super(self).load_state_dict(state_dict, strict)
+        super().load_state_dict(state_dict, strict)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 import math
 import sys
 import time
+from collections import OrderedDict
 from typing import Optional, Tuple, List
 
 import numpy as np
@@ -374,7 +375,7 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
                 del state_dict[f'upsample{i}_toRGB']
             if i < (int(math.log2(self.resolution)) - 2) and f'block{i}_toRGB' in state_dict.keys():
                 del state_dict[f'block{i}_toRGB']
-        super(self).load_state_dict(state_dict, strict)
+        super().load_state_dict(state_dict, strict)
 
 
 # noinspection DuplicatedCode
