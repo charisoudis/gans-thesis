@@ -370,11 +370,13 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
 
     def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
         # FIX: Remove redundant keys from state dict
-        for i in range(7):
-            if f'upsample{i}_toRGB' in state_dict.keys():
-                del state_dict[f'upsample{i}_toRGB']
-            if i < (int(math.log2(self.resolution)) - 2) and f'block{i}_toRGB' in state_dict.keys():
-                del state_dict[f'block{i}_toRGB']
+        kk = state_dict.keys()
+        for k in kk:
+            for i in range(7):
+                if k.startswith(f'upsample{i}_toRGB') or \
+                        (i < (int(math.log2(self.resolution)) - 2) and k.startswith(f'block{i}_toRGB')):
+                    del state_dict[k]
+                    self.logger.debug(f'[stgan.gen][load_state_dict] Removing "{k}" from state_dict')
         super().load_state_dict(state_dict, strict)
 
 

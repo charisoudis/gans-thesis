@@ -267,9 +267,12 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
 
     def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
         # FIX: Remove redundant keys from state dict
-        for i in range(int(math.log2(self.resolution)) - 3):
-            if f'fromRGB{i}' in state_dict.keys():
-                del state_dict[f'fromRGB{i}']
+        kk = state_dict.keys()
+        for k in kk:
+            for i in range(int(math.log2(self.resolution)) - 3):
+                if k.startswith(f'fromRGB{i}'):
+                    del state_dict[k]
+                    self.logger.debug(f'[stgan.disc][load_state_dict] Removing "{k}" from state_dict')
         super().load_state_dict(state_dict, strict)
 
 
