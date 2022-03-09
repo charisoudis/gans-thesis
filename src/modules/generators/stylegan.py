@@ -367,6 +367,15 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.to(device=device)
         return self
 
+    def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
+        # FIX: Remove redundant keys from state dict
+        for i in range(7):
+            if f'upsample{i}_toRGB' in state_dict.keys():
+                del state_dict[f'upsample{i}_toRGB']
+            if i < (int(math.log2(self.resolution)) - 2) and f'block{i}_toRGB' in state_dict.keys():
+                del state_dict[f'block{i}_toRGB']
+        super(self).load_state_dict(state_dict, strict)
+
 
 # noinspection DuplicatedCode
 if __name__ == '__main__':

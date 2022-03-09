@@ -1,5 +1,6 @@
 import math
 import time
+from collections import OrderedDict
 from typing import Optional, List
 
 import numpy as np
@@ -263,6 +264,13 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         self.alpha = self.alpha_curve[self.alpha_index]
         self.to(device=device)
         return self
+
+    def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
+        # FIX: Remove redundant keys from state dict
+        for i in range(int(math.log2(self.resolution)) - 3):
+            if f'fromRGB{i}' in state_dict.keys():
+                del state_dict[f'fromRGB{i}']
+        super(self).load_state_dict(state_dict, strict)
 
 
 if __name__ == '__main__':
