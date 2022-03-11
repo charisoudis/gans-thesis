@@ -1,6 +1,5 @@
 import math
 import time
-from collections import OrderedDict
 from typing import Optional, List
 
 import numpy as np
@@ -265,15 +264,15 @@ class StyleGanDiscriminator(nn.Module, BalancedFreezable, Verbosable):
         self.to(device=device)
         return self
 
-    def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
-        # FIX: Remove redundant keys from state dict
-        kk = state_dict.keys()
-        for k in list(kk).copy():
-            k_comp = k.split('.')[0]
-            if not hasattr(self, k_comp):
-                del state_dict[k]
-                self.logger.debug(f'[stgan.disc][load_state_dict] Removing "{k}" from state_dict')
-        super().load_state_dict(state_dict, strict)
+    # def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
+    #     # FIX: Remove redundant keys from state dict
+    #     kk = state_dict.keys()
+    #     for k in list(kk).copy():
+    #         k_comp = k.split('.')[0]
+    #         if not hasattr(self, k_comp):
+    #             del state_dict[k]
+    #             self.logger.debug(f'[stgan.disc][load_state_dict] Removing "{k}" from state_dict')
+    #     super().load_state_dict(state_dict, strict)
 
 
 if __name__ == '__main__':

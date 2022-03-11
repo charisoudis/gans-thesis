@@ -159,6 +159,10 @@ class StyleGan(nn.Module, IGanGModule):
                                 or (isinstance(device, torch.device) and device.type == 'cpu') \
                                 or (isinstance(device, str) and device == 'cpu')
 
+        # Initialize model to lowest resolution
+        resolution_min = self._configuration['resolutions']['min']
+        self._init_gen_disc_opt_scheduler(resolution=resolution_min, device=device)
+
         # Load checkpoint from Google Drive
         self.other_state_dicts = {}
         if chkpt_epoch is not None:
@@ -166,7 +170,11 @@ class StyleGan(nn.Module, IGanGModule):
                 chkpt_filepath = self.fetch_checkpoint(epoch_or_id=chkpt_epoch, step=chkpt_step)
                 self.logger.debug(f'Loading checkpoint file: {chkpt_filepath}')
                 state_dict = torch.load(chkpt_filepath, map_location='cpu')
-                self._init_gen_disc_opt_scheduler(resolution=state_dict['resolution'], device=device)
+                # FIX: Grow network until requested resolution
+                for i in range(1, int(math.log2(int(state_dict['resolution']) / int(resolution_min))) + 1):
+                    new_resolution = resolution_min * 2 ** i
+                    self._init_gen_disc_opt_scheduler(resolution=new_resolution, device=device,
+                                                      init_optims=new_resolution == int(state_dict['resolution']))
                 self.load_state_dict(state_dict)
                 if 'gforward' in state_dict.keys():
                     self.load_gforward_state(state_dict['gforward'])
@@ -174,8 +182,6 @@ class StyleGan(nn.Module, IGanGModule):
                 self.logger.critical(str(e))
                 chkpt_epoch = None
         if not chkpt_epoch:
-            # Move to GPU only if no checkpoint is applied
-            self._init_gen_disc_opt_scheduler(resolution=self._configuration['resolutions']['min'], device=device)
             # Initialize weights with small values
             if self.gen is not None:
                 self.gen = self.gen.apply(weights_init_naive)
@@ -196,7 +202,8 @@ class StyleGan(nn.Module, IGanGModule):
             self.grad_scaler = GradScaler()
 
     def _init_gen_disc_opt_scheduler(self, resolution: int = 4, num_iters: Optional[int] = None,
-                                     batch_size: Optional[int] = None, device: Optional[str or torch.device] = None):
+                                     batch_size: Optional[int] = None, device: Optional[str or torch.device] = None,
+                                     init_optims: bool = True):
         """
         Initialize Generator and Discriminator networks.
         :param (int) resolution: height and width of current generation/discrimination
@@ -252,8 +259,9 @@ class StyleGan(nn.Module, IGanGModule):
         ################################################################################################################
 
         #   - Optimizers & LR Schedulers
-        self.gen_opt, self.gen_opt_lr_scheduler = get_optimizer(self.gen, **self._configuration['gen_opt'])
-        self.disc_opt, self.disc_opt_lr_scheduler = get_optimizer(self.disc, **self._configuration['disc_opt'])
+        if init_optims:
+            self.gen_opt, self.gen_opt_lr_scheduler = get_optimizer(self.gen, **self._configuration['gen_opt'])
+            self.disc_opt, self.disc_opt_lr_scheduler = get_optimizer(self.disc, **self._configuration['disc_opt'])
         # Save dataset parameters
         self.current_batch_size = batch_size
         # Reset GDriveModel counters
@@ -600,10 +608,15 @@ if __name__ == '__main__':
                       chkpt_epoch=None, dataset_len=len(_dl.dataset), log_level=_log_level, evaluator=_evaluator,
                       device='cpu')
     _stgan.disc_iters = 2
+    # noinspection PyProtectedMember
     _stgan._init_gen_disc_opt_scheduler(resolution=8, device='cpu')
+    # noinspection PyProtectedMember
     _stgan._init_gen_disc_opt_scheduler(resolution=16, device='cpu')
+    # noinspection PyProtectedMember
     _stgan._init_gen_disc_opt_scheduler(resolution=32, device='cpu')
+    # noinspection PyProtectedMember
     _stgan._init_gen_disc_opt_scheduler(resolution=64, device='cpu')
+    # noinspection PyProtectedMember
     _stgan._init_gen_disc_opt_scheduler(resolution=128, device='cpu')
 
     print('Number of parameters: gen=' + to_human_readable(get_total_params(_stgan.gen)))  # 58.5M

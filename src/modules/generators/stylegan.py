@@ -1,7 +1,6 @@
 import math
 import sys
 import time
-from collections import OrderedDict
 from typing import Optional, Tuple, List
 
 import numpy as np
@@ -368,15 +367,15 @@ class StyleGanGenerator(nn.Module, BalancedFreezable, Verbosable):
         self.to(device=device)
         return self
 
-    def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
-        # FIX: Remove redundant keys from state dict
-        kk = state_dict.keys()
-        for k in list(kk).copy():
-            k_comp = k.split('.')[0]
-            if not hasattr(self, k_comp):
-                del state_dict[k]
-                self.logger.debug(f'[stgan.gen][load_state_dict] Removing "{k}" from state_dict')
-        super().load_state_dict(state_dict, strict)
+    # def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
+    #     # FIX: Remove redundant keys from state dict
+    #     kk = state_dict.keys()
+    #     for k in list(kk).copy():
+    #         k_comp = k.split('.')[0]
+    #         if not hasattr(self, k_comp):
+    #             del state_dict[k]
+    #             self.logger.debug(f'[stgan.gen][load_state_dict] Removing "{k}" from state_dict')
+    #     super().load_state_dict(state_dict, strict)
 
 
 # noinspection DuplicatedCode
