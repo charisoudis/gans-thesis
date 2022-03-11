@@ -1,6 +1,6 @@
 # Created from pipreqs (command: "pipreqs .")
 click
-torch>=1.10.1
+torch>=1.10.0
 torchvision
 humanize
 matplotlib
