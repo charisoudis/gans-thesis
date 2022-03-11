@@ -1,6 +1,5 @@
 import torch
 from IPython.core.display import display
-from PIL import Image
 from torch import Tensor
 from torch.nn import DataParallel
 # noinspection PyProtectedMember
@@ -145,11 +144,14 @@ for epoch in range(stgan.epoch, n_epochs):
     # initial_step = stgan.initial_step % len(dataloader)
     stgan.logger.debug('[START OF EPOCH] ' + str(d))
 
+    # Initialize resizer
+    resizer = transforms.Resize(size=stgan.gen.resolution, interpolation=transforms.InterpolationMode.BILINEAR)
+
     real: Tensor
     for real in exec_tqdm(dataloader, initial=stgan.initial_step):
         # Downsample images
         if real.shape[-1] != stgan.gen.resolution:
-            real = transforms.Resize(size=stgan.gen.resolution, interpolation=Image.BILINEAR)(real)
+            real = resizer(real)
 
         # Transfer image batches to GPU
         real = real.to(exec_device)
