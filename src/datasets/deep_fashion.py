@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 import time
+import zipfile
 from time import sleep
 from typing import Optional, Tuple, Union
 
@@ -562,6 +563,7 @@ class FISBDataset(Dataset, GDriveDataset):
                 self.indices = list(range(self.total_images_count))
         else:
             self.indices = list(range(self.total_images_count))
+        self.min_color = min_color
         self.total_images_count = len(self.indices)
         if verbose:
             self.logger.debug(f'[COLOR_FILTER] Found {to_human_readable(self.total_images_count)} total images ' +
@@ -609,7 +611,7 @@ class FISBDataset(Dataset, GDriveDataset):
                                                    w_from=crop['w_from'], w_until=crop['w_until'],
                                                    upscale_size=image.shape[2])
         # return torch.cat((image, cropped_image), dim=2)
-        return cropped_image
+        return torch.clamp(cropped_image, min=0.0, max=1.0)
 
     def __len__(self) -> int:
         """
@@ -667,6 +669,23 @@ class FISBDataset(Dataset, GDriveDataset):
                 return upsample(torch.from_numpy(t_cropped).unsqueeze(0)).squeeze(0).numpy().astype(t_cropped.dtype)
             t_cropped = upsample(t_cropped.unsqueeze(0)).squeeze(0)
         return t_cropped
+
+    def to_zip(self):
+        __transforms = self.transforms
+        self.transforms = None
+        # Create a temp dir
+        out_dir = f'{self.root}/Imgs_{self.min_color.lower().replace("#", "")}'
+        if not os.path.exists(out_dir):
+            os.mkdir(out_dir)
+        if not os.path.exists(f'{out_dir}.zip'):
+            # Create zip file
+            with zipfile.ZipFile(f'{out_dir}.zip', 'w', zipfile.ZIP_STORED) as zip_fp:
+                # Write all images
+                for img_i in tqdm(range(self.__len__())):
+                    img_path = os.path.join(out_dir, f'{str(img_i).zfill(5)}.png')
+                    # save_image(self.__getitem__(img_i), img_path)
+                    zip_fp.write(img_path, os.path.basename(img_path))
+        self.logger.info(f'Zipfile saved at: "{out_dir}.zip"')
 
 
 class FISBDataloader(DataLoader, ResumableDataLoader, ManualSeedReproducible):
@@ -1674,20 +1693,22 @@ if __name__ == '__main__':
     _datasets_groot = _groot.subfolder_by_name('Datasets')
 
     # Init Dataset
-    _dl = FISBDataloader(_datasets_groot, target_shape=128, target_channels=3, batch_size=1,
-                         pin_memory=False, log_level='debug', load_in_memory=False)
-    # min_color='#f0f0f0')
+    # _dl = FISBDataloader(_datasets_groot, target_shape=128, target_channels=3, batch_size=1,
+    #                      pin_memory=False, log_level='debug', load_in_memory=False,
+    #                      min_color='#f0f0f0')
+    _ds = FISBDataset(_datasets_groot, log_level='debug', load_in_memory=False, min_color='#f0f0f0')
+    _ds.to_zip()
 
-    # Index 54886 is dark
-    print(f'len(_dl.dataset)={len(_dl.dataset)}')
-    for _i in np.random.randint(0, len(_dl.dataset), 20):
-        _img = _dl.dataset[_i]
-        _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
-        _img = _plt_transforms(_img.squeeze(dim=0))
-        _img.save(f'{str(_i).zfill(4)}.jpg')
-        plt.imshow(_img)
-        plt.title(f'Index #{str(_i).zfill(4)}')
-        plt.show()
+    # # Index 54886 is dark
+    # print(f'len(_dl.dataset)={len(_dl.dataset)}')
+    # for _i in np.random.randint(0, len(_dl.dataset), 20):
+    #     _img = _dl.dataset[_i]
+    #     _plt_transforms = transforms.Compose([ToTensorOrPass(), transforms.ToPILImage()])
+    #     _img = _plt_transforms(_img.squeeze(dim=0))
+    #     _img.save(f'{str(_i).zfill(4)}.jpg')
+    #     plt.imshow(_img)
+    #     plt.title(f'Index #{str(_i).zfill(4)}')
+    #     plt.show()
 
     ### Print first image from each dataset
     # from matplotlib import pyplot as plt

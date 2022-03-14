@@ -19,3 +19,5 @@ pydrive
 tensorboard
 pyyaml>=5.1
 h5py
+psutil
+# opencv-python
