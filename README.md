@@ -58,6 +58,8 @@ guidance.
 - [x] Add Perceptual Path Length (PPL) as a regularizer/loss/metric in StyleGAN's Generator
 - [x] Re-implement StyleGAN to mimic the exact architectures presented in Karras et al.
 - [x] Fix Progressing Growing bugs (that lead to major visual artifacts)
-- [x] Re-train StyleGAN for at least 320 epochs on DeepFashion's Image Synthesis Benchmark dataset
+- [x] [FAILED] Re-train StyleGAN for at least 320 epochs on DeepFashion's Image Synthesis Benchmark dataset
+- [ ] Implement simplified version of StyleGAN3 (NVlabs/stylegan3)
+- [ ] Train StyleGAN3 for at least 100 epochs on DeepFashion/FISB
 - [ ] Train an Inception model on fashion image dataset(s) and re-evaluate generative metrics based on embeddings of
   that classifier (instead of the one used now which was trained on ImageNET)
