@@ -1,7 +1,7 @@
 # Code repository for Diploma Thesis
 
 - Thesis Title: **Generative Adversarial Networks for pose and style selection in fashion design applications**
-- Author: **Athanasios Charisoudis achariso@ece.auth.gr**
+- Author: **Athanasios Charisoudis achariso@ieee.org**
 - Supervisors: **Prof. Pericles Mitkas, Dr. Antonios Chrysopoulos**
 - Department: **Electrical and Computer Engineering, Aristotle University of Thessaloniki, Greece**
 
@@ -32,8 +32,8 @@ effective intelligent tool for fashion image editing in this work._
 
 ### Report \& Presentation
 
-- Final report PDF may be found here: https://thanasis.charisoudis.gr/pdf/gans-thesis-report.pdf
-- Presentation PDF (handout) may be found here: https://thanasis.charisoudis.gr/pdf/gans-thesis-presentation.pdf
+- Final report PDF may be found here: https://charisoudis.com/pdf/gans-thesis-report.pdf
+- Presentation PDF (handout) may be found here: https://charisoudis.com/pdf/gans-thesis-presentation.pdf
 - Corresponding publication: _not-yet finalized_
 
 ## Regarding the code
@@ -41,7 +41,7 @@ effective intelligent tool for fashion image editing in this work._
 ### How to run
 
 Open any of the provided notebooks (path: <code>notebooks/\*/\*.ipynb</code>) on the corresponding platform. You may
-contact the author (achariso@ece.auth.gr) for GDrive and gh keys in order for the notebooks to be plug-n-play.
+contact the author (achariso@ieee.org) for GDrive and gh keys in order for the notebooks to be plug-n-play.
 
 Alternatively, you may run the <code>.py</code> files inside <code>src</code> directory, using the extensive comments as
 guidance.
